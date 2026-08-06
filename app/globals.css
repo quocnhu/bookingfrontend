@@ -1,26 +1,165 @@
-@import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--ant-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif);
+  -webkit-font-smoothing: antialiased;
+  color: var(--ant-color-text);
+  min-height: 100%;
+  transition: background 0.3s ease, color 0.3s ease;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(124, 58, 237, 0.14), transparent 60%),
+    radial-gradient(1000px 500px at 110% 0%, rgba(236, 72, 153, 0.10), transparent 55%),
+    radial-gradient(900px 600px at 50% 120%, rgba(6, 182, 212, 0.08), transparent 60%),
+    var(--ant-color-bg-layout, #f5f5f5);
+  background-attachment: fixed;
+}
+
+html.dark body {
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(34, 211, 238, 0.10), transparent 60%),
+    radial-gradient(1000px 500px at 110% 0%, rgba(59, 130, 246, 0.09), transparent 55%),
+    radial-gradient(900px 600px at 50% 120%, rgba(16, 185, 129, 0.06), transparent 60%),
+    var(--ant-color-bg-layout, #0b0f1e);
+  background-attachment: fixed;
+}
+
+a {
+  text-decoration: none;
+}
+
+img {
+  max-width: 100%;
+}
+
+::selection {
+  background: var(--ant-color-primary);
+  color: var(--ant-color-bg-container);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #22d3ee, #8b5cf6, #ec4899);
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #67e8f9, #a78bfa, #f472b6);
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #22d3ee, #3b82f6);
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #67e8f9, #60a5fa);
+}
+
+/* Main app content gets antd-scaled padding */
+.ant-layout-content {
+  padding: var(--ant-padding-lg, 24px);
+}
+
+/* ===== Auth pages ===== */
+
+.auth-bg {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: hidden;
+  background:
+    radial-gradient(1000px 500px at 85% -10%, rgba(34, 211, 238, 0.16), transparent 55%),
+    radial-gradient(900px 520px at -10% 110%, rgba(59, 130, 246, 0.16), transparent 55%),
+    radial-gradient(800px 600px at 50% 45%, rgba(16, 185, 129, 0.08), transparent 60%),
+    #070b16;
+}
+
+.auth-bg::before,
+.auth-bg::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.auth-bg::before {
+  width: 420px;
+  height: 420px;
+  background: #22d3ee;
+  top: -140px;
+  left: -120px;
+}
+
+.auth-bg::after {
+  width: 380px;
+  height: 380px;
+  background: #3b82f6;
+  bottom: -140px;
+  right: -120px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+}
+
+/* ===== Rich-text content (itinerary preview) ===== */
+
+.prose-content {
+  line-height: 1.7;
+}
+
+.prose-content img,
+.tiptap img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  margin: 10px 0;
+}
+
+.tiptap {
+  outline: none;
+  min-height: 320px;
+  line-height: 1.7;
+}
+
+.tiptap table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+}
+
+.tiptap td,
+.tiptap th {
+  border: 1px solid var(--ant-color-border-secondary, #d9d9d9);
+  padding: 6px 10px;
+}
+
+.tiptap th {
+  background: var(--ant-color-fill-quaternary, #f5f5f5);
+}
+
+.tiptap img {
+  max-width: 100%;
 }
