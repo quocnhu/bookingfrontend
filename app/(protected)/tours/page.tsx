@@ -6,29 +6,28 @@ import {
   Button,
   Card,
   Col,
-  Empty,
+  DatePicker,
+  Flex,
   Form,
   Input,
   InputNumber,
   Modal,
-  Pagination,
   Popconfirm,
   Row,
   Select,
-  Spin,
   Table,
-  Tabs,
   Tag,
   Typography,
   message,
-  Flex,
 } from "antd";
-import { PlusOutlined, DeleteOutlined, EditOutlined } from "@ant-design/icons";
+import { PlusOutlined, DeleteOutlined, EditOutlined, PictureOutlined, ScheduleOutlined, CloseCircleOutlined } from "@ant-design/icons";
+import dayjs, { type Dayjs } from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
 import FilterBar from "@/components/filter-bar";
 import ThumbnailPicker from "@/components/thumbnail-picker";
+import GalleryManager, { type GalleryImage } from "@/components/gallery-manager";
 
 interface Tour {
   id: string;
@@ -36,10 +35,16 @@ interface Tour {
   name: string;
   type: "PRIVATE_TOUR" | "GROUP_TOUR";
   thumbnailUrl?: string | null;
+  durationDays?: number | null;
+  departureLocation?: string | null;
   adultPrice?: string | number | null;
   childPrice?: string | number | null;
   infantPrice?: string | number | null;
   currency?: string;
+  discountPercent?: number | null;
+  promotionStartsAt?: string | null;
+  promotionEndsAt?: string | null;
+  gallery?: GalleryImage[];
   _count?: { bookings: number };
 }
 
@@ -49,6 +54,20 @@ const TYPE_OPTIONS = [
 ];
 
 const LIMIT = 10;
+
+function promotionState(
+  discountPercent: number | null | undefined,
+  startsAt: string | null | undefined,
+  endsAt: string | null | undefined,
+): { label: string; color: string } | null {
+  if (!discountPercent || discountPercent <= 0) return null;
+  const now = Date.now();
+  const start = startsAt ? new Date(startsAt).getTime() : null;
+  const end = endsAt ? new Date(endsAt).getTime() : null;
+  if (start && now < start) return { label: `-${discountPercent}% (upcoming)`, color: "orange" };
+  if (end && now > end) return { label: `-${discountPercent}% (ended)`, color: "default" };
+  return { label: `-${discountPercent}%`, color: "red" };
+}
 
 export default function ToursPage() {
   const router = useRouter();
@@ -68,6 +87,9 @@ export default function ToursPage() {
   const [form] = Form.useForm();
   const [editing, setEditing] = useState<Tour | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const [galleryTour, setGalleryTour] = useState<Tour | null>(null);
+  const [galleryOpen, setGalleryOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -100,23 +122,45 @@ export default function ToursPage() {
       name: tour?.name ?? "",
       type: tour?.type ?? "PRIVATE_TOUR",
       thumbnailUrl: tour?.thumbnailUrl ?? null,
+      durationDays: tour?.durationDays ?? 1,
+      departureLocation: tour?.departureLocation ?? "",
       adultPrice: tour?.adultPrice ?? 0,
       childPrice: tour?.childPrice ?? 0,
       infantPrice: tour?.infantPrice ?? 0,
       currency: tour?.currency ?? "USD",
+      discountPercent: tour?.discountPercent ?? 0,
+      promotionWindow:
+        tour?.promotionStartsAt && tour?.promotionEndsAt
+          ? [dayjs(tour.promotionStartsAt), dayjs(tour.promotionEndsAt)]
+          : null,
     });
     setModalOpen(true);
   };
 
+  const openGallery = async (tour: Tour) => {
+    try {
+      const r = await api.get(`/tours/${tour.id}`);
+      setGalleryTour(r.data);
+      setGalleryOpen(true);
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to load gallery"));
+    }
+  };
+
   const save = async () => {
     const values = await form.validateFields();
+    const payload: any = { ...values };
+    const window = values.promotionWindow as [Dayjs, Dayjs] | null | undefined;
+    payload.promotionStartsAt = window ? window[0].toISOString() : null;
+    payload.promotionEndsAt = window ? window[1].toISOString() : null;
+    delete payload.promotionWindow;
     setSaving(true);
     try {
       if (editing) {
-        await api.put(`/tours/${editing.id}`, values);
+        await api.put(`/tours/${editing.id}`, payload);
         message.success("Tour updated");
       } else {
-        await api.post("/tours", values);
+        await api.post("/tours", payload);
         message.success("Tour created");
       }
       setModalOpen(false);
@@ -182,10 +226,36 @@ export default function ToursPage() {
       render: (v: any) => <Tag color="blue">{v?.bookings ?? 0}</Tag>,
     },
     {
+      title: "Promotion",
+      key: "promotion",
+      render: (_: any, r: Tour) => {
+        const st = promotionState(r.discountPercent, r.promotionStartsAt, r.promotionEndsAt);
+        if (!st) return <Typography.Text type="secondary">—</Typography.Text>;
+        return <Tag color={st.color}>{st.label}</Tag>;
+      },
+    },
+    {
       title: "Actions",
       key: "actions",
       render: (_: any, r: Tour) => (
         <span style={{ display: "inline-flex", gap: 8 }}>
+          {canUpdate && (
+            <Button
+              size="small"
+              icon={<ScheduleOutlined />}
+              onClick={() => router.push(`/tours/${r.id}`)}
+              aria-label={`Itinerary ${r.name}`}
+              title="Edit itinerary"
+            />
+          )}
+          {canUpdate && (
+            <Button
+              size="small"
+              icon={<PictureOutlined />}
+              onClick={() => openGallery(r)}
+              aria-label={`Gallery ${r.name}`}
+            />
+          )}
           {canUpdate && (
             <Button
               size="small"
@@ -243,116 +313,36 @@ export default function ToursPage() {
 
   return (
     <div>
-      <Tabs
-        items={[
-          {
-            key: "manage",
-            label: "Manage Tours",
-            children: (
-              <Card
-                variant="borderless"
-                title="Declared tours"
-                extra={
-                  <Flex wrap gap={8} align="center">
-                    {tourFilterBar}
-                    {canCreate && (
-                      <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
-                        Add Tour
-                      </Button>
-                    )}
-                  </Flex>
-                }
-              >
-                <Table
-                  rowKey="id"
-                  columns={columns}
-                  dataSource={tours}
-                  loading={loading}
-                  pagination={{
-                    current: page,
-                    pageSize,
-                    total: data?.total ?? 0,
-                    showSizeChanger: true,
-                    pageSizeOptions: PAGE_SIZE_OPTIONS,
-                    onChange: paginationChange(setPage, setPageSize, pageSize),
-                    showTotal: (t) => `Total: ${t}`,
-                  }}
-                />
-              </Card>
-            ),
-          },
-          {
-            key: "available",
-            label: "Available Tours",
-            children: (
-              <Card
-                variant="borderless"
-                title="Available tours"
-                extra={tourFilterBar}
-              >
-                {loading && tours.length === 0 ? (
-                  <Flex justify="center" style={{ padding: 80 }}>
-                    <Spin size="large" />
-                  </Flex>
-                ) : tours.length === 0 ? (
-                  <Empty description="No tours yet" />
-                ) : (
-                  <>
-                    <Row gutter={[16, 16]}>
-                      {tours.map((tour) => (
-                        <Col xs={24} sm={12} lg={8} xl={6} key={tour.id}>
-                          <Card
-                            hoverable
-                            variant="borderless"
-                            title={tour.name}
-                            extra={
-                              <Tag
-                                color={
-                                  TYPE_OPTIONS.find((t) => t.value === tour.type)?.color ?? "blue"
-                                }
-                              >
-                                {tour.type}
-                              </Tag>
-                            }
-                            onClick={() => router.push(`/tours/${tour.id}`)}
-                            style={{ height: "100%" }}
-                          >
-                            <Typography.Paragraph style={{ marginBottom: 8 }}>
-                              <strong>Adult:</strong> {Number(tour.adultPrice ?? 0).toLocaleString()}{" "}
-                              {tour.currency}
-                              <br />
-                              <strong>Child:</strong> {Number(tour.childPrice ?? 0).toLocaleString()}{" "}
-                              {tour.currency}
-                              <br />
-                              <strong>Infant:</strong> {Number(tour.infantPrice ?? 0).toLocaleString()}{" "}
-                              {tour.currency}
-                            </Typography.Paragraph>
-                            <Typography.Text type="secondary">
-                              {tour._count?.bookings ?? 0} bookings
-                            </Typography.Text>
-                          </Card>
-                        </Col>
-                      ))}
-                    </Row>
-                    {data && data.total > pageSize && (
-                      <Flex justify="center" style={{ marginTop: 24 }}>
-                        <Pagination
-                          current={page}
-                          pageSize={pageSize}
-                          total={data.total}
-                          showSizeChanger
-                          pageSizeOptions={PAGE_SIZE_OPTIONS}
-                          onChange={(p, size) => paginationChange(setPage, setPageSize, pageSize)(p, size)}
-                        />
-                      </Flex>
-                    )}
-                  </>
-                )}
-              </Card>
-            ),
-          },
-        ]}
-      />
+      <Card
+        variant="borderless"
+        title="Declared tours"
+        extra={
+          <Flex wrap gap={8} align="center">
+            {tourFilterBar}
+            {canCreate && (
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
+                Add Tour
+              </Button>
+            )}
+          </Flex>
+        }
+      >
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={tours}
+          loading={loading}
+          pagination={{
+            current: page,
+            pageSize,
+            total: data?.total ?? 0,
+            showSizeChanger: true,
+            pageSizeOptions: PAGE_SIZE_OPTIONS,
+            onChange: paginationChange(setPage, setPageSize, pageSize),
+            showTotal: (t) => `Total: ${t}`,
+          }}
+        />
+      </Card>
 
       <Modal
         title={editing ? `Edit Tour: ${editing.name}` : "Add Tour"}
@@ -377,6 +367,18 @@ export default function ToursPage() {
             <Select options={TYPE_OPTIONS.map(({ value, label }) => ({ value, label }))} />
           </Form.Item>
           <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="durationDays" label="Duration (days)" initialValue={1}>
+                <InputNumber style={{ width: "100%" }} min={1} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="departureLocation" label="Pickup / meeting point">
+                <Input placeholder="e.g. Central Station Plaza, Main Gate 3" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={12}>
             <Col span={8}>
               <Form.Item name="adultPrice" label="Adult price" initialValue={0}>
                 <InputNumber style={{ width: "100%" }} min={0} />
@@ -399,7 +401,44 @@ export default function ToursPage() {
               showSearch
             />
           </Form.Item>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="discountPercent" label="Promotion discount (%)" initialValue={0}>
+                <InputNumber style={{ width: "100%" }} min={0} max={100} addonAfter="%" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="promotionWindow" label="Promotion window (start → end)">
+                <DatePicker.RangePicker showTime style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Button
+            danger
+            block
+            icon={<CloseCircleOutlined />}
+            onClick={() =>
+              form.setFieldsValue({ discountPercent: 0, promotionWindow: null })
+            }
+          >
+            Reset discount & window
+          </Button>
         </Form>
+      </Modal>
+      <Modal
+        title={`Photo folder — ${galleryTour?.name ?? ""}`}
+        open={galleryOpen}
+        onCancel={() => setGalleryOpen(false)}
+        footer={null}
+        width={720}
+      >
+        {galleryTour && (
+          <GalleryManager
+            tourId={galleryTour.id}
+            images={galleryTour.gallery ?? []}
+            onChanged={(images) => setGalleryTour((prev) => (prev ? { ...prev, gallery: images } : prev))}
+          />
+        )}
       </Modal>
     </div>
   );

@@ -33,6 +33,8 @@ import {
   SafetyOutlined,
   UploadOutlined,
   UserOutlined,
+  MailOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
@@ -100,6 +102,9 @@ export default function UsersPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [perms, setPerms] = useState<Permission[]>([]);
 
+  const [mailboxes, setMailboxes] = useState<any[]>([]);
+  const [mailboxesLoading, setMailboxesLoading] = useState(false);
+
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [userForm] = Form.useForm();
   const [savingUser, setSavingUser] = useState(false);
@@ -152,6 +157,91 @@ export default function UsersPage() {
   useEffect(() => {
     if (canManageUsers || canManageRoles) load().catch((e) => message.error(getErrorMessage(e)));
   }, [roleFilter, userTypeFilter, statusFilter, search, roleSearch]);
+
+  const canManageMailbox = hasPermission("gmail.manage");
+
+  const loadMailboxes = () => {
+    setMailboxesLoading(true);
+    api
+      .get("/gmail/accounts")
+      .then((r) => setMailboxes(r.data ?? []))
+      .catch((e) => message.error(getErrorMessage(e, "Failed to load mailboxes")))
+      .finally(() => setMailboxesLoading(false));
+  };
+
+  useEffect(() => {
+    if (canManageMailbox) loadMailboxes();
+  }, [canManageMailbox]);
+
+  const connectMailbox = (accountId?: string) => {
+    window.location.href = accountId
+      ? `/api/gmail/connect?accountId=${encodeURIComponent(accountId)}`
+      : "/api/gmail/connect";
+  };
+
+  const reconnectMailbox = (account: any) => {
+    connectMailbox(account.id);
+  };
+
+  const testMailbox = async (account: any) => {
+    try {
+      const r = await api.post(`/gmail/accounts/${account.id}/test`);
+      message.success(
+        `Connected: ${r.data?.email ?? account.email}${
+          r.data?.historyId ? ` · history ${r.data.historyId}` : ""
+        }`,
+      );
+      loadMailboxes();
+    } catch (e) {
+      message.error(getErrorMessage(e, "Refresh token invalid — reconnect"));
+    }
+  };
+
+  const renewWatch = async (account: any) => {
+    try {
+      const r = await api.post(`/gmail/accounts/${account.id}/renew-watch`);
+      message.success(
+        r.data?.watchExpiration
+          ? `Watch renewed until ${new Date(r.data.watchExpiration).toLocaleString()}`
+          : "Watch renewed",
+      );
+      loadMailboxes();
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to renew watch"));
+    }
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mailboxStatus = params.get("mailbox");
+    const mailboxMessage = params.get("message");
+    if (mailboxStatus && canManageMailbox) {
+      if (mailboxStatus === "error") {
+        message.error(decodeURIComponent(mailboxMessage ?? "Connect failed"));
+      } else if (mailboxStatus === "connected") {
+        message.success(decodeURIComponent(mailboxMessage ?? "Mailbox tracked"));
+      } else if (mailboxStatus === "reconnected") {
+        message.success(
+          decodeURIComponent(mailboxMessage ?? "Mailbox reconnected"),
+        );
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.delete("mailbox");
+      url.searchParams.delete("message");
+      window.history.replaceState({}, "", url.toString());
+      loadMailboxes();
+    }
+  }, [canManageMailbox]);
+
+  const removeMailbox = async (account: any) => {
+    try {
+      await api.delete(`/gmail/accounts/${account.id}`);
+      message.success(`Removed ${account.email}`);
+      loadMailboxes();
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to remove mailbox"));
+    }
+  };
 
   const resetUserFilters = () => {
     setSearch("");
@@ -375,6 +465,101 @@ export default function UsersPage() {
     },
   ]);
 
+  const mailboxColumns = centerColumns([
+    {
+      title: "Mailbox",
+      dataIndex: "email",
+      key: "email",
+      render: (v: string) => (
+        <Space>
+          <MailOutlined style={{ color: "#3b82f6" }} />
+          <Typography.Text strong>{v}</Typography.Text>
+        </Space>
+      ),
+    },
+    {
+      title: "Watch status",
+      key: "watch",
+      render: (_: any, r: any) =>
+        r.isWatchActive ? (
+          <Tag color="green">Active · {r.expiresInDays}d left</Tag>
+        ) : (
+          <Tag color="orange">Expired</Tag>
+        ),
+    },
+    {
+      title: "Last history ID",
+      dataIndex: "lastHistoryId",
+      key: "lastHistoryId",
+      render: (v: any) => (v ? <Typography.Text code>{v}</Typography.Text> : "—"),
+    },
+    {
+      title: "Watch expires",
+      dataIndex: "watchExpiration",
+      key: "watchExpiration",
+      render: (v: any) => (v ? new Date(v).toLocaleString() : "—"),
+    },
+    {
+      title: "Refresh token",
+      dataIndex: "refreshTokenMasked",
+      key: "refreshTokenMasked",
+      render: (v: any) => (v ? <Typography.Text code>{v}</Typography.Text> : "—"),
+    },
+    {
+      title: "Connected",
+      dataIndex: "createdAt",
+      key: "createdAt",
+      render: (v: any) => (v ? new Date(v).toLocaleString() : "—"),
+    },
+    {
+      title: "Updated",
+      dataIndex: "updatedAt",
+      key: "updatedAt",
+      render: (v: any) => (v ? new Date(v).toLocaleString() : "—"),
+    },
+    ...(canManageMailbox
+      ? [
+          {
+            title: "Actions",
+            key: "actions",
+            render: (_: any, r: any) => (
+              <Space size={8} wrap>
+                <Button
+                  size="small"
+                  icon={<ReloadOutlined />}
+                  onClick={() => testMailbox(r)}
+                >
+                  Test
+                </Button>
+                <Button
+                  size="small"
+                  icon={<ReloadOutlined />}
+                  onClick={() => renewWatch(r)}
+                >
+                  Renew watch
+                </Button>
+                <Button
+                  size="small"
+                  icon={<ReloadOutlined />}
+                  onClick={() => reconnectMailbox(r)}
+                >
+                  Reconnect
+                </Button>
+                <Button
+                  danger
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  onClick={() => removeMailbox(r)}
+                >
+                  Remove
+                </Button>
+              </Space>
+            ),
+          },
+        ]
+      : []),
+  ]);
+
   const roleColumns = [
     indexColumn<Role>(rolePage, rolePageSize),
     { title: "Name", dataIndex: "name", key: "name" },
@@ -383,8 +568,7 @@ export default function UsersPage() {
       dataIndex: "isSystem",
       key: "isSystem",
       render: (v: boolean) => (v ? <Tag color="gold">System</Tag> : <Tag>Custom</Tag>),
-    },
-    {
+    },    {
       title: "Permissions",
       key: "perms",
       render: (_: any, r: Role) => (
@@ -418,12 +602,58 @@ export default function UsersPage() {
 
   return (
     <div>
-      {!canManageUsers && !canManageRoles && (
+      {!canManageUsers && !canManageRoles && !canManageMailbox && (
         <Typography.Text type="secondary">You have no access to user management.</Typography.Text>
       )}
-      {(canManageUsers || canManageRoles) && (
+      {(canManageUsers || canManageRoles || canManageMailbox) && (
       <Tabs
         items={[
+          ...(canManageMailbox
+            ? [
+                {
+                  key: "mailboxes",
+                  label: (
+                    <span>
+                      <MailOutlined /> Mailboxes
+                    </span>
+                  ),
+                  children: (
+                    <Card
+                      variant="borderless"
+                      title="Tracked mailboxes"
+                      extra={
+                        <Flex gap={8} align="center">
+                          <Button icon={<ReloadOutlined />} onClick={loadMailboxes}>
+                            Refresh
+                          </Button>
+                          <Button
+                            type="primary"
+                            icon={<MailOutlined />}
+                            onClick={() => connectMailbox()}
+                          >
+                            Connect mailbox
+                          </Button>
+                        </Flex>
+                      }
+                    >
+                      <Table
+                        rowKey="id"
+                        columns={mailboxColumns}
+                        dataSource={mailboxes}
+                        loading={mailboxesLoading}
+                        scroll={{ x: 1100 }}
+                        pagination={{
+                          pageSize: 10,
+                          showSizeChanger: true,
+                          pageSizeOptions: PAGE_SIZE_OPTIONS,
+                          showTotal: (t) => `Total: ${t}`,
+                        }}
+                      />
+                    </Card>
+                  ),
+                },
+              ]
+            : []),
           {
             key: "users",
             label: "Users",
