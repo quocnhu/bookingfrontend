@@ -32,7 +32,8 @@ import {
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
-import { centerColumns } from "@/lib/table";
+import { centerColumns, indexColumn } from "@/lib/table";
+import { useFillHeight } from "@/lib/use-fill-height";
 
 interface DriveFolder {
   id: string;
@@ -86,6 +87,13 @@ function fileIcon(mime: string | null, name: string) {
 export default function DrivePage() {
   const { refreshProfile } = useApp();
   const [data, setData] = useState<DriveState | null>(null);
+
+  const tableHeight = useFillHeight({
+    rootSelector: ".drive-page",
+    activeTab: "",
+    paginated: false,
+    deps: [data?.files?.length],
+  });
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -203,10 +211,13 @@ export default function DrivePage() {
   };
 
   const columns = centerColumns([
+    indexColumn(1, 999),
     {
       title: "Name",
       dataIndex: "name",
       key: "name",
+      filters: Array.from(new Set((data?.files ?? []).map((f: DriveFile) => f.name).filter(Boolean))).sort().map((n: any) => ({ text: n, value: n })),
+      onFilter: (v: any, r: DriveFile) => (r.name ?? "").toLowerCase().includes(String(v).toLowerCase()),
       render: (name: string, file: DriveFile) => (
         <Flex align="center" gap={8}>
           {fileIcon(file.mimeType, file.name)}
@@ -225,18 +236,24 @@ export default function DrivePage() {
       title: "Type",
       dataIndex: "mimeType",
       key: "mimeType",
+      filters: Array.from(new Set((data?.files ?? []).map((f: DriveFile) => f.mimeType).filter(Boolean))).sort().map((m: any) => ({ text: m, value: m })),
+      onFilter: (v: any, r: DriveFile) => (r.mimeType ?? "").toLowerCase().includes(String(v).toLowerCase()),
       render: (m: string | null) => (m ? <Tag>{m}</Tag> : <Tag>-</Tag>),
     },
     {
       title: "Size",
       dataIndex: "size",
       key: "size",
+      filters: Array.from(new Set((data?.files ?? []).map((f: DriveFile) => formatBytes(f.size)))).sort().map((s: any) => ({ text: s, value: s })),
+      onFilter: (v: any, r: DriveFile) => formatBytes(r.size).toLowerCase().includes(String(v).toLowerCase()),
       render: (s: number) => formatBytes(s),
     },
     {
       title: "Uploaded",
       dataIndex: "createdAt",
       key: "createdAt",
+      filters: Array.from(new Set((data?.files ?? []).map((f: DriveFile) => f.createdAt ? new Date(f.createdAt).toLocaleDateString() : null).filter(Boolean))).sort().map((d: any) => ({ text: d, value: d })),
+      onFilter: (v: any, r: DriveFile) => new Date(r.createdAt).toLocaleDateString().includes(String(v)),
       render: (v: string) => new Date(v).toLocaleString(),
     },
     {
@@ -273,7 +290,7 @@ export default function DrivePage() {
   ]);
 
   return (
-    <Flex vertical gap={16}>
+    <Flex vertical gap={16} className="drive-page">
       <Card
         size="small"
         title={
@@ -436,6 +453,7 @@ export default function DrivePage() {
             loading={loading}
             columns={columns}
             dataSource={data?.files ?? []}
+            scroll={{ x: "max-content", y: tableHeight }}
             locale={{ emptyText: <Empty description="No files yet" /> }}
             pagination={false}
           />

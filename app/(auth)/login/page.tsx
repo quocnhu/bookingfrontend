@@ -15,7 +15,7 @@ import {
   theme as antdTheme,
 } from "antd";
 import { GoogleOutlined, LockOutlined, MailOutlined, RocketFilled } from "@ant-design/icons";
-import { useApp } from "@/lib/app-context";
+import { useApp, getDefaultRoute } from "@/lib/app-context";
 import { getErrorMessage } from "@/lib/api";
 
 export default function LoginPage() {
@@ -52,16 +52,20 @@ function LoginContent() {
   useEffect(() => {
     if (user) {
       const redirect = searchParams.get("redirect");
-      router.replace(redirect && redirect.startsWith("/") ? redirect : "/dashboard");
+      if (redirect && redirect.startsWith("/")) {
+        router.replace(redirect);
+      } else {
+        router.replace(getDefaultRoute(user.role));
+      }
     }
   }, [user, router, searchParams]);
 
   const onFinish = async (values: { email: string; password: string }) => {
     setLoading(true);
     try {
-      await login(values.email, values.password);
+      const result = await login(values.email, values.password);
       message.success("Logged in");
-      router.push("/dashboard");
+      // login() doesn't return user, redirect happens via useEffect above
     } catch (e) {
       message.error(getErrorMessage(e, "Login failed"));
     } finally {

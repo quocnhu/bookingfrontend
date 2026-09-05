@@ -15,62 +15,32 @@ import {
   theme as antdTheme,
 } from "antd";
 import {
-  DashboardOutlined,
   CarOutlined,
-  TeamOutlined,
   FileTextOutlined,
-  HistoryOutlined,
-  LoginOutlined,
-  CloudOutlined,
   UserOutlined,
-  CompassOutlined,
   LogoutOutlined,
   MoonOutlined,
   SunOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  BankOutlined,
-  DollarOutlined,
-  EnvironmentOutlined,
+  CalendarOutlined,
+  RocketFilled,
+  ProfileOutlined,
+  HomeOutlined,
 } from "@ant-design/icons";
 import { useApp } from "@/lib/app-context";
 import NotificationCenter from "@/components/notification-center";
 
 const { Header, Sider, Content } = Layout;
 
-const menuItems = [
-  { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard" },
-  { key: "/tours", icon: <CarOutlined />, label: "Tours" },
-  { key: "/bookings", icon: <FileTextOutlined />, label: "Bookings" },
-  { key: "/drive", icon: <CloudOutlined />, label: "Drive" },
-  { key: "/users", icon: <TeamOutlined />, label: "Users" },
-  {
-    key: "/service",
-    icon: <DollarOutlined />,
-    label: "Service",
-    children: [
-      { key: "/service/transportation", icon: <CarOutlined />, label: "Transportation" },
-      { key: "/service/coordinate", icon: <EnvironmentOutlined />, label: "Coordinate" },
-    ],
-  },
-  { key: "/audit", icon: <HistoryOutlined />, label: "Audit" },
-  { key: "/auth-activities", icon: <LoginOutlined />, label: "Auth Activity" },
-  { key: "/profile", icon: <UserOutlined />, label: "Profile" },
-  { key: "/company-profile", icon: <BankOutlined />, label: "Company Profile" },
-];
+interface RoleShellProps {
+  children: React.ReactNode;
+  menuItems: { key: string; icon: React.ReactNode; label: string }[];
+  roleLabel: string;
+  roleColor: string;
+}
 
-const roleColors: Record<string, { tag: string; avatar: string }> = {
-  ADMIN: { tag: "gold", avatar: "#F59E0B" },
-  OFFICE: { tag: "geekblue", avatar: "#6366F1" },
-  TOUR_GUIDE: { tag: "green", avatar: "#10B981" },
-  DRIVER: { tag: "cyan", avatar: "#06B6D4" },
-  TRANSPORT_PROVIDER: { tag: "purple", avatar: "#8B5CF6" },
-  CUSTOMER: { tag: "pink", avatar: "#EC4899" },
-};
-
-const ADMIN_ONLY_KEYS = new Set(["/users", "/audit", "/auth-activities", "/company-profile"]);
-
-export default function AppShell({ children }: { children: React.ReactNode }) {
+export default function RoleShell({ children, menuItems, roleLabel, roleColor }: RoleShellProps) {
   const { user, loading, theme, toggleTheme, logout } = useApp();
   const { token } = antdTheme.useToken();
   const router = useRouter();
@@ -92,13 +62,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const selectedKey = "/" + (pathname.split("/")[1] ?? "");
-  const roleColor = roleColors[user.role] ?? { tag: "blue", avatar: "#6366F1" };
-
-  const filteredMenuItems = menuItems.filter((item) => {
-    if (user.role === "ADMIN" || user.role === "OFFICE") return true;
-    return !ADMIN_ONLY_KEYS.has(item.key);
-  });
+  const selectedKey = "/" + (pathname.split("/")[1] ?? "") + "/" + (pathname.split("/")[2] ?? "");
+  const normalizedKey = selectedKey.replace(/\/+$/, "") || "/";
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
@@ -116,17 +81,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           gap={8}
           style={{ height: 56, borderBottom: `1px solid ${token.colorSplit}` }}
         >
-          <CompassOutlined style={{ color: token.colorPrimary, fontSize: 20 }} />
+          <RocketFilled style={{ color: token.colorPrimary, fontSize: 20 }} />
           {!collapsed && (
             <Typography.Text strong style={{ fontSize: 17, color: token.colorText }}>
-              Hana Tourist
+              {roleLabel}
             </Typography.Text>
           )}
         </Flex>
         <Menu
           mode="inline"
-          selectedKeys={[selectedKey]}
-          items={filteredMenuItems}
+          selectedKeys={[normalizedKey]}
+          items={menuItems}
           onClick={({ key }) => router.push(key)}
           style={{ borderInlineEnd: "none", paddingBlock: 8 }}
         />
@@ -158,7 +123,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                       key: "profile",
                       icon: <UserOutlined />,
                       label: "Profile",
-                      onClick: () => router.push("/profile"),
+                      onClick: () => router.push(`/${roleLabel.toLowerCase().replace(/\s+/g, "-")}/profile`),
                     },
                     { type: "divider" },
                     {
@@ -185,10 +150,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     size="small"
                     src={user.avatarUrl || undefined}
                     icon={<UserOutlined />}
-                    style={{ backgroundColor: roleColor.avatar }}
+                    style={{ backgroundColor: roleColor }}
                   />
                   <Typography.Text strong>{user.name ?? user.email}</Typography.Text>
-                  <Tag color={roleColor.tag} style={{ marginInlineEnd: 0 }}>
+                  <Tag color={roleColor} style={{ marginInlineEnd: 0 }}>
                     {user.role}
                   </Tag>
                 </Flex>

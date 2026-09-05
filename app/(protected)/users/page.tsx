@@ -39,6 +39,7 @@ import {
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
+import { useFillHeight } from "@/lib/use-fill-height";
 import FilterBar from "@/components/filter-bar";
 
 interface Permission {
@@ -114,9 +115,16 @@ export default function UsersPage() {
   const [search, setSearch] = useState("");
   const [roleSearch, setRoleSearch] = useState("");
   const [userPage, setUserPage] = useState(1);
-  const [userPageSize, setUserPageSize] = useState(10);
+  const [userPageSize, setUserPageSize] = useState(20);
   const [rolePage, setRolePage] = useState(1);
-  const [rolePageSize, setRolePageSize] = useState(10);
+  const [rolePageSize, setRolePageSize] = useState(20);
+
+  const [activeTab, setActiveTab] = useState("users");
+  const tableHeight = useFillHeight({
+    rootSelector: ".users-page",
+    activeTab,
+    deps: [users.length, roles.length, mailboxes.length],
+  });
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -376,13 +384,36 @@ export default function UsersPage() {
       dataIndex: "avatarUrl",
       key: "avatar",
       width: 48,
+      filters: [
+        { text: "Has avatar", value: "yes" },
+        { text: "No avatar", value: "no" },
+      ],
+      onFilter: (v: any, r: User) => v === "yes" ? !!r.avatarUrl : !r.avatarUrl,
       render: (v: string | null) => (
         <Avatar size={32} src={v || undefined} icon={<UserOutlined />} />
       ),
     },
-    { title: "Name", dataIndex: "name", key: "name", render: (v: any) => v ?? "—" },
-    { title: "Email", dataIndex: "email", key: "email" },
-    { title: "Type", dataIndex: "userType", key: "userType", render: (v: string) => <Tag>{v}</Tag> },
+    {
+      title: "Name",
+      dataIndex: "name",
+      key: "name",
+      render: (v: any) => v ?? "—",
+      onFilter: (v: any, r: User) => (r.name ?? "").toLowerCase().includes(String(v).toLowerCase()),
+    },
+    {
+      title: "Email",
+      dataIndex: "email",
+      key: "email",
+      onFilter: (v: any, r: User) => (r.email ?? "").toLowerCase().includes(String(v).toLowerCase()),
+    },
+    {
+      title: "Type",
+      dataIndex: "userType",
+      key: "userType",
+      render: (v: string) => <Tag>{v}</Tag>,
+      filters: Array.from(new Set(users.map((u) => u.userType).filter(Boolean))).map((t) => ({ text: t!, value: t! })),
+      onFilter: (v: any, r: User) => r.userType === v,
+    },
     {
       title: "Role",
       dataIndex: "role",
@@ -391,16 +422,25 @@ export default function UsersPage() {
         const isAdmin = me?.id === r.id;
         return v ? <Tag color="blue">{v}</Tag> : <Tag color="red">None</Tag>;
       },
+      filters: Array.from(new Set(users.map((u) => u.role).filter(Boolean))).map((t) => ({ text: t!, value: t! })),
+      onFilter: (v: any, r: User) => r.role === v,
     },
     {
       title: "Status",
       dataIndex: "isActive",
       key: "isActive",
       render: (v: boolean) => (v ? <Tag color="green">Active</Tag> : <Tag color="red">Disabled</Tag>),
+      filters: [{ text: "Active", value: true }, { text: "Disabled", value: false }],
+      onFilter: (v: any, r: User) => r.isActive === v,
     },
     {
       title: "Storage",
       key: "storage",
+      filters: [
+        { text: "Unlimited", value: "unlimited" },
+        { text: "Normal", value: "normal" },
+      ],
+      onFilter: (v: any, r: User) => v === "unlimited" ? r.role === "ADMIN" : r.role !== "ADMIN",
       render: (_: any, r: User) => {
         if (r.role === "ADMIN") return <Tag color="gold">Unlimited</Tag>;
         const quotaMb = r.storageQuotaMb ?? 3072;
@@ -466,6 +506,7 @@ export default function UsersPage() {
   ]);
 
   const mailboxColumns = centerColumns([
+    indexColumn(1, 999),
     {
       title: "Mailbox",
       dataIndex: "email",
@@ -476,10 +517,14 @@ export default function UsersPage() {
           <Typography.Text strong>{v}</Typography.Text>
         </Space>
       ),
+      filters: Array.from(new Set(mailboxes.map((m: any) => m.email).filter(Boolean))).sort().map((e: any) => ({ text: e, value: e })),
+      onFilter: (v: any, r: any) => (r.email ?? "").toLowerCase().includes(String(v).toLowerCase()),
     },
     {
       title: "Watch status",
       key: "watch",
+      filters: [{ text: "Active", value: true }, { text: "Expired", value: false }],
+      onFilter: (v: any, r: any) => r.isWatchActive === v,
       render: (_: any, r: any) =>
         r.isWatchActive ? (
           <Tag color="green">Active · {r.expiresInDays}d left</Tag>
@@ -491,6 +536,8 @@ export default function UsersPage() {
       title: "Last history ID",
       dataIndex: "lastHistoryId",
       key: "lastHistoryId",
+      filters: Array.from(new Set(mailboxes.map((m: any) => m.lastHistoryId).filter(Boolean))).sort().map((h: any) => ({ text: h, value: h })),
+      onFilter: (v: any, r: any) => (r.lastHistoryId ?? "").toLowerCase().includes(String(v).toLowerCase()),
       render: (v: any) => (v ? <Typography.Text code>{v}</Typography.Text> : "—"),
     },
     {
@@ -503,18 +550,24 @@ export default function UsersPage() {
       title: "Refresh token",
       dataIndex: "refreshTokenMasked",
       key: "refreshTokenMasked",
+      filters: Array.from(new Set(mailboxes.map((m: any) => m.refreshTokenMasked).filter(Boolean))).sort().map((t: any) => ({ text: t, value: t })),
+      onFilter: (v: any, r: any) => (r.refreshTokenMasked ?? "").toLowerCase().includes(String(v).toLowerCase()),
       render: (v: any) => (v ? <Typography.Text code>{v}</Typography.Text> : "—"),
     },
     {
       title: "Connected",
       dataIndex: "createdAt",
       key: "createdAt",
+      filters: Array.from(new Set(mailboxes.map((m: any) => m.createdAt ? new Date(m.createdAt).toLocaleDateString() : null).filter(Boolean))).sort().map((d: any) => ({ text: d, value: d })),
+      onFilter: (v: any, r: any) => r.createdAt ? new Date(r.createdAt).toLocaleDateString().includes(String(v)) : false,
       render: (v: any) => (v ? new Date(v).toLocaleString() : "—"),
     },
     {
       title: "Updated",
       dataIndex: "updatedAt",
       key: "updatedAt",
+      filters: Array.from(new Set(mailboxes.map((m: any) => m.updatedAt ? new Date(m.updatedAt).toLocaleDateString() : null).filter(Boolean))).sort().map((d: any) => ({ text: d, value: d })),
+      onFilter: (v: any, r: any) => r.updatedAt ? new Date(r.updatedAt).toLocaleDateString().includes(String(v)) : false,
       render: (v: any) => (v ? new Date(v).toLocaleString() : "—"),
     },
     ...(canManageMailbox
@@ -560,14 +613,21 @@ export default function UsersPage() {
       : []),
   ]);
 
-  const roleColumns = [
+  const roleColumns = centerColumns([
     indexColumn<Role>(rolePage, rolePageSize),
-    { title: "Name", dataIndex: "name", key: "name" },
+    {
+      title: "Name",
+      dataIndex: "name",
+      key: "name",
+      onFilter: (v: any, r: Role) => (r.name ?? "").toLowerCase().includes(String(v).toLowerCase()),
+    },
     {
       title: "System",
       dataIndex: "isSystem",
       key: "isSystem",
       render: (v: boolean) => (v ? <Tag color="gold">System</Tag> : <Tag>Custom</Tag>),
+      filters: [{ text: "System", value: true }, { text: "Custom", value: false }],
+      onFilter: (v: any, r: Role) => r.isSystem === v,
     },    {
       title: "Permissions",
       key: "perms",
@@ -598,15 +658,17 @@ export default function UsersPage() {
         );
       },
     },
-  ];
+  ]);
 
   return (
-    <div>
+    <div className="users-page">
       {!canManageUsers && !canManageRoles && !canManageMailbox && (
         <Typography.Text type="secondary">You have no access to user management.</Typography.Text>
       )}
       {(canManageUsers || canManageRoles || canManageMailbox) && (
       <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
         items={[
           ...(canManageMailbox
             ? [
@@ -638,10 +700,11 @@ export default function UsersPage() {
                     >
                       <Table
                         rowKey="id"
+                        size="small"
                         columns={mailboxColumns}
                         dataSource={mailboxes}
                         loading={mailboxesLoading}
-                        scroll={{ x: 1100 }}
+                        scroll={{ x: 1100, y: tableHeight }}
                         pagination={{
                           pageSize: 10,
                           showSizeChanger: true,
@@ -715,8 +778,10 @@ export default function UsersPage() {
               >
                 <Table
                   rowKey="id"
+                  size="small"
                   columns={userColumns}
                   dataSource={users}
+                  scroll={{ x: 1000, y: tableHeight }}
                   pagination={{
                     current: userPage,
                     pageSize: userPageSize,
@@ -755,8 +820,10 @@ export default function UsersPage() {
               >
                 <Table
                   rowKey="id"
+                  size="small"
                   columns={roleColumns}
                   dataSource={roles}
+                  scroll={{ x: "max-content", y: tableHeight }}
                   pagination={{
                     current: rolePage,
                     pageSize: rolePageSize,

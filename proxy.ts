@@ -11,6 +11,8 @@ const PROTECTED_PREFIXES = [
   "/audit",
   "/profile",
   "/settlements",
+  "/driver",
+  "/tour-guide",
 ];
 
 const AUTH_PATHS = ["/login", "/register"];

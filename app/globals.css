@@ -76,6 +76,11 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   padding: var(--ant-padding-lg, 24px);
 }
 
+/* Keep table header titles on one line (no ugly multi-line wrapping) */
+.ant-table-thead > tr > th {
+  white-space: nowrap;
+}
+
 /* ===== Auth pages ===== */
 
 .auth-bg {
@@ -332,6 +337,26 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 
 .resize-cursor {
   cursor: col-resize;
+}
+
+/* Grouped route-price table: alternating light rows per provider */
+.tour-price-first > td,
+.tour-price-row > td {
+  background: transparent;
+}
+.tour-price-first > td a,
+.tour-price-row > td a {
+  color: var(--ant-color-link, #1677ff);
+}
+.tour-price-first > td {
+  border-top: 2px solid rgba(0, 0, 0, 0.12);
+}
+html.dark .tour-price-first > td {
+  border-top: 2px solid rgba(255, 255, 255, 0.18);
+}
+
+.provider-row-clickable > td {
+  cursor: pointer;
 }
 
 /* ===== Print ===== */

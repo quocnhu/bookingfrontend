@@ -17,6 +17,19 @@ export interface SessionUser {
   roles?: any[];
 }
 
+const ROLE_DEFAULT_ROUTES: Record<string, string> = {
+  DRIVER: "/driver/my-trips",
+  TOUR_GUIDE: "/tour-guide/my-trips",
+  ADMIN: "/dashboard",
+  OFFICE: "/dashboard",
+  TRANSPORT_PROVIDER: "/dashboard",
+  CUSTOMER: "/",
+};
+
+export function getDefaultRoute(role: string): string {
+  return ROLE_DEFAULT_ROUTES[role] ?? "/dashboard";
+}
+
 export type ThemeMode = 'light' | 'dark';
 
 interface AppContextValue {

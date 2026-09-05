@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, Flex, Select, Table, Tag, Typography, message } from "antd";
+import { Card, Flex, Table, Tag, Typography, message } from "antd";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
+import { useFillHeight } from "@/lib/use-fill-height";
 import FilterBar from "@/components/filter-bar";
 
 interface AuditLog {
@@ -29,8 +30,12 @@ export default function AuditPage() {
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [entityType, setEntityType] = useState<string | undefined>();
-  const [action, setAction] = useState<string | undefined>();
+
+  const tableHeight = useFillHeight({
+    rootSelector: ".audit-page",
+    activeTab: "",
+    deps: [data.length],
+  });
 
   useEffect(() => {
     if (!hasPermission("audit.read")) return;
@@ -41,8 +46,6 @@ export default function AuditPage() {
           page,
           limit: pageSize,
           q: search || undefined,
-          entityType,
-          action,
         },
       })
       .then((r) => {
@@ -51,14 +54,12 @@ export default function AuditPage() {
       })
       .catch((e) => message.error(getErrorMessage(e)))
       .finally(() => setLoading(false));
-  }, [page, pageSize, search, entityType, action]);
+  }, [page, pageSize, search]);
 
   const canRead = hasPermission("audit.read");
 
   const resetFilters = () => {
     setSearch("");
-    setEntityType(undefined);
-    setAction(undefined);
     setPage(1);
   };
 
@@ -69,29 +70,49 @@ export default function AuditPage() {
       dataIndex: "createdAt",
       key: "createdAt",
       render: (v: string) => new Date(v).toLocaleString(),
+      filters: Array.from(new Set(data.map((r) => r.createdAt ? new Date(r.createdAt).toLocaleDateString() : null).filter(Boolean))).map((d) => ({ text: d as string, value: d as string })),
+      onFilter: (v: any, r: AuditLog) => r.createdAt ? new Date(r.createdAt).toLocaleDateString() === v : false,
     },
     {
       title: "Entity",
       dataIndex: "entityType",
       key: "entityType",
+      filters: ENTITY_TYPES.map((t) => ({ text: t, value: t })),
+      onFilter: (v: any, r: AuditLog) => r.entityType === v,
       render: (v: string) => <Tag color="geekblue">{v}</Tag>,
     },
-    { title: "Entity ID", dataIndex: "entityId", key: "entityId", render: (v: any) => v ?? "—" },
+    {
+      title: "Entity ID",
+      dataIndex: "entityId",
+      key: "entityId",
+      onFilter: (v: any, r: AuditLog) => (r.entityId ?? "").toLowerCase().includes(String(v).toLowerCase()),
+      render: (v: any) => v ?? "—",
+    },
     {
       title: "Action",
       dataIndex: "action",
       key: "action",
+      filters: ["CREATE", "UPDATE", "DELETE"].map((a) => ({ text: a, value: a })),
+      onFilter: (v: any, r: AuditLog) => r.action === v,
       render: (v: string) => <Tag color="cyan">{v}</Tag>,
     },
     {
       title: "Changed by",
       dataIndex: "changedBy",
       key: "changedBy",
+      onFilter: (v: any, r: AuditLog) => {
+        const email = r.changedBy?.email ?? "";
+        return email.toLowerCase().includes(String(v).toLowerCase());
+      },
       render: (v: any) => v?.email ?? v ?? "—",
     },
     {
       title: "Details",
       key: "details",
+      onFilter: (v: any, r: AuditLog) => {
+        const s = JSON.stringify(r.after ?? r.before ?? "").toLowerCase();
+        return s.includes(String(v).toLowerCase());
+      },
       render: (_: any, r: AuditLog) => {
         const parts = [
           r.after ? { label: "after", value: r.after } : null,
@@ -117,7 +138,7 @@ export default function AuditPage() {
   ]);
 
   return (
-    <div>
+    <div className="audit-page">
       {!canRead && (
         <Typography.Text type="secondary">You have no access to audit logs.</Typography.Text>
       )}
@@ -133,35 +154,12 @@ export default function AuditPage() {
             }}
             onReset={resetFilters}
             searchPlaceholder="Search entity, id, action..."
-          >
-            <Select
-              allowClear
-              size="small"
-              placeholder="Entity type"
-              style={{ width: 140 }}
-              value={entityType}
-              onChange={(v) => {
-                setEntityType(v);
-                setPage(1);
-              }}
-              options={ENTITY_TYPES.map((t) => ({ value: t, label: t }))}
-            />
-            <Select
-              allowClear
-              size="small"
-              placeholder="Action"
-              style={{ width: 120 }}
-              value={action}
-              onChange={(v) => {
-                setAction(v);
-                setPage(1);
-              }}
-              options={["CREATE", "UPDATE", "DELETE"].map((a) => ({ value: a, label: a }))}
-            />
-          </FilterBar>
+          />
         }
       >
         <Table
+          size="small"
+          scroll={{ x: 900, y: tableHeight }}
           rowKey="id"
           columns={columns}
           dataSource={data}

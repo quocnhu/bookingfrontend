@@ -41,7 +41,7 @@ export default function PublicHeader() {
             color: "transparent",
           }}
         >
-          Vietnam Tours
+          Hana Tourist
         </Typography.Title>
       </Flex>
       <Flex gap={8}>

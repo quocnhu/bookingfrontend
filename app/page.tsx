@@ -8,11 +8,10 @@ import {
   LoginOutlined,
   DashboardOutlined,
   ClockCircleOutlined,
-  TeamOutlined,
   CalendarOutlined,
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
-import { useApp } from "@/lib/app-context";
+import { useApp, getDefaultRoute } from "@/lib/app-context";
 import PromoCountdown from "@/components/promo-countdown";
 import { discountedPrice, isPromoActive } from "@/lib/promo";
 
@@ -29,7 +28,6 @@ interface HomepageTour {
   discountPercent?: number | null;
   promotionStartsAt?: string | null;
   promotionEndsAt?: string | null;
-  _count?: { bookings: number };
 }
 
 const TYPE_COLOR: Record<string, string> = {
@@ -78,12 +76,12 @@ export default function HomePage() {
             <CompassOutlined />
           </span>
           <Typography.Title level={4} style={{ margin: 0, background: "linear-gradient(90deg, #22D3EE, #3B82F6)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>
-            Vietnam Tours
+            Hana Tourist
           </Typography.Title>
         </Flex>
         <Flex gap={8}>
           {authLoading ? null : user ? (
-            <Button type="primary" icon={<DashboardOutlined />} onClick={() => router.push("/dashboard")}>
+            <Button type="primary" icon={<DashboardOutlined />} onClick={() => router.push(getDefaultRoute(user.role))}>
               Dashboard
             </Button>
           ) : (
@@ -240,50 +238,70 @@ export default function HomePage() {
                         {tour.code}
                       </Typography.Text>
                     </Flex>
-                    <Typography.Title level={5} style={{ margin: 0, lineHeight: 1.35 }}>
+                    <Typography.Title
+                      level={5}
+                      style={{
+                        margin: 0,
+                        lineHeight: 1.35,
+                        minHeight: 44,
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
+                    >
                       {tour.name}
                     </Typography.Title>
 
-                    {promo ? (
-                      <Flex align="baseline" wrap gap={6} style={{ marginTop: 2 }}>
+                    <div style={{ minHeight: 34, display: "flex", alignItems: "center" }}>
+                      {promo ? (
+                        <Flex align="baseline" wrap gap={6} style={{ marginTop: 2 }}>
+                          <Typography.Title
+                            level={4}
+                            style={{ margin: 0, color: "#dc2626", fontWeight: 800 }}
+                          >
+                            {discounted}
+                          </Typography.Title>
+                          <Typography.Text
+                            type="secondary"
+                            delete
+                            style={{ fontSize: 13, fontWeight: 500 }}
+                          >
+                            {price}
+                          </Typography.Text>
+                          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                            / person
+                          </Typography.Text>
+                        </Flex>
+                      ) : (
                         <Typography.Title
                           level={4}
-                          style={{ margin: 0, color: "#dc2626", fontWeight: 800 }}
+                          style={{ margin: "4px 0 0", color: "var(--ant-color-primary)" }}
                         >
-                          {discounted}
+                          From {price}
+                          <Typography.Text type="secondary" style={{ fontSize: 13, fontWeight: 400 }}>
+                            {" "}
+                            / person
+                          </Typography.Text>
                         </Typography.Title>
-                        <Typography.Text
-                          type="secondary"
-                          delete
-                          style={{ fontSize: 13, fontWeight: 500 }}
-                        >
-                          {price}
-                        </Typography.Text>
-                        <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-                          / person
-                        </Typography.Text>
-                      </Flex>
-                    ) : (
-                      <Typography.Title
-                        level={4}
-                        style={{ margin: "4px 0 0", color: "var(--ant-color-primary)" }}
-                      >
-                        From {price}
-                        <Typography.Text type="secondary" style={{ fontSize: 13, fontWeight: 400 }}>
-                          {" "}
-                          / person
-                        </Typography.Text>
-                      </Typography.Title>
-                    )}
+                      )}
+                    </div>
 
-                    <PromoCountdown tour={tour} />
+                    <div
+                      style={{
+                        minHeight: promo ? 108 : 0,
+                        display: "flex",
+                        alignItems: "center",
+                      }}
+                    >
+                      <div style={{ width: "100%" }}>
+                        <PromoCountdown tour={tour} />
+                      </div>
+                    </div>
 
                     <Flex gap={12} align="center" style={{ marginTop: "auto", paddingTop: 8 }}>
                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        <ClockCircleOutlined /> Half / Full day
-                      </Typography.Text>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        <TeamOutlined /> {tour._count?.bookings ?? 0} bookings
+                        <ClockCircleOutlined /> {(tour as any).durationDays ?? 1} {(tour as any).durationDays === 1 ? "Day" : "Days"}
                       </Typography.Text>
                     </Flex>
                     <Button
@@ -319,7 +337,7 @@ export default function HomePage() {
         style={{ padding: 24, borderTop: "1px solid var(--ant-color-border-secondary)" }}
       >
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          © {new Date().getFullYear()} Vietnam Tours
+          © {new Date().getFullYear()} Hana Tourist
         </Typography.Text>
       </Flex>
     </div>

@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Button,
   Card,
   DatePicker,
   Descriptions,
-  Divider,
   Drawer,
-  Empty,
   Flex,
   Form,
   Input,
@@ -22,24 +20,24 @@ import {
   message,
 } from "antd";
 import {
+  CarOutlined,
   MailOutlined,
   PlusOutlined,
   ReloadOutlined,
-  CarOutlined,
-  FieldTimeOutlined,
-  CheckOutlined,
   ScheduleOutlined,
 } from "@ant-design/icons";
-import dayjs from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
-import { centerColumns, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
+import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
+import { useFillHeight } from "@/lib/use-fill-height";
 import FilterBar from "@/components/filter-bar";
+import DispatchBoard from "@/components/dispatch-board";
 
 const BOOKING_STATUS = ["PENDING", "ASSIGNED", "CANCELED"];
 const ASSIGNMENT_STATUS = ["PENDING", "DISPATCHED", "COMPLETED", "CANCELED"];
 const BOOKING_CHANNELS = ["TRIPADVISOR", "WEBSITE", "MANUAL", "AIRBNB", "BOOKING_COM"];
 const PAYMENT_STATUS = ["PENDING", "PAID", "REFUNDED"];
+const TOUR_TYPES = ["PRIVATE_TOUR", "GROUP_TOUR"];
 
 const endDate = (start: any, days?: number | null): Date | null => {
   if (!start) return null;
@@ -55,14 +53,13 @@ export default function BookingsPage() {
   const { hasPermission } = useApp();
   const canCreateBooking = hasPermission("booking.create");
   const canUpdateBooking = hasPermission("booking.update");
-  const canCreateAssignment = hasPermission("assignment.create");
   const canUpdateAssignment = hasPermission("assignment.update");
   const canManageMailbox = hasPermission("gmail.manage");
 
   const [bookings, setBookings] = useState<any[]>([]);
   const [bookingsTotal, setBookingsTotal] = useState(0);
   const [bookingsPage, setBookingsPage] = useState(1);
-  const [bookingsPageSize, setBookingsPageSize] = useState(10);
+  const [bookingsPageSize, setBookingsPageSize] = useState(20);
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [filters, setFilters] = useState<{
     q?: string;
@@ -72,17 +69,12 @@ export default function BookingsPage() {
   }>({});
 
   const [assignments, setAssignments] = useState<any[]>([]);
-  const [assignmentsTotal, setAssignmentsTotal] = useState(0);
   const [assignmentsPage, setAssignmentsPage] = useState(1);
-  const [assignmentsPageSize, setAssignmentsPageSize] = useState(10);
+  const [assignmentsPageSize, setAssignmentsPageSize] = useState(20);
   const [assignmentsLoading, setAssignmentsLoading] = useState(false);
   const [assignSearch, setAssignSearch] = useState("");
-  const [assignStatus, setAssignStatus] = useState<string | undefined>();
 
   const [boardOpen, setBoardOpen] = useState(false);
-  const [boardData, setBoardData] = useState<any[]>([]);
-  const [boardLoading, setBoardLoading] = useState(false);
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   const [tours, setTours] = useState<any[]>([]);
   const [unassignedBookings, setUnassignedBookings] = useState<any[]>([]);
@@ -91,25 +83,28 @@ export default function BookingsPage() {
   const [bookingForm] = Form.useForm();
   const [savingBooking, setSavingBooking] = useState(false);
 
-  const [assignOpen, setAssignOpen] = useState(false);
-  const [assignForm] = Form.useForm();
-  const [savingAssign, setSavingAssign] = useState(false);
-
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkAssignment, setLinkAssignment] = useState<any>(null);
   const [linkSelected, setLinkSelected] = useState<string[]>([]);
   const [savingLink, setSavingLink] = useState(false);
 
+  const [bookingDetail, setBookingDetail] = useState<any>(null);
+
   const [rawData, setRawData] = useState<any[]>([]);
   const [rawDataTotal, setRawDataTotal] = useState(0);
   const [rawDataPage, setRawDataPage] = useState(1);
-  const [rawDataPageSize, setRawDataPageSize] = useState(10);
+  const [rawDataPageSize, setRawDataPageSize] = useState(20);
   const [rawDataLoading, setRawDataLoading] = useState(false);
   const [rawStatus, setRawStatus] = useState<string | undefined>();
   const [rawSearch, setRawSearch] = useState("");
   const [rawDetail, setRawDetail] = useState<any>(null);
 
-  const [bookingDetail, setBookingDetail] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState("bookings");
+  const tableHeight = useFillHeight({
+    rootSelector: ".bookings-page",
+    activeTab,
+    deps: [bookings.length, assignments.length, rawData.length],
+  });
 
   const loadRawData = () => {
     setRawDataLoading(true);
@@ -141,6 +136,7 @@ export default function BookingsPage() {
   };
 
   const rawDataColumns = centerColumns([
+    indexColumn(rawDataPage, rawDataPageSize),
     {
       title: "Status",
       dataIndex: "status",
@@ -148,18 +144,23 @@ export default function BookingsPage() {
       render: (v: string) => (
         <Tag color={RAW_DATA_STATUS_COLORS[v] ?? "default"}>{v}</Tag>
       ),
+      filters: ["pending", "parsed", "unparsed", "parse_failed"].map((s) => ({ text: s, value: s })),
+      onFilter: (v: any, r: any) => r.status === v,
     },
     {
       title: "Email",
       dataIndex: "email",
       key: "email",
       render: (v: any) => (v ? <Typography.Text>{v}</Typography.Text> : "—"),
+      onFilter: (v: any, r: any) => (r.email ?? "").toLowerCase().includes(v.toLowerCase()),
     },
     {
       title: "Received",
       dataIndex: "createdAt",
       key: "createdAt",
       render: (v: any) => (v ? new Date(v).toLocaleString() : "—"),
+      filters: Array.from(new Set(rawData.map((r: any) => r.createdAt ? new Date(r.createdAt).toLocaleDateString() : null).filter(Boolean))).map((d: any) => ({ text: d, value: d })),
+      onFilter: (v: any, r: any) => r.createdAt ? new Date(r.createdAt).toLocaleDateString() === v : false,
     },
     {
       title: "Actions",
@@ -196,46 +197,17 @@ export default function BookingsPage() {
     api
       .get("/assignments", {
         params: {
-          page: assignmentsPage,
-          limit: assignmentsPageSize,
+          page: 1,
+          limit: 1000,
           q: assignSearch,
-          status: assignStatus,
+          sortOrder: "asc",
         },
       })
       .then((r) => {
         setAssignments(r.data.items ?? []);
-        setAssignmentsTotal(r.data.total ?? 0);
       })
       .catch((e) => message.error(getErrorMessage(e)))
       .finally(() => setAssignmentsLoading(false));
-  };
-
-  const loadBoard = () => {
-    setBoardLoading(true);
-    api
-      .get("/assignments/board")
-      .then((r) => setBoardData(r.data ?? []))
-      .catch((e) => message.error(getErrorMessage(e, "Failed to load board")))
-      .finally(() => setBoardLoading(false));
-  };
-
-  const openBoard = () => {
-    setBoardOpen(true);
-    loadBoard();
-  };
-
-  const confirmTour = async (assignment: any) => {
-    setConfirmingId(assignment.id);
-    try {
-      await api.put(`/assignments/${assignment.id}/status`, { status: "COMPLETED" });
-      message.success(`Tour "${assignment.tourName ?? assignment.code}" marked complete`);
-      loadBoard();
-      loadAssignments();
-    } catch (e) {
-      message.error(getErrorMessage(e, "Failed to complete tour"));
-    } finally {
-      setConfirmingId(null);
-    }
   };
 
   useEffect(() => {
@@ -244,7 +216,7 @@ export default function BookingsPage() {
 
   useEffect(() => {
     if (hasPermission("assignment.read")) loadAssignments();
-  }, [assignmentsPage, assignmentsPageSize, assignSearch, assignStatus]);
+  }, [assignmentsPage, assignmentsPageSize, assignSearch]);
 
   useEffect(() => {
     api.get("/tours", { params: { limit: 100 } }).then((r) => setTours(r.data.items ?? []));
@@ -272,31 +244,6 @@ export default function BookingsPage() {
       message.error(getErrorMessage(e, "Failed to create booking"));
     } finally {
       setSavingBooking(false);
-    }
-  };
-
-  const openAssignment = () => {
-    assignForm.resetFields();
-    setAssignOpen(true);
-  };
-
-  const saveAssignment = async () => {
-    const values = await assignForm.validateFields();
-    setSavingAssign(true);
-    try {
-      await api.post("/assignments", {
-        ...values,
-        startDate: values.startDate?.toISOString(),
-        endDate: values.endDate?.toISOString(),
-        priceOverride: values.priceOverride ?? undefined,
-      });
-      message.success("Assignment created");
-      setAssignOpen(false);
-      loadAssignments();
-    } catch (e) {
-      message.error(getErrorMessage(e, "Failed to create assignment"));
-    } finally {
-      setSavingAssign(false);
     }
   };
 
@@ -330,117 +277,420 @@ export default function BookingsPage() {
   };
 
   const bookingColumns = centerColumns([
-    { title: "Ref", dataIndex: "bookingRef", key: "bookingRef" },
+    indexColumn(bookingsPage, bookingsPageSize),
+    {
+      title: "Ref", dataIndex: "bookingRef", key: "bookingRef", width: 100, ellipsis: true,
+      onFilter: (v: any, r: any) => (r.bookingRef ?? "").toLowerCase().includes(v.toLowerCase()),
+    },
     {
       title: "Customer",
       dataIndex: "customerName",
       key: "customerName",
+      width: 140,
+      ellipsis: true,
       render: (v: any) => v ?? "—",
+      onFilter: (v: any, r: any) => (r.customerName ?? "").toLowerCase().includes(v.toLowerCase()),
     },
-    { title: "Date", dataIndex: "startingDate", key: "startingDate", render: (v: any) => (v ? new Date(v).toLocaleDateString() : "—") },
     {
-      title: "End date",
-      key: "endDate",
-      render: (_: any, r: any) => fmtDate(endDate(r.startingDate, r.tour?.durationDays)),
+      title: "Tour",
+      key: "tourName",
+      width: 160,
+      ellipsis: true,
+      render: (_: any, r: any) => {
+        const name = r.tourName ?? r.tour?.name;
+        if (!name) return "—";
+        return <Typography.Text style={{ fontSize: 12 }}>{name}</Typography.Text>;
+      },
+      onFilter: (v: any, r: any) => ((r.tourName ?? r.tour?.name) ?? "").toLowerCase().includes(v.toLowerCase()),
+    },
+    {
+      title: "Date", dataIndex: "startingDate", key: "startingDate", width: 95,
+      render: (v: any) => (v ? new Date(v).toLocaleDateString() : "—"),
+      filters: bookings.map((b: any) => b.startingDate ? { text: new Date(b.startingDate).toLocaleDateString(), value: b.startingDate } : undefined).filter((v: any): v is { text: string; value: any } => !!v).filter((v, i, a) => a.findIndex((x) => x.value === v.value) === i),
+      onFilter: (v: any, r: any) => r.startingDate === v,
     },
     {
       title: "Tour type",
       key: "tourType",
+      width: 120,
       render: (_: any, r: any) => {
         const t = r.tour?.type ?? r.tourType;
-        return t ? <Tag color={t === "PRIVATE_TOUR" ? "purple" : "cyan"}>{t.replace("_", " ")}</Tag> : "—";
+        return t ? <Tag color={t === "PRIVATE_TOUR" ? "purple" : "cyan"} style={{ margin: 0, fontSize: 10 }}>{t.replace("_", " ")}</Tag> : "—";
       },
+      filters: TOUR_TYPES.map((t) => ({ text: t.replace("_", " "), value: t })),
+      onFilter: (v: any, r: any) => (r.tour?.type ?? r.tourType) === v,
     },
-    { title: "Pax", dataIndex: "totalPax", key: "totalPax" },
+    {
+      title: "Days",
+      key: "durationDays",
+      width: 72,
+      render: (_: any, r: any) => {
+        const d = r.tour?.durationDays ?? r.durationDays;
+        return d ? <Tag style={{ margin: 0, fontSize: 10 }}>{d === 1 ? "1 Day" : `${d} Days`}</Tag> : "—";
+      },
+      filters: Array.from(new Set(bookings.map((b: any) => b.tour?.durationDays ?? b.durationDays).filter(Boolean))).sort((a: number, b: number) => a - b).map((d: any) => ({ text: d === 1 ? "1 Day" : `${d} Days`, value: d })),
+      onFilter: (v: any, r: any) => (r.tour?.durationDays ?? r.durationDays) === v,
+    },
+    {
+      title: "Pax", dataIndex: "totalPax", key: "totalPax", width: 72,
+      filters: Array.from(new Set(bookings.map((b: any) => b.totalPax).filter(Boolean))).sort((a: number, b: number) => a - b).map((d: any) => ({ text: d, value: d })),
+      onFilter: (v: any, r: any) => r.totalPax === v,
+    },
     {
       title: "Channel",
       dataIndex: "channel",
       key: "channel",
-      render: (v: string) => <Tag>{v ?? "—"}</Tag>,
+      width: 90,
+      render: (v: string) => <Tag style={{ margin: 0, fontSize: 10 }}>{v ?? "—"}</Tag>,
+      filters: BOOKING_CHANNELS.map((c) => ({ text: c, value: c })),
+      onFilter: (v: any, r: any) => r.channel === v,
     },
     {
       title: "Status",
       dataIndex: "status",
       key: "status",
-      render: (v: string) => <Tag color="blue">{v}</Tag>,
+      width: 90,
+      render: (v: string) => <Tag color="blue" style={{ margin: 0, fontSize: 10 }}>{v}</Tag>,
+      filters: BOOKING_STATUS.map((s) => ({ text: s, value: s })),
+      onFilter: (v: any, r: any) => r.status === v,
     },
     {
       title: "Payment",
       dataIndex: "payment",
       key: "payment",
-      render: (v: string | null) => (v ? <Tag color="green">{v}</Tag> : "—"),
+      width: 100,
+      render: (v: string | null) => (v ? <Tag color="green" style={{ margin: 0, fontSize: 10 }}>{v}</Tag> : "—"),
+      filters: PAYMENT_STATUS.map((s) => ({ text: s, value: s })),
+      onFilter: (v: any, r: any) => r.payment === v,
     },
     ...(canUpdateBooking
       ? [
           {
             title: "Actions",
             key: "actions",
+            width: 140,
+            fixed: "right" as const,
             render: (_: any, r: any) => (
-              <Select
-                size="small"
-                value={r.status}
-                style={{ width: 140 }}
-                options={BOOKING_STATUS.map((s) => ({ value: s, label: s }))}
-                onClick={(e) => e.stopPropagation()}
-                onChange={async (status) => {
-                  try {
-                    await api.put(`/bookings/${r.id}`, { status });
-                    message.success("Status updated");
-                    loadBookings();
-                  } catch (e) {
-                    message.error(getErrorMessage(e));
-                  }
-                }}
-              />
+              <div style={{ whiteSpace: "nowrap" }}>
+                <Select
+                  size="small"
+                  value={r.status}
+                  style={{ width: 130 }}
+                  options={BOOKING_STATUS.map((s) => ({ value: s, label: s }))}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={async (status) => {
+                    try {
+                      await api.put(`/bookings/${r.id}`, { status });
+                      message.success("Status updated");
+                      loadBookings();
+                    } catch (e) {
+                      message.error(getErrorMessage(e));
+                    }
+                  }}
+                />
+              </div>
             ),
           },
         ]
       : []),
   ]);
 
-  const assignmentColumns = [
-    { title: "Code", dataIndex: "code", key: "code" },
+  const ASSIGNMENT_STATUS_COLORS: Record<string, string> = {
+    DRAFT_ASSIGNED: "gold",
+    PENDING: "orange",
+    TRANSFERRED: "volcano",
+    DISPATCHED: "blue",
+    COMPLETED: "green",
+    CANCELED: "red",
+  };
+
+  const BOOKING_STATUS_COLORS: Record<string, string> = {
+    PENDING: "gold",
+    ASSIGNED: "green",
+    CANCELED: "red",
+  };
+
+  // Flatten assignments → per-booking rows for the manifest table
+  const assignmentRows = useMemo(() => {
+    const rows: any[] = [];
+    for (const a of assignments) {
+      if (!a.bookings || a.bookings.length === 0) {
+        rows.push({
+          key: `${a.id}-empty`,
+          assignmentId: a.id,
+          assignmentCode: a.code,
+          assignmentStatus: a.status,
+          startDate: a.startDate,
+          endDate: a.endDate,
+          vehiclePlate: a.vehicle?.plateNumber ?? "—",
+          guideName: a.guide?.name ?? "—",
+          driverName: a.driver?.name ?? "—",
+          tourName: a.tourName ?? "—",
+          tourType: a.tourType,
+          latitude: a.latitude,
+          longitude: a.longitude,
+          bookingRef: "—",
+          customerName: "—",
+          hotelName: "—",
+          totalPax: 0,
+          paxSequence: 0,
+          bookingStatus: "—",
+          payment: "—",
+          isEmpty: true,
+        });
+      } else {
+        for (const b of a.bookings) {
+          rows.push({
+            key: b.id,
+            assignmentId: a.id,
+            assignmentCode: a.code,
+            assignmentStatus: a.status,
+            startDate: a.startDate,
+            endDate: a.endDate,
+            vehiclePlate: a.vehicle?.plateNumber ?? "—",
+            guideName: a.guide?.name ?? "—",
+            driverName: a.driver?.name ?? "—",
+            tourName: a.tourName ?? b.tourName ?? "—",
+            tourType: a.tourType ?? b.tourType,
+            latitude: a.latitude ?? b.latitude,
+            longitude: a.longitude ?? b.longitude,
+            bookingRef: b.bookingRef ?? "—",
+            customerName: b.customerName ?? "—",
+            hotelName: b.hotelName ?? "—",
+            totalPax: b.totalPax ?? 0,
+            paxSequence: b.paxSequence ?? 0,
+          bookingStatus: b.status ?? "—",
+          payment: b.payment ?? "—",
+          isEmpty: false,
+          });
+        }
+      }
+    }
+    return rows;
+  }, [assignments]);
+
+  const assignmentColumns = centerColumns([
+    indexColumn(assignmentsPage, assignmentsPageSize),
     {
-      title: "Start",
-      dataIndex: "startDate",
-      key: "startDate",
-      render: (v: any) => new Date(v).toLocaleDateString(),
+      title: "Vehicle",
+      key: "vehicle",
+      width: 130,
+      render: (_: any, r: any) => (
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <Typography.Text strong style={{ fontSize: 12 }}>
+            {r.assignmentCode}
+          </Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            <CarOutlined /> {r.vehiclePlate}
+          </Typography.Text>
+        </div>
+      ),
+      onFilter: (v: any, r: any) => (r.assignmentCode ?? "").toLowerCase().includes(v.toLowerCase()),
     },
     {
-      title: "End",
-      dataIndex: "endDate",
-      key: "endDate",
-      render: (v: any) => new Date(v).toLocaleDateString(),
+      title: "Date",
+      key: "date",
+      width: 95,
+      render: (_: any, r: any) => (
+        <Typography.Text style={{ fontSize: 12 }}>
+          {new Date(r.startDate).toLocaleDateString()}
+        </Typography.Text>
+      ),
+      filters: Array.from(new Set(assignmentRows.map((r: any) => r.startDate).filter(Boolean))).sort().map((d: any) => ({ text: new Date(d).toLocaleDateString(), value: d })),
+      onFilter: (v: any, r: any) => r.startDate === v,
     },
     {
-      title: "Status",
-      dataIndex: "status",
-      key: "status",
-      render: (v: string) => <Tag color="purple">{v}</Tag>,
+      title: "Tour",
+      dataIndex: "tourName",
+      key: "tourName",
+      width: 220,
+      render: (v: string, r: any) => (
+        <Typography.Text style={{ fontSize: 12 }}>
+          {v}
+          {r.tourType ? (
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              {` · ${r.tourType === "GROUP_TOUR" ? "Group" : r.tourType === "PRIVATE_TOUR" ? "Private" : r.tourType}`}
+            </Typography.Text>
+          ) : null}
+        </Typography.Text>
+      ),
+      filters: Array.from(new Set(assignmentRows.map((r: any) => r.tourName).filter((v: any) => v && v !== "—"))).sort().map((t: any) => ({ text: t, value: t })),
+      onFilter: (v: any, r: any) => r.tourName === v,
     },
     {
-      title: "Bookings",
-      key: "bookings",
-      render: (_: any, r: any) => r.bookings?.length ?? 0,
+      title: "Tour Type",
+      dataIndex: "tourType",
+      key: "tourType",
+      width: 120,
+      render: (v: string) =>
+        v ? (
+          <Tag
+            color={v === "GROUP_TOUR" ? "blue" : v === "PRIVATE_TOUR" ? "purple" : "default"}
+            style={{ margin: 0, fontSize: 11, fontWeight: 600 }}
+          >
+            {v === "GROUP_TOUR" ? "Group" : v === "PRIVATE_TOUR" ? "Private" : v}
+          </Tag>
+        ) : (
+          <Typography.Text type="secondary">—</Typography.Text>
+        ),
+      filters: [
+        { text: "Group", value: "GROUP_TOUR" },
+        { text: "Private", value: "PRIVATE_TOUR" },
+      ],
+      onFilter: (v: any, r: any) => r.tourType === v,
+    },
+    {
+      title: "Guide",
+      dataIndex: "guideName",
+      key: "guideName",
+      width: 120,
+      render: (v: string) => (
+        <Tag color="green" style={{ margin: 0, fontSize: 11 }}>
+          {v}
+        </Tag>
+      ),
+      filters: Array.from(new Set(assignmentRows.map((r: any) => r.guideName).filter(Boolean))).sort().map((g: any) => ({ text: g, value: g })),
+      onFilter: (v: any, r: any) => r.guideName === v,
+    },
+    {
+      title: "Driver",
+      dataIndex: "driverName",
+      key: "driverName",
+      width: 110,
+      ellipsis: true,
+      render: (v: string) => (
+        <Tag color="cyan" style={{ margin: 0, fontSize: 11 }}>
+          {v}
+        </Tag>
+      ),
+      filters: Array.from(new Set(assignmentRows.map((r: any) => r.driverName).filter(Boolean))).sort().map((d: any) => ({ text: d, value: d })),
+      onFilter: (v: any, r: any) => r.driverName === v,
+    },
+    {
+      title: "Booking",
+      key: "bookingRef",
+      width: 100,
+      render: (_: any, r: any) => (
+        <Typography.Text strong style={{ fontSize: 12 }}>
+          {r.bookingRef}
+        </Typography.Text>
+      ),
+      onFilter: (v: any, r: any) => (r.bookingRef ?? "").toLowerCase().includes(v.toLowerCase()),
+    },
+    {
+      title: "Customer",
+      dataIndex: "customerName",
+      key: "customerName",
+      width: 150,
+      render: (v: string) => <Typography.Text style={{ fontSize: 12 }}>{v}</Typography.Text>,
+      onFilter: (v: any, r: any) => (r.customerName ?? "").toLowerCase().includes(v.toLowerCase()),
+    },
+    {
+      title: "Hotel / Room",
+      dataIndex: "hotelName",
+      key: "hotelName",
+      width: 170,
+      render: (v: string) => (
+        <Typography.Text type="secondary" style={{ fontSize: 11 }}>{v}</Typography.Text>
+      ),
+      onFilter: (v: any, r: any) => (r.hotelName ?? "").toLowerCase().includes(v.toLowerCase()),
+    },
+    {
+      title: "Coordinates",
+      key: "coordinates",
+      width: 170,
+      render: (_: any, r: any) =>
+        r.latitude != null && r.longitude != null ? (
+          <a
+            href={`https://www.google.com/maps?q=${r.latitude},${r.longitude}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontSize: 12 }}
+          >
+            📍 {Number(r.latitude).toFixed(5)}, {Number(r.longitude).toFixed(5)}
+          </a>
+        ) : (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            —
+          </Typography.Text>
+        ),
+    },
+    {
+      title: "Pax",
+      dataIndex: "totalPax",
+      key: "totalPax",
+      width: 72,
+      align: "center" as const,
+      render: (v: number) => <Typography.Text strong>{v}</Typography.Text>,
+      filters: Array.from(new Set(assignmentRows.map((r: any) => r.totalPax).filter(Boolean))).sort((a: number, b: number) => a - b).map((d: any) => ({ text: d, value: d })),
+      onFilter: (v: any, r: any) => r.totalPax === v,
+    },
+    {
+      title: "Seq",
+      dataIndex: "paxSequence",
+      key: "paxSequence",
+      width: 72,
+      align: "center" as const,
+      render: (v: number) => <Typography.Text type="secondary">{v > 0 ? v : ""}</Typography.Text>,
+      filters: Array.from(new Set(assignmentRows.map((r: any) => r.paxSequence).filter((v: any) => v > 0))).sort((a: number, b: number) => a - b).map((d: any) => ({ text: d, value: d })),
+      onFilter: (v: any, r: any) => r.paxSequence === v,
+    },
+    {
+      title: "Booking Status",
+      dataIndex: "bookingStatus",
+      key: "bookingStatus",
+      width: 140,
+      render: (v: string) => (
+        <Tag
+          color={BOOKING_STATUS_COLORS[v] ?? "default"}
+          style={{ margin: 0, fontSize: 10, fontWeight: 600 }}
+        >
+          {v}
+        </Tag>
+      ),
+      filters: BOOKING_STATUS.map((s) => ({ text: s, value: s })),
+      onFilter: (v: any, r: any) => r.bookingStatus === v,
+    },
+    {
+      title: "Bus Status",
+      dataIndex: "assignmentStatus",
+      key: "assignmentStatus",
+      width: 130,
+      render: (v: string) => (
+        <Tag
+          color={ASSIGNMENT_STATUS_COLORS[v] ?? "default"}
+          style={{ margin: 0, fontSize: 10 }}
+        >
+          {v}
+        </Tag>
+      ),
+      filters: ASSIGNMENT_STATUS.map((s) => ({ text: s, value: s })),
+      onFilter: (v: any, r: any) => r.assignmentStatus === v,
     },
     ...(canUpdateAssignment
       ? [
           {
             title: "Actions",
             key: "actions",
+            width: 160,
+            fixed: "right" as const,
             render: (_: any, r: any) => (
-              <Space>
-                <Button size="small" onClick={() => openLink(r)}>
-                  Assign bookings
+              <Space size={4} style={{ whiteSpace: "nowrap" }}>
+                <Button size="small" onClick={() => {
+                  const a = assignments.find((x: any) => x.id === r.assignmentId);
+                  if (a) openLink(a);
+                }}>
+                  Reassign
                 </Button>
                 <Select
                   size="small"
-                  value={r.status}
-                  style={{ width: 130 }}
+                  value={r.assignmentStatus}
+                  style={{ width: 90 }}
                   options={ASSIGNMENT_STATUS.map((s) => ({ value: s, label: s }))}
+                  onClick={(e) => e.stopPropagation()}
                   onChange={async (status) => {
                     try {
-                      await api.put(`/assignments/${r.id}/status`, { status });
+                      await api.put(`/assignments/${r.assignmentId}/status`, { status });
                       message.success("Status updated");
                       loadAssignments();
                     } catch (e) {
@@ -453,113 +703,20 @@ export default function BookingsPage() {
           },
         ]
       : []),
-  ];
+  ]);
 
   const canReadBookings = hasPermission("booking.read");
   const canReadAssignments = hasPermission("assignment.read");
 
-  const renderBoardCard = (a: any) => {
-    const capacity = a.vehicle?.capacity ?? 12;
-    const isFull = a.totalPax >= capacity;
-    const day = a.startDate ? dayjs(a.startDate).format("DD MMM YYYY") : "—";
-    const today = dayjs().startOf("day").isSame(dayjs(a.startDate).startOf("day"));
-    return (
-      <Card
-        key={a.id}
-        size="small"
-        style={{ marginBottom: 16, borderLeft: today ? "3px solid #f5222d" : undefined }}
-        title={
-          <Flex justify="space-between" align="center">
-            <Space>
-              <CarOutlined />
-              <Typography.Text strong>{a.tourName ?? a.code}</Typography.Text>
-              {today && <Tag color="red">Today</Tag>}
-            </Space>
-            <Tag color={a.status === "COMPLETED" ? "green" : a.status === "DISPATCHED" ? "blue" : "orange"}>
-              {a.status}
-            </Tag>
-          </Flex>
-        }
-        extra={<Space>{a.code}</Space>}
-      >
-        <Flex vertical gap={6}>
-          <Space wrap>
-            <FieldTimeOutlined />
-            <Typography.Text>
-              {day} · {a.durationDays} day{a.durationDays > 1 ? "s" : ""}
-            </Typography.Text>
-          </Space>
-          <Typography.Text>
-            Driver: <b>{a.driver?.name ?? "—"}</b>
-            {" | "}Guide: <b>{a.guide?.name ?? "—"}</b>
-          </Typography.Text>
-          <Typography.Text type={isFull ? "danger" : "secondary"}>
-            {a.vehicle?.plateNumber ?? "No vehicle"} ({a.totalPax} / {capacity} pax)
-            {isFull ? " - FULL" : ""}
-          </Typography.Text>
-        </Flex>
-        <Divider style={{ margin: "12px 0" }} />
-        <Typography.Text type="secondary">BOOKING LIST ({a.bookings?.length ?? 0}):</Typography.Text>
-        <div style={{ marginTop: 8 }}>
-          {a.bookings?.length ? (
-            a.bookings.map((b: any) => (
-              <div key={b.id} style={{ marginBottom: 8 }}>
-                <Typography.Text>
-                  [{b.bookingRef}] <b>{b.customerName ?? "no name"}</b> ({b.totalPax} pax)
-                </Typography.Text>
-                <div style={{ fontSize: 12, color: "#888" }}>
-                  Pickup: {b.hotelName || b.address || "—"}
-                </div>
-              </div>
-            ))
-          ) : (
-            <Typography.Text type="secondary">No bookings</Typography.Text>
-          )}
-        </div>
-        {a.status !== "COMPLETED" && canUpdateAssignment && (
-          <Button
-            type="primary"
-            size="small"
-            block
-            style={{ marginTop: 12 }}
-            icon={<CheckOutlined />}
-            loading={confirmingId === a.id}
-            onClick={() => confirmTour(a)}
-          >
-            Confirm tour finished
-          </Button>
-        )}
-        {a.status === "COMPLETED" && (
-          <Tag color="green" style={{ marginTop: 12 }}>
-            Completed — settlement prepared
-          </Tag>
-        )}
-      </Card>
-    );
-  };
-
-  const renderBoardColumn = (title: string, type: string, color: string) => {
-    const items = boardData.filter((a) => a.tourType === type);
-    const sorted = [...items].sort((a, b) =>
-      dayjs(a.startDate).valueOf() - dayjs(b.startDate).valueOf(),
-    );
-    return (
-      <div style={{ flex: 1, minWidth: 380 }}>
-        <Typography.Title level={5} style={{ color, borderBottom: `2px solid ${color}`, paddingBottom: 8 }}>
-          {title} ({sorted.length})
-        </Typography.Title>
-        {sorted.length ? sorted.map(renderBoardCard) : <Empty description={`No ${title.toLowerCase()}`} />}
-      </div>
-    );
-  };
-
   return (
-    <div>
+    <div className="bookings-page">
       {!canReadBookings && !canReadAssignments && !canManageMailbox && (
         <Typography.Text type="secondary">You have no access to bookings.</Typography.Text>
       )}
       {(canReadBookings || canReadAssignments || canManageMailbox) && (
       <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
         items={[
           ...(canManageMailbox
             ? [
@@ -587,22 +744,7 @@ export default function BookingsPage() {
                               setRawDataPage(1);
                             }}
                             searchPlaceholder="Search sourceId or email..."
-                          >
-                            <Select
-                              allowClear
-                              size="small"
-                              placeholder="Status"
-                              style={{ width: 130 }}
-                              value={rawStatus}
-                              onChange={(v) => {
-                                setRawStatus(v);
-                                setRawDataPage(1);
-                              }}
-                              options={["pending", "parsed", "unparsed", "parse_failed"].map(
-                                (s) => ({ value: s, label: s }),
-                              )}
-                            />
-                          </FilterBar>
+                          />
                           <Button icon={<ReloadOutlined />} onClick={loadRawData}>
                             Refresh
                           </Button>
@@ -614,7 +756,7 @@ export default function BookingsPage() {
                         columns={rawDataColumns}
                         dataSource={rawData}
                         loading={rawDataLoading}
-                        scroll={{ x: 1000 }}
+                        scroll={{ x: 1000, y: tableHeight }}
                         pagination={{
                           current: rawDataPage,
                           pageSize: rawDataPageSize,
@@ -651,45 +793,8 @@ export default function BookingsPage() {
                         setFilters({});
                         setBookingsPage(1);
                       }}
-                      searchPlaceholder="Search ref, customer, phone..."
-                    >
-                      <Select
-                        allowClear
-                        size="small"
-                        placeholder="Status"
-                        style={{ width: 120 }}
-                        value={filters.status}
-                        onChange={(v) => {
-                          setFilters((prev) => ({ ...prev, status: v }));
-                          setBookingsPage(1);
-                        }}
-                        options={BOOKING_STATUS.map((s) => ({ value: s, label: s }))}
-                      />
-                      <Select
-                        allowClear
-                        size="small"
-                        placeholder="Channel"
-                        style={{ width: 130 }}
-                        value={filters.channel}
-                        onChange={(v) => {
-                          setFilters((prev) => ({ ...prev, channel: v }));
-                          setBookingsPage(1);
-                        }}
-                        options={BOOKING_CHANNELS.map((c) => ({ value: c, label: c }))}
-                      />
-                      <Select
-                        allowClear
-                        size="small"
-                        placeholder="Payment"
-                        style={{ width: 120 }}
-                        value={filters.payment}
-                        onChange={(v) => {
-                          setFilters((prev) => ({ ...prev, payment: v }));
-                          setBookingsPage(1);
-                        }}
-                        options={PAYMENT_STATUS.map((s) => ({ value: s, label: s }))}
-                      />
-                    </FilterBar>
+                      searchPlaceholder="Search ref, customer, tour, channel..."
+                    />
                     {canCreateBooking && (
                       <Button type="primary" icon={<PlusOutlined />} onClick={openBooking}>
                         Add Booking
@@ -700,9 +805,11 @@ export default function BookingsPage() {
               >
                 <Table
                   rowKey="id"
+                  size="small"
                   columns={bookingColumns}
                   dataSource={bookings}
                   loading={bookingsLoading}
+                  scroll={{ x: 1100, y: tableHeight }}
                   onRow={(record) => ({
                     style: { cursor: "pointer" },
                     onClick: () => setBookingDetail(record),
@@ -735,49 +842,33 @@ export default function BookingsPage() {
                       }}
                       onReset={() => {
                         setAssignSearch("");
-                        setAssignStatus(undefined);
                         setAssignmentsPage(1);
                       }}
-                      searchPlaceholder="Search code, vehicle, driver, guide..."
-                    >
-                      <Select
-                        allowClear
-                        size="small"
-                        placeholder="Status"
-                        style={{ width: 120 }}
-                        value={assignStatus}
-                        onChange={(v) => {
-                          setAssignStatus(v);
-                          setAssignmentsPage(1);
-                        }}
-                        options={ASSIGNMENT_STATUS.map((s) => ({ value: s, label: s }))}
-                      />
-                      </FilterBar>
+                      searchPlaceholder="Search code, vehicle, driver, guide, customer..."
+                    />
                       <Button
                         icon={<ScheduleOutlined />}
-                        onClick={openBoard}
+                        onClick={() => setBoardOpen(true)}
                       >
                         Dispatch Board
                       </Button>
-                      {canCreateAssignment && (
-                        <Button type="primary" icon={<PlusOutlined />} onClick={openAssignment}>
-                          Add Assignment
-                        </Button>
-                      )}
                     </Flex>
                   }
                 >
                 <Table
-                  rowKey="id"
+                  rowKey="key"
+                  size="small"
                   columns={assignmentColumns}
-                  dataSource={assignments}
+                  dataSource={assignmentRows}
                   loading={assignmentsLoading}
+                  scroll={{ x: 1500, y: tableHeight }}
                   pagination={{
                     current: assignmentsPage,
                     pageSize: assignmentsPageSize,
-                    total: assignmentsTotal,
+                    total: assignmentRows.length,
                     showSizeChanger: true,
                     pageSizeOptions: PAGE_SIZE_OPTIONS,
+                    showTotal: (t) => `${t} booking(s)`,
                     onChange: paginationChange(setAssignmentsPage, setAssignmentsPageSize, assignmentsPageSize),
                   }}
                 />
@@ -823,35 +914,6 @@ export default function BookingsPage() {
         </Form>
       </Drawer>
 
-      <Drawer title="Add Assignment" open={assignOpen} onClose={() => setAssignOpen(false)} width={480}>
-        <Form form={assignForm} layout="vertical">
-          <Form.Item name="startDate" label="Start date" rules={[{ required: true }]}>
-            <DatePicker style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="endDate" label="End date" rules={[{ required: true }]}>
-            <DatePicker style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="vehicleId" label="Vehicle ID">
-            <Input />
-          </Form.Item>
-          <Form.Item name="driverId" label="Driver ID">
-            <Input />
-          </Form.Item>
-          <Form.Item name="guideId" label="Guide ID">
-            <Input />
-          </Form.Item>
-          <Form.Item name="priceOverride" label="Price override">
-            <InputNumber min={0} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="tripNotes" label="Trip notes">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-          <Button type="primary" block loading={savingAssign} onClick={saveAssignment}>
-            Save
-          </Button>
-        </Form>
-      </Drawer>
-
       <Drawer
         title={`Assign bookings to ${linkAssignment?.code ?? ""}`}
         open={linkOpen}
@@ -881,26 +943,12 @@ export default function BookingsPage() {
         </Button>
       </Drawer>
 
-      <Drawer
-        title="Tour Operations & Dispatch Board"
+      <DispatchBoard
         open={boardOpen}
         onClose={() => setBoardOpen(false)}
-        width="100%"
-        loading={boardLoading}
-      >
-        {boardLoading ? (
-          <Flex justify="center" style={{ padding: 48 }}>
-            <Typography.Text type="secondary">Loading board…</Typography.Text>
-          </Flex>
-        ) : boardData.length === 0 ? (
-          <Empty description="No upcoming tours" />
-        ) : (
-          <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-            {renderBoardColumn("PRIVATE TOURS", "PRIVATE_TOUR", "#1677ff")}
-            {renderBoardColumn("GROUP TOURS", "GROUP_TOUR", "#722ed1")}
-          </div>
-        )}
-      </Drawer>
+        canUpdateAssignment={canUpdateAssignment}
+        onChanged={loadAssignments}
+      />
 
       <Drawer
         title={`RawDataMail payload · ${rawDetail?.id ?? ""}`}
@@ -973,6 +1021,7 @@ export default function BookingsPage() {
               { key: "hotel", label: "Hotel", children: bookingDetail.hotelName ?? "—" },
               { key: "tour", label: "Tour", children: bookingDetail.tour?.name ?? bookingDetail.tourName ?? "—" },
               { key: "tourType", label: "Tour type", children: bookingDetail.tourType ?? "—" },
+              { key: "duration", label: "Duration", children: bookingDetail.tour?.durationDays ? `${bookingDetail.tour.durationDays} ${bookingDetail.tour.durationDays === 1 ? 'Day' : 'Days'}` : "—" },
               { key: "start", label: "Start date", children: bookingDetail.startingDate ? new Date(bookingDetail.startingDate).toLocaleString() : "—" },
               { key: "end", label: "End date", children: fmtDate(endDate(bookingDetail.startingDate, bookingDetail.tour?.durationDays)) },
               { key: "pax", label: "Pax", children: `${bookingDetail.totalPax ?? 0}${bookingDetail.paxDetail ? ` · ${bookingDetail.paxDetail}` : ""}` },

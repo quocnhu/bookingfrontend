@@ -25,6 +25,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
+import { useFillHeight } from "@/lib/use-fill-height";
 import FilterBar from "@/components/filter-bar";
 import ThumbnailPicker from "@/components/thumbnail-picker";
 import GalleryManager, { type GalleryImage } from "@/components/gallery-manager";
@@ -53,7 +54,7 @@ const TYPE_OPTIONS = [
   { value: "GROUP_TOUR", label: "Group Tour", color: "cyan" },
 ];
 
-const LIMIT = 10;
+const LIMIT = 20;
 
 function promotionState(
   discountPercent: number | null | undefined,
@@ -80,6 +81,12 @@ export default function ToursPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(LIMIT);
+
+  const tableHeight = useFillHeight({
+    rootSelector: ".tours-page",
+    activeTab: "",
+    deps: [data?.items?.length],
+  });
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string | undefined>();
 
@@ -178,6 +185,11 @@ export default function ToursPage() {
       title: "Thumbnail",
       dataIndex: "thumbnailUrl",
       key: "thumbnailUrl",
+      filters: [
+        { text: "Has image", value: "yes" },
+        { text: "No image", value: "no" },
+      ],
+      onFilter: (v: any, r: Tour) => v === "yes" ? !!r.thumbnailUrl : !r.thumbnailUrl,
       render: (v: string | null) =>
         v ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -190,12 +202,14 @@ export default function ToursPage() {
           <Typography.Text type="secondary">—</Typography.Text>
         ),
     },
-    { title: "Code", dataIndex: "code", key: "code" },
-    { title: "Name", dataIndex: "name", key: "name" },
+    { title: "Code", dataIndex: "code", key: "code", onFilter: (v: any, r: Tour) => (r.code ?? "").toLowerCase().includes(String(v).toLowerCase()) },
+    { title: "Name", dataIndex: "name", key: "name", onFilter: (v: any, r: Tour) => (r.name ?? "").toLowerCase().includes(String(v).toLowerCase()) },
     {
       title: "Type",
       dataIndex: "type",
       key: "type",
+      filters: [{ text: "PRIVATE TOUR", value: "PRIVATE_TOUR" }, { text: "GROUP TOUR", value: "GROUP_TOUR" }],
+      onFilter: (v: any, r: Tour) => r.type === v,
       render: (v: string) => {
         const opt = TYPE_OPTIONS.find((t) => t.value === v);
         return <Tag color={opt?.color}>{opt?.label ?? v}</Tag>;
@@ -206,24 +220,38 @@ export default function ToursPage() {
       dataIndex: "adultPrice",
       key: "adultPrice",
       render: (v: any, r: Tour) => `${Number(v ?? 0).toLocaleString()} ${r.currency}`,
+      onFilter: (v: any, r: Tour) => String(r.adultPrice ?? "").includes(String(v)),
     },
     {
       title: "Child",
       dataIndex: "childPrice",
       key: "childPrice",
       render: (v: any, r: Tour) => `${Number(v ?? 0).toLocaleString()} ${r.currency}`,
+      onFilter: (v: any, r: Tour) => String(r.childPrice ?? "").includes(String(v)),
     },
     {
       title: "Infant",
       dataIndex: "infantPrice",
       key: "infantPrice",
       render: (v: any, r: Tour) => `${Number(v ?? 0).toLocaleString()} ${r.currency}`,
+      onFilter: (v: any, r: Tour) => String(r.infantPrice ?? "").includes(String(v)),
+    },
+    {
+      title: "Duration",
+      dataIndex: "durationDays",
+      key: "durationDays",
+      filters: Array.from(new Set<number>((data?.items ?? []).map((t: Tour) => t.durationDays ?? 1))).sort((a, b) => a - b).map((d) => ({ text: d === 1 ? "1 Day" : `${d} Days`, value: d })),
+      onFilter: (v: any, r: Tour) => (r.durationDays ?? 1) === v,
+      render: (v: number | null) => (
+        <Tag>{(v ?? 1) === 1 ? "1 Day" : `${v} Days`}</Tag>
+      ),
     },
     {
       title: "Bookings",
       dataIndex: "_count",
       key: "bookings",
       render: (v: any) => <Tag color="blue">{v?.bookings ?? 0}</Tag>,
+      onFilter: (v: any, r: any) => String(r._count?.bookings ?? 0).includes(String(v)),
     },
     {
       title: "Promotion",
@@ -232,6 +260,15 @@ export default function ToursPage() {
         const st = promotionState(r.discountPercent, r.promotionStartsAt, r.promotionEndsAt);
         if (!st) return <Typography.Text type="secondary">—</Typography.Text>;
         return <Tag color={st.color}>{st.label}</Tag>;
+      },
+      filters: [
+        { text: "Active", value: "active" },
+        { text: "Scheduled", value: "scheduled" },
+        { text: "Expired", value: "expired" },
+      ],
+      onFilter: (v: any, r: Tour) => {
+        const st = promotionState(r.discountPercent, r.promotionStartsAt, r.promotionEndsAt);
+        return st?.label.toLowerCase() === String(v).toLowerCase();
       },
     },
     {
@@ -295,24 +332,11 @@ export default function ToursPage() {
       }}
       onReset={resetFilters}
       searchPlaceholder="Search name or code..."
-    >
-      <Select
-        allowClear
-        size="small"
-        placeholder="Type"
-        style={{ width: 140 }}
-        value={typeFilter}
-        onChange={(v) => {
-          setTypeFilter(v);
-          setPage(1);
-        }}
-        options={TYPE_OPTIONS.map(({ value, label }) => ({ value, label }))}
-      />
-    </FilterBar>
+    />
   );
 
   return (
-    <div>
+    <div className="tours-page">
       <Card
         variant="borderless"
         title="Declared tours"
@@ -328,6 +352,8 @@ export default function ToursPage() {
         }
       >
         <Table
+          size="small"
+          scroll={{ x: 1200, y: tableHeight }}
           rowKey="id"
           columns={columns}
           dataSource={tours}

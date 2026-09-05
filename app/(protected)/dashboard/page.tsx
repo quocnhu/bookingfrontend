@@ -22,15 +22,16 @@ import {
   DollarOutlined,
   FileTextOutlined,
   LockOutlined,
+  LoginOutlined,
   TeamOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
-import { centerColumns } from "@/lib/table";
+import { centerColumns, indexColumn } from "@/lib/table";
 
-function formatVND(value: number | undefined | null) {
-  return `${new Intl.NumberFormat("vi-VN").format(Number(value ?? 0))} ₫`;
+function formatUSD(value: number | undefined | null) {
+  return `$${new Intl.NumberFormat("en-US").format(Number(value ?? 0))}`;
 }
 
 export default function DashboardPage() {
@@ -42,7 +43,6 @@ export default function DashboardPage() {
   const [range, setRange] = useState<"day" | "week" | "month">("week");
 
   const COLORS = [token.colorPrimary, token.colorInfo, token.colorError, token.colorWarning, token.colorSuccess];
-  const ACCENTS = [token.colorPrimary, token.colorInfo, token.colorSuccess, token.colorWarning, token.colorError];
 
   const tooltipStyle = {
     background: token.colorBgElevated,
@@ -71,6 +71,7 @@ export default function DashboardPage() {
   };
 
   const authColumns = centerColumns([
+    indexColumn(1, 999),
     {
       title: "Event",
       dataIndex: "eventType",
@@ -94,18 +95,54 @@ export default function DashboardPage() {
 
   const canRead = hasPermission("dashboard.read");
 
-  const statCards = [    { title: "Total Bookings", value: stats?.totalBookings ?? 0, icon: <FileTextOutlined /> },
-    { title: "Today", value: stats?.todayBookings ?? 0, icon: <CalendarOutlined /> },
-    { title: "Pending Bookings", value: stats?.pendingBookings ?? 0, icon: <FileTextOutlined /> },
-    { title: "Dispatched Today", value: stats?.todayDispatched ?? 0, icon: <CarOutlined /> },
-    { title: "Pending Settlements", value: stats?.pendingSettlements ?? 0, icon: <DollarOutlined /> },
-    { title: "Tours", value: stats?.totalTours ?? 0, icon: <FileTextOutlined /> },
-    { title: "Users", value: stats?.totalUsers ?? 0, icon: <UserOutlined /> },
-    { title: "Roles", value: stats?.totalRoles ?? 0, icon: <TeamOutlined /> },
-    { title: "Permissions", value: stats?.totalPermissions ?? 0, icon: <LockOutlined /> },
-    { title: "Assignments", value: stats?.totalAssignments ?? 0, icon: <CarOutlined /> },
-    { title: "Logins Today", value: stats?.todayLogins ?? 0, icon: <UserOutlined /> },
-    { title: "Locked Accounts", value: stats?.lockedAccounts ?? 0, icon: <LockOutlined /> },
+  const statGroups = [
+    {
+      title: "Booking",
+      color: token.colorPrimary,
+      icon: <FileTextOutlined />,
+      items: [
+        { title: "Total Bookings", value: stats?.totalBookings ?? 0, icon: <FileTextOutlined /> },
+        { title: "Today", value: stats?.todayBookings ?? 0, icon: <CalendarOutlined /> },
+        { title: "Pending Bookings", value: stats?.pendingBookings ?? 0, icon: <FileTextOutlined /> },
+        { title: "Dispatched Today", value: stats?.todayDispatched ?? 0, icon: <CarOutlined /> },
+        { title: "Assignments", value: stats?.totalAssignments ?? 0, icon: <CarOutlined /> },
+      ],
+    },
+    {
+      title: "Users",
+      color: token.colorInfo,
+      icon: <TeamOutlined />,
+      items: [
+        { title: "Users", value: stats?.totalUsers ?? 0, icon: <UserOutlined /> },
+        { title: "Roles", value: stats?.totalRoles ?? 0, icon: <TeamOutlined /> },
+        { title: "Permissions", value: stats?.totalPermissions ?? 0, icon: <LockOutlined /> },
+      ],
+    },
+    {
+      title: "Tours",
+      color: token.colorSuccess,
+      icon: <CarOutlined />,
+      items: [
+        { title: "Tours", value: stats?.totalTours ?? 0, icon: <FileTextOutlined /> },
+      ],
+    },
+    {
+      title: "Financial",
+      color: token.colorWarning,
+      icon: <DollarOutlined />,
+      items: [
+        { title: "Pending Settlements", value: stats?.pendingSettlements ?? 0, icon: <DollarOutlined /> },
+      ],
+    },
+    {
+      title: "Auth / In-Out",
+      color: token.colorError,
+      icon: <LoginOutlined />,
+      items: [
+        { title: "Logins Today", value: stats?.todayLogins ?? 0, icon: <UserOutlined /> },
+        { title: "Locked Accounts", value: stats?.lockedAccounts ?? 0, icon: <LockOutlined /> },
+      ],
+    },
   ];
 
   const revenueData = charts?.revenueByBucket ?? [];
@@ -120,34 +157,64 @@ export default function DashboardPage() {
 
       {canRead && (
         <>
-      <Row gutter={[16, 16]}>
-        {statCards.map((s, i) => (
-          <Col xs={12} sm={8} lg={6} xl={4} key={s.title}>
-            <Card variant="borderless">
-              <Flex align="center" gap={12}>
-                <Avatar
-                  shape="square"
-                  size={44}
-                  icon={s.icon}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(480px, 1fr))", gap: 16, marginBottom: 16 }}>
+        {statGroups.map((group) => (
+          <Card
+            key={group.title}
+            variant="borderless"
+            style={{ height: "100%" }}
+            styles={{ body: { padding: 16 } }}
+          >
+            <Flex align="center" gap={8} style={{ marginBottom: 12 }}>
+              <Avatar
+                shape="square"
+                size={24}
+                icon={group.icon}
+                style={{ background: group.color, color: "#fff", borderRadius: 7 }}
+              />
+              <Typography.Title level={5} style={{ margin: 0 }}>
+                {group.title}
+              </Typography.Title>
+            </Flex>
+            <Flex wrap gap={12}>
+              {group.items.map((s) => (
+                <Flex
+                  key={s.title}
+                  align="center"
+                  gap={10}
                   style={{
-                    background: ACCENTS[i % ACCENTS.length],
-                    color: "#fff",
+                    flex: "1 1 170px",
+                    border: `1px solid ${token.colorSplit}`,
                     borderRadius: 12,
+                    padding: "14px 16px",
+                    background: token.colorFillQuaternary,
                   }}
-                />
-                <Statistic title={s.title} value={s.value} valueStyle={{ fontWeight: 700 }} />
-              </Flex>
-            </Card>
-          </Col>
+                >
+                  <Avatar
+                    shape="square"
+                    size={44}
+                    icon={s.icon}
+                    style={{ background: group.color, color: "#fff", borderRadius: 12 }}
+                  />
+                  <div>
+                    <Statistic value={s.value} valueStyle={{ fontWeight: 700, fontSize: 22 }} />
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {s.title}
+                    </Typography.Text>
+                  </div>
+                </Flex>
+              ))}
+            </Flex>
+          </Card>
         ))}
-      </Row>
+      </div>
 
       <Card title="Revenue & Payments" variant="borderless" style={{ marginTop: 16 }}>
         <Flex align="flex-end" justify="space-between" wrap gap={16} style={{ marginBottom: 16 }}>
           <Flex wrap gap={32}>
-            <Statistic title="Revenue Today" value={formatVND(stats?.revenueToday)} />
-            <Statistic title="Revenue This Week" value={formatVND(stats?.revenueWeek)} />
-            <Statistic title="Revenue This Month" value={formatVND(stats?.revenueMonth)} />
+            <Statistic title="Revenue Today" value={formatUSD(stats?.revenueToday)} />
+            <Statistic title="Revenue This Week" value={formatUSD(stats?.revenueWeek)} />
+            <Statistic title="Revenue This Month" value={formatUSD(stats?.revenueMonth)} />
           </Flex>
           <Segmented
             value={range}
@@ -241,6 +308,8 @@ export default function DashboardPage() {
               dataSource={authActivity}
               pagination={false}
               size="small"
+              sticky
+              scroll={{ x: "max-content" }}
             />
           </Card>
         </Col>
@@ -251,7 +320,10 @@ export default function DashboardPage() {
               dataSource={(widgets?.recentActions ?? []).map((l: any) => ({ ...l, key: l.id }))}
               pagination={false}
               size="small"
-              columns={[
+              sticky
+              scroll={{ x: "max-content" }}
+              columns={centerColumns([
+                indexColumn(1, 999),
                 {
                   title: "Action",
                   dataIndex: "action",
@@ -264,7 +336,7 @@ export default function DashboardPage() {
                   render: (_: any, r: any) => r.user?.email ?? r.changedBy ?? "—",
                 },
                 { title: "Time", dataIndex: "createdAt", key: "createdAt", render: (v: string) => new Date(v).toLocaleString() },
-              ]}
+              ])}
             />
           </Card>
         </Col>
@@ -291,7 +363,10 @@ export default function DashboardPage() {
           dataSource={widgets?.recentBookings ?? []}
           pagination={false}
           size="small"
-          columns={[
+          sticky
+          scroll={{ x: "max-content" }}
+          columns={centerColumns([
+            indexColumn(1, 999),
             { title: "Booking Ref", dataIndex: "bookingRef", key: "bookingRef" },
             { title: "Customer", dataIndex: "customerName", key: "customerName" },
             { title: "Tour", dataIndex: ["tour", "name"], key: "tour", render: (v: any) => v ?? "—" },
@@ -302,7 +377,7 @@ export default function DashboardPage() {
               render: (v: string) => <Tag color={statusColor[v] ?? "default"}>{v}</Tag>,
             },
             { title: "Total Pax", dataIndex: "totalPax", key: "totalPax" },
-          ]}
+          ])}
         />
       </Card>
       </>
