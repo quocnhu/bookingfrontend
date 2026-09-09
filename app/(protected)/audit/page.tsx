@@ -6,7 +6,6 @@ import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
 import { useFillHeight } from "@/lib/use-fill-height";
-import FilterBar from "@/components/filter-bar";
 
 interface AuditLog {
   id: string;
@@ -29,7 +28,6 @@ export default function AuditPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
 
   const tableHeight = useFillHeight({
     rootSelector: ".audit-page",
@@ -45,7 +43,6 @@ export default function AuditPage() {
         params: {
           page,
           limit: pageSize,
-          q: search || undefined,
         },
       })
       .then((r) => {
@@ -54,14 +51,9 @@ export default function AuditPage() {
       })
       .catch((e) => message.error(getErrorMessage(e)))
       .finally(() => setLoading(false));
-  }, [page, pageSize, search]);
+  }, [page, pageSize]);
 
   const canRead = hasPermission("audit.read");
-
-  const resetFilters = () => {
-    setSearch("");
-    setPage(1);
-  };
 
   const columns = centerColumns([
     indexColumn<AuditLog>(page, pageSize),
@@ -146,16 +138,6 @@ export default function AuditPage() {
       <Card
         variant="borderless"
         title="Audit Logs"
-        extra={
-          <FilterBar
-            onSearch={(v) => {
-              setSearch(v.trim());
-              setPage(1);
-            }}
-            onReset={resetFilters}
-            searchPlaceholder="Search entity, id, action..."
-          />
-        }
       >
         <Table
           size="small"

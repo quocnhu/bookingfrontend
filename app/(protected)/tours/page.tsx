@@ -26,7 +26,6 @@ import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
 import { useFillHeight } from "@/lib/use-fill-height";
-import FilterBar from "@/components/filter-bar";
 import ThumbnailPicker from "@/components/thumbnail-picker";
 import GalleryManager, { type GalleryImage } from "@/components/gallery-manager";
 
@@ -45,14 +44,33 @@ interface Tour {
   discountPercent?: number | null;
   promotionStartsAt?: string | null;
   promotionEndsAt?: string | null;
+  typePrices?: {
+    type: "PRIVATE_TOUR" | "GROUP_TOUR";
+    adultPrice?: string | number | null;
+    childPrice?: string | number | null;
+    infantPrice?: string | number | null;
+    currency?: string | null;
+  }[];
   gallery?: GalleryImage[];
   _count?: { bookings: number };
 }
 
-const TYPE_OPTIONS = [
-  { value: "PRIVATE_TOUR", label: "Private Tour", color: "purple" },
-  { value: "GROUP_TOUR", label: "Group Tour", color: "cyan" },
-];
+const TYPE_PRICE_LABELS: Record<string, string> = {
+  PRIVATE_TOUR: "Private Tour",
+  GROUP_TOUR: "Group Tour",
+};
+
+const num = (v: any) => Number(v ?? 0) || 0;
+
+const typePrice = (
+  tour: Tour,
+  type: "PRIVATE_TOUR" | "GROUP_TOUR",
+  field: "adultPrice" | "childPrice" | "infantPrice",
+) => {
+  const tp = tour.typePrices?.find((x) => x.type === type);
+  const fallback = type === "PRIVATE_TOUR" ? (tour[field] ?? 0) : 0;
+  return num(tp?.[field] ?? fallback);
+};
 
 const LIMIT = 20;
 
@@ -87,9 +105,6 @@ export default function ToursPage() {
     activeTab: "",
     deps: [data?.items?.length],
   });
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<string | undefined>();
-
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
   const [editing, setEditing] = useState<Tour | null>(null);
@@ -102,8 +117,6 @@ export default function ToursPage() {
     setLoading(true);
     try {
       const params: any = { page, limit: pageSize };
-      if (search) params.q = search;
-      if (typeFilter) params.type = typeFilter;
       const r = await api.get("/tours", { params });
       setData(r.data);
     } catch (e) {
@@ -115,25 +128,27 @@ export default function ToursPage() {
 
   useEffect(() => {
     load();
-  }, [page, pageSize, search, typeFilter]);
-
-  const resetFilters = () => {
-    setSearch("");
-    setTypeFilter(undefined);
-    setPage(1);
-  };
+  }, [page, pageSize]);
 
   const openModal = (tour?: Tour) => {
     setEditing(tour ?? null);
+    const prices = (tour?.typePrices ?? []).reduce<Record<string, any>>((acc, p) => {
+      acc[p.type] = p;
+      return acc;
+    }, {});
+    const pvt = prices["PRIVATE_TOUR"];
+    const grp = prices["GROUP_TOUR"];
     form.setFieldsValue({
       name: tour?.name ?? "",
-      type: tour?.type ?? "PRIVATE_TOUR",
       thumbnailUrl: tour?.thumbnailUrl ?? null,
       durationDays: tour?.durationDays ?? 1,
       departureLocation: tour?.departureLocation ?? "",
-      adultPrice: tour?.adultPrice ?? 0,
-      childPrice: tour?.childPrice ?? 0,
-      infantPrice: tour?.infantPrice ?? 0,
+      privatePricesAdult: pvt?.adultPrice ?? (tour?.type === "PRIVATE_TOUR" ? tour?.adultPrice : 0) ?? 0,
+      privatePricesChild: pvt?.childPrice ?? (tour?.type === "PRIVATE_TOUR" ? tour?.childPrice : 0) ?? 0,
+      privatePricesInfant: pvt?.infantPrice ?? (tour?.type === "PRIVATE_TOUR" ? tour?.infantPrice : 0) ?? 0,
+      groupPricesAdult: grp?.adultPrice ?? (tour?.type === "GROUP_TOUR" ? tour?.adultPrice : 0) ?? 0,
+      groupPricesChild: grp?.childPrice ?? (tour?.type === "GROUP_TOUR" ? tour?.childPrice : 0) ?? 0,
+      groupPricesInfant: grp?.infantPrice ?? (tour?.type === "GROUP_TOUR" ? tour?.infantPrice : 0) ?? 0,
       currency: tour?.currency ?? "USD",
       discountPercent: tour?.discountPercent ?? 0,
       promotionWindow:
@@ -156,11 +171,39 @@ export default function ToursPage() {
 
   const save = async () => {
     const values = await form.validateFields();
-    const payload: any = { ...values };
     const window = values.promotionWindow as [Dayjs, Dayjs] | null | undefined;
-    payload.promotionStartsAt = window ? window[0].toISOString() : null;
-    payload.promotionEndsAt = window ? window[1].toISOString() : null;
-    delete payload.promotionWindow;
+    const typePrices = [
+      {
+        type: "PRIVATE_TOUR",
+        adultPrice: values.privatePricesAdult,
+        childPrice: values.privatePricesChild,
+        infantPrice: values.privatePricesInfant,
+      },
+      {
+        type: "GROUP_TOUR",
+        adultPrice: values.groupPricesAdult,
+        childPrice: values.groupPricesChild,
+        infantPrice: values.groupPricesInfant,
+      },
+    ];
+    const tourType = editing?.type ?? "PRIVATE_TOUR";
+    const primaryTypePrices =
+      typePrices.find((p) => p.type === tourType) ?? typePrices[0];
+    const payload: any = {
+      name: values.name,
+      type: tourType,
+      thumbnailUrl: values.thumbnailUrl,
+      durationDays: values.durationDays,
+      departureLocation: values.departureLocation,
+      currency: values.currency,
+      discountPercent: values.discountPercent,
+      promotionStartsAt: window ? window[0].toISOString() : null,
+      promotionEndsAt: window ? window[1].toISOString() : null,
+      adultPrice: primaryTypePrices.adultPrice,
+      childPrice: primaryTypePrices.childPrice,
+      infantPrice: primaryTypePrices.infantPrice,
+      typePrices,
+    };
     setSaving(true);
     try {
       if (editing) {
@@ -205,36 +248,35 @@ export default function ToursPage() {
     { title: "Code", dataIndex: "code", key: "code", onFilter: (v: any, r: Tour) => (r.code ?? "").toLowerCase().includes(String(v).toLowerCase()) },
     { title: "Name", dataIndex: "name", key: "name", onFilter: (v: any, r: Tour) => (r.name ?? "").toLowerCase().includes(String(v).toLowerCase()) },
     {
-      title: "Type",
-      dataIndex: "type",
-      key: "type",
-      filters: [{ text: "PRIVATE TOUR", value: "PRIVATE_TOUR" }, { text: "GROUP TOUR", value: "GROUP_TOUR" }],
-      onFilter: (v: any, r: Tour) => r.type === v,
-      render: (v: string) => {
-        const opt = TYPE_OPTIONS.find((t) => t.value === v);
-        return <Tag color={opt?.color}>{opt?.label ?? v}</Tag>;
-      },
-    },
-    {
-      title: "Adult",
-      dataIndex: "adultPrice",
-      key: "adultPrice",
-      render: (v: any, r: Tour) => `${Number(v ?? 0).toLocaleString()} ${r.currency}`,
-      onFilter: (v: any, r: Tour) => String(r.adultPrice ?? "").includes(String(v)),
-    },
-    {
-      title: "Child",
-      dataIndex: "childPrice",
-      key: "childPrice",
-      render: (v: any, r: Tour) => `${Number(v ?? 0).toLocaleString()} ${r.currency}`,
-      onFilter: (v: any, r: Tour) => String(r.childPrice ?? "").includes(String(v)),
-    },
-    {
-      title: "Infant",
-      dataIndex: "infantPrice",
-      key: "infantPrice",
-      render: (v: any, r: Tour) => `${Number(v ?? 0).toLocaleString()} ${r.currency}`,
-      onFilter: (v: any, r: Tour) => String(r.infantPrice ?? "").includes(String(v)),
+      title: "Price (Private / Group)",
+      key: "price",
+      width: 230,
+      render: (_: any, r: Tour) => (
+        <Flex vertical gap={3}>
+          <Flex justify="space-between" gap={8}>
+            <Tag color="purple" style={{ margin: 0, fontSize: 11 }}>
+              Private
+            </Tag>
+            <Typography.Text strong style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+              A {typePrice(r, "PRIVATE_TOUR", "adultPrice").toLocaleString()} · C{" "}
+              {typePrice(r, "PRIVATE_TOUR", "childPrice").toLocaleString()} · I{" "}
+              {typePrice(r, "PRIVATE_TOUR", "infantPrice").toLocaleString()}{" "}
+              {r.currency}
+            </Typography.Text>
+          </Flex>
+          <Flex justify="space-between" gap={8}>
+            <Tag color="cyan" style={{ margin: 0, fontSize: 11 }}>
+              Group
+            </Tag>
+            <Typography.Text strong style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+              A {typePrice(r, "GROUP_TOUR", "adultPrice").toLocaleString()} · C{" "}
+              {typePrice(r, "GROUP_TOUR", "childPrice").toLocaleString()} · I{" "}
+              {typePrice(r, "GROUP_TOUR", "infantPrice").toLocaleString()}{" "}
+              {r.currency}
+            </Typography.Text>
+          </Flex>
+        </Flex>
+      ),
     },
     {
       title: "Duration",
@@ -324,17 +366,6 @@ export default function ToursPage() {
 
   const tours: Tour[] = data?.items ?? [];
 
-  const tourFilterBar = (
-    <FilterBar
-      onSearch={(v) => {
-        setSearch(v.trim());
-        setPage(1);
-      }}
-      onReset={resetFilters}
-      searchPlaceholder="Search name or code..."
-    />
-  );
-
   return (
     <div className="tours-page">
       <Card
@@ -342,7 +373,6 @@ export default function ToursPage() {
         title="Declared tours"
         extra={
           <Flex wrap gap={8} align="center">
-            {tourFilterBar}
             {canCreate && (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
                 Add Tour
@@ -389,9 +419,6 @@ export default function ToursPage() {
           >
             <Input placeholder="e.g. Ha Long Bay Full Day" />
           </Form.Item>
-          <Form.Item name="type" label="Type" initialValue="PRIVATE_TOUR">
-            <Select options={TYPE_OPTIONS.map(({ value, label }) => ({ value, label }))} />
-          </Form.Item>
           <Row gutter={12}>
             <Col span={12}>
               <Form.Item name="durationDays" label="Duration (days)" initialValue={1}>
@@ -404,19 +431,42 @@ export default function ToursPage() {
               </Form.Item>
             </Col>
           </Row>
+          <Typography.Text strong style={{ marginTop: 8, display: "block" }}>
+            Private Tour pricing
+          </Typography.Text>
           <Row gutter={12}>
             <Col span={8}>
-              <Form.Item name="adultPrice" label="Adult price" initialValue={0}>
+              <Form.Item name="privatePricesAdult" label="Private adult price" initialValue={0}>
                 <InputNumber style={{ width: "100%" }} min={0} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="childPrice" label="Child price" initialValue={0}>
+              <Form.Item name="privatePricesChild" label="Private child price" initialValue={0}>
                 <InputNumber style={{ width: "100%" }} min={0} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="infantPrice" label="Infant price" initialValue={0}>
+              <Form.Item name="privatePricesInfant" label="Private infant price" initialValue={0}>
+                <InputNumber style={{ width: "100%" }} min={0} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Typography.Text strong style={{ marginTop: 8, display: "block" }}>
+            Group Tour pricing
+          </Typography.Text>
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="groupPricesAdult" label="Group adult price" initialValue={0}>
+                <InputNumber style={{ width: "100%" }} min={0} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="groupPricesChild" label="Group child price" initialValue={0}>
+                <InputNumber style={{ width: "100%" }} min={0} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="groupPricesInfant" label="Group infant price" initialValue={0}>
                 <InputNumber style={{ width: "100%" }} min={0} />
               </Form.Item>
             </Col>

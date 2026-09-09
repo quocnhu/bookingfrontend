@@ -134,7 +134,6 @@ export default function TransportationPage() {
   const canVehicleCreate = hasPermission("vehicle.create");
   const canVehicleUpdate = hasPermission("vehicle.update");
   const canVehicleDelete = hasPermission("vehicle.delete");
-  const canProviderCreate = hasPermission("provider.create");
   const canAssignDriver = hasPermission("provider-driver.assign");
   const canUnassignDriver = hasPermission("provider-driver.unassign");
 
@@ -157,14 +156,6 @@ export default function TransportationPage() {
   const [price, setPrice] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [priceDrawer, setPriceDrawer] = useState(false);
-
-  const [providerDrawer, setProviderDrawer] = useState(false);
-  const [providerForm, setProviderForm] = useState<{
-    name: string;
-    email: string;
-    password: string;
-  }>({ name: "", email: "", password: "" });
-  const [providerSaving, setProviderSaving] = useState(false);
 
   const [modalProvider, setModalProvider] = useState<ProviderDto | null>(null);
   const [modalTab, setModalTab] = useState<"vehicles" | "drivers">("vehicles");
@@ -325,36 +316,6 @@ export default function TransportationPage() {
       refreshTransport();
     } catch (e) {
       message.error(getErrorMessage(e, "Failed to delete vehicle"));
-    }
-  };
-
-  const createProvider = async () => {
-    if (!providerForm.name.trim() || !providerForm.email.trim()) {
-      message.warning("Please fill provider name and email");
-      return;
-    }
-    setProviderSaving(true);
-    try {
-      const res = await api.post("/transportation-providers", {
-        name: providerForm.name.trim(),
-        email: providerForm.email.trim(),
-        password: providerForm.password.trim() || undefined,
-      });
-      if (res.data?.defaultPassword) {
-        message.success(
-          `Provider created. Default password: ${res.data.defaultPassword}. User will appear on the Users table.`,
-          6,
-        );
-      } else {
-        message.success("Provider created. A TRANSPORT_PROVIDER user will appear on the Users table.");
-      }
-      setProviderDrawer(false);
-      setProviderForm({ name: "", email: "", password: "" });
-      refreshTransport();
-    } catch (e) {
-      message.error(getErrorMessage(e, "Failed to create provider"));
-    } finally {
-      setProviderSaving(false);
     }
   };
 
@@ -855,53 +816,6 @@ export default function TransportationPage() {
     );
   };
 
-  const renderProviderDrawer = () => {
-    return (
-      <Drawer
-        title="Add Transportation Provider"
-        placement="right"
-        width={420}
-        open={providerDrawer}
-        onClose={() => setProviderDrawer(false)}
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} loading={providerSaving} onClick={createProvider}>
-            Save
-          </Button>
-        }
-      >
-        <Space direction="vertical" style={{ width: "100%" }} size={16}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <Text strong>Provider Name</Text>
-            <Input
-              placeholder="e.g. Da Nang Bus Co."
-              value={providerForm.name}
-              onChange={(e) => setProviderForm((f) => ({ ...f, name: e.target.value }))}
-            />
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <Text strong>Contact Email</Text>
-            <Input
-              placeholder="e.g. contact@danangbus.local"
-              value={providerForm.email}
-              onChange={(e) => setProviderForm((f) => ({ ...f, email: e.target.value }))}
-            />
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <Text strong>Password (optional)</Text>
-            <Input.Password
-              placeholder="Default: provider123"
-              value={providerForm.password}
-              onChange={(e) => setProviderForm((f) => ({ ...f, password: e.target.value }))}
-            />
-          </div>
-          <Typography.Text type="secondary">
-            A TRANSPORT_PROVIDER user is created with this email — it will also appear on the Users table.
-          </Typography.Text>
-        </Space>
-      </Drawer>
-    );
-  };
-
   const renderVehicleForm = () => {
     if (!vehicleForm) return null;
     return (
@@ -1191,13 +1105,6 @@ export default function TransportationPage() {
             ),
             children: (
               <Card size="small" variant="borderless">
-                {canProviderCreate && (
-                  <FlexRow marginBottom={12}>
-                    <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setProviderDrawer(true)}>
-                      Add Provider
-                    </Button>
-                  </FlexRow>
-                )}
                 <Table<ProviderRow>
                   rowKey="id"
                   size="small"
@@ -1316,7 +1223,6 @@ export default function TransportationPage() {
         ]}
       />
       {renderPriceDrawer()}
-      {renderProviderDrawer()}
       {renderProviderModal()}
       {renderVehicleForm()}
     </div>

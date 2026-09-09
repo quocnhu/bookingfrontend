@@ -267,12 +267,14 @@ export default function TourTemplateModal({
                       {["#", "Booking ref", "Customer", "Pickup / Hotel", "Pax", "Collect", "Refund"].map((h, i) => (
                         <th
                           key={h}
+                          className="tt-white"
                           style={{
                             padding: "8px 10px",
                             textAlign: i >= 4 ? "right" : "left",
-                            background: NAVY,
+                            background:
+                              "linear-gradient(135deg, #16263f 0%, #1f3a5f 60%, #2d4d7a 100%)",
                             color: "#fff",
-                            border: `1px solid ${NAVY}`,
+                            border: `1px solid ${NAVY_DARK}`,
                             fontWeight: 600,
                             letterSpacing: 0.3,
                           }}

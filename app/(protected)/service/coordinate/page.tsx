@@ -19,7 +19,6 @@ import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
 import { useFillHeight } from "@/lib/use-fill-height";
-import FilterBar from "@/components/filter-bar";
 
 export default function CoordinatePage() {
   const { hasPermission } = useApp();
@@ -32,7 +31,6 @@ export default function CoordinatePage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
 
   const tableHeight = useFillHeight({
     rootSelector: ".coordinate-page",
@@ -48,7 +46,6 @@ export default function CoordinatePage() {
   const loadData = () => {
     setLoading(true);
     const params: Record<string, any> = { page, limit: pageSize };
-    if (search.trim()) params.q = search.trim();
     api
       .get("/coordinates", { params })
       .then((r) => {
@@ -61,7 +58,7 @@ export default function CoordinatePage() {
 
   useEffect(() => {
     loadData();
-  }, [page, pageSize, search]);
+  }, [page, pageSize]);
 
   const openCreate = () => {
     setEditing(null);
@@ -202,17 +199,6 @@ export default function CoordinatePage() {
         title="Coordinates"
         extra={
           <Flex gap={8}>
-            <FilterBar
-              onSearch={(v) => {
-                setSearch(v);
-                setPage(1);
-              }}
-              onReset={() => {
-                setSearch("");
-                setPage(1);
-              }}
-              searchPlaceholder="Search hotel or address..."
-            />
             {canCreate && (
               <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
                 Add Coordinate

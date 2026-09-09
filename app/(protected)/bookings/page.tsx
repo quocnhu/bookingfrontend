@@ -2,15 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  AutoComplete,
   Button,
   Card,
   DatePicker,
   Descriptions,
+  Divider,
   Drawer,
   Flex,
   Form,
   Input,
   InputNumber,
+  Modal,
   Select,
   Space,
   Table,
@@ -20,6 +23,7 @@ import {
   message,
 } from "antd";
 import {
+  AccountBookOutlined,
   CarOutlined,
   MailOutlined,
   PlusOutlined,
@@ -30,7 +34,6 @@ import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
 import { useFillHeight } from "@/lib/use-fill-height";
-import FilterBar from "@/components/filter-bar";
 import DispatchBoard from "@/components/dispatch-board";
 
 const BOOKING_STATUS = ["PENDING", "ASSIGNED", "CANCELED"];
@@ -61,22 +64,25 @@ export default function BookingsPage() {
   const [bookingsPage, setBookingsPage] = useState(1);
   const [bookingsPageSize, setBookingsPageSize] = useState(20);
   const [bookingsLoading, setBookingsLoading] = useState(false);
-  const [filters, setFilters] = useState<{
-    q?: string;
-    status?: string;
-    channel?: string;
-    payment?: string;
-  }>({});
 
   const [assignments, setAssignments] = useState<any[]>([]);
   const [assignmentsPage, setAssignmentsPage] = useState(1);
   const [assignmentsPageSize, setAssignmentsPageSize] = useState(20);
   const [assignmentsLoading, setAssignmentsLoading] = useState(false);
-  const [assignSearch, setAssignSearch] = useState("");
 
   const [boardOpen, setBoardOpen] = useState(false);
 
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryRange, setSummaryRange] = useState<any>(null);
+  const [summaryData, setSummaryData] = useState<any>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryGuideId, setSummaryGuideId] = useState<string | undefined>();
+  const [summaryDriverId, setSummaryDriverId] = useState<string | undefined>();
+  const [guideOptions, setGuideOptions] = useState<any[]>([]);
+  const [driverOptions, setDriverOptions] = useState<any[]>([]);
+
   const [tours, setTours] = useState<any[]>([]);
+  const [coordinates, setCoordinates] = useState<any[]>([]);
   const [unassignedBookings, setUnassignedBookings] = useState<any[]>([]);
 
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -95,8 +101,6 @@ export default function BookingsPage() {
   const [rawDataPage, setRawDataPage] = useState(1);
   const [rawDataPageSize, setRawDataPageSize] = useState(20);
   const [rawDataLoading, setRawDataLoading] = useState(false);
-  const [rawStatus, setRawStatus] = useState<string | undefined>();
-  const [rawSearch, setRawSearch] = useState("");
   const [rawDetail, setRawDetail] = useState<any>(null);
 
   const [activeTab, setActiveTab] = useState("bookings");
@@ -112,8 +116,6 @@ export default function BookingsPage() {
       page: rawDataPage,
       limit: rawDataPageSize,
     };
-    if (rawStatus) params.status = rawStatus;
-    if (rawSearch.trim()) params.q = rawSearch.trim();
     api
       .get("/raw-data", { params })
       .then((r) => {
@@ -126,7 +128,7 @@ export default function BookingsPage() {
 
   useEffect(() => {
     if (canManageMailbox) loadRawData();
-  }, [canManageMailbox, rawDataPage, rawDataPageSize, rawStatus, rawSearch]);
+  }, [canManageMailbox, rawDataPage, rawDataPageSize]);
 
   const RAW_DATA_STATUS_COLORS: Record<string, string> = {
     pending: "geekblue",
@@ -182,7 +184,7 @@ export default function BookingsPage() {
     setBookingsLoading(true);
     api
       .get("/bookings", {
-        params: { page: bookingsPage, limit: bookingsPageSize, ...filters },
+        params: { page: bookingsPage, limit: bookingsPageSize },
       })
       .then((r) => {
         setBookings(r.data.items ?? []);
@@ -199,7 +201,6 @@ export default function BookingsPage() {
         params: {
           page: 1,
           limit: 1000,
-          q: assignSearch,
           sortOrder: "asc",
         },
       })
@@ -212,14 +213,66 @@ export default function BookingsPage() {
 
   useEffect(() => {
     if (hasPermission("booking.read")) loadBookings();
-  }, [bookingsPage, bookingsPageSize, filters]);
+  }, [bookingsPage, bookingsPageSize]);
 
   useEffect(() => {
     if (hasPermission("assignment.read")) loadAssignments();
-  }, [assignmentsPage, assignmentsPageSize, assignSearch]);
+  }, [assignmentsPage, assignmentsPageSize]);
+
+  const loadSettlementSummary = async () => {
+    if (!summaryRange?.[0] || !summaryRange?.[1]) {
+      message.warning("Please pick a date range");
+      return;
+    }
+    setSummaryLoading(true);
+    try {
+      const r = await api.get("/assignments/settlement-summary", {
+        params: {
+          from: summaryRange[0].startOf("day").toISOString(),
+          to: summaryRange[1].endOf("day").toISOString(),
+          guideId: summaryGuideId || undefined,
+          driverId: summaryDriverId || undefined,
+        },
+      });
+      setSummaryData(r.data);
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to load settlement summary"));
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
+  const openSummary = () => {
+    setSummaryOpen(true);
+    if (guideOptions.length === 0 || driverOptions.length === 0) {
+      api
+        .get("/users", { params: { userType: "guide", limit: 1000 } })
+        .then((r) =>
+          setGuideOptions(
+            (r.data.items ?? r.data ?? []).map((u: any) => ({
+              value: u.id,
+              label: u.name ?? u.email,
+            })),
+          ),
+        )
+        .catch(() => {});
+      api
+        .get("/users", { params: { userType: "driver", limit: 1000 } })
+        .then((r) =>
+          setDriverOptions(
+            (r.data.items ?? r.data ?? []).map((u: any) => ({
+              value: u.id,
+              label: u.name ?? u.email,
+            })),
+          ),
+        )
+        .catch(() => {});
+    }
+  };
 
   useEffect(() => {
     api.get("/tours", { params: { limit: 100 } }).then((r) => setTours(r.data.items ?? []));
+    api.get("/coordinates", { params: { limit: 1000 } }).then((r) => setCoordinates(r.data.items ?? []));
   }, []);
 
   const openBooking = () => {
@@ -733,18 +786,6 @@ export default function BookingsPage() {
                       title="RawDataMail"
                       extra={
                         <Flex wrap gap={8} align="center">
-                          <FilterBar
-                            onSearch={(v) => {
-                              setRawSearch(v.trim());
-                              setRawDataPage(1);
-                            }}
-                            onReset={() => {
-                              setRawSearch("");
-                              setRawStatus(undefined);
-                              setRawDataPage(1);
-                            }}
-                            searchPlaceholder="Search sourceId or email..."
-                          />
                           <Button icon={<ReloadOutlined />} onClick={loadRawData}>
                             Refresh
                           </Button>
@@ -784,17 +825,6 @@ export default function BookingsPage() {
                 title="Bookings"
                 extra={
                   <Flex wrap gap={8} align="center">
-                    <FilterBar
-                      onSearch={(v) => {
-                        setFilters((prev) => ({ ...prev, q: v.trim() || undefined }));
-                        setBookingsPage(1);
-                      }}
-                      onReset={() => {
-                        setFilters({});
-                        setBookingsPage(1);
-                      }}
-                      searchPlaceholder="Search ref, customer, tour, channel..."
-                    />
                     {canCreateBooking && (
                       <Button type="primary" icon={<PlusOutlined />} onClick={openBooking}>
                         Add Booking
@@ -833,19 +863,14 @@ export default function BookingsPage() {
               <Card
                 variant="borderless"
                 title="Assignments"
-                extra={
+extra={
                   <Flex wrap gap={8} align="center">
-                    <FilterBar
-                      onSearch={(v) => {
-                        setAssignSearch(v.trim());
-                        setAssignmentsPage(1);
-                      }}
-                      onReset={() => {
-                        setAssignSearch("");
-                        setAssignmentsPage(1);
-                      }}
-                      searchPlaceholder="Search code, vehicle, driver, guide, customer..."
-                    />
+                    <Button
+                      icon={<AccountBookOutlined />}
+                      onClick={() => openSummary()}
+                    >
+                      Settlement Summary
+                    </Button>
                       <Button
                         icon={<ScheduleOutlined />}
                         onClick={() => setBoardOpen(true)}
@@ -881,32 +906,87 @@ export default function BookingsPage() {
 
       <Drawer title="Add Booking" open={bookingOpen} onClose={() => setBookingOpen(false)} width={480}>
         <Form form={bookingForm} layout="vertical">
-          <Form.Item name="bookingRef" label="Booking Ref" rules={[{ required: true }]}>
-            <Input placeholder="e.g. BK-001" />
+          <Form.Item name="bookingRef" label="Booking Ref">
+            <Input placeholder="Auto: PRV/GR-YYYYMMDD-#### (leave empty to auto-generate)" />
           </Form.Item>
           <Form.Item name="tourId" label="Tour">
-            <Select allowClear options={tours.map((t) => ({ value: t.id, label: t.name }))} />
+            <Select
+              allowClear
+              options={tours.map((t) => ({ value: t.id, label: t.name }))}
+              onChange={(id) => {
+                const t = tours.find((x) => x.id === id);
+                if (t?.type) bookingForm.setFieldValue("tourType", t.type);
+              }}
+            />
           </Form.Item>
-          <Form.Item name="customerName" label="Customer name">
+          <Form.Item name="tourType" label="Tour type">
+            <Select
+              allowClear
+              placeholder="Auto-filled from tour, change if needed"
+              options={[
+                { value: "PRIVATE_TOUR", label: "Private Tour" },
+                { value: "GROUP_TOUR", label: "Group Tour" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="customerName" label="Customer name" rules={[{ required: true, message: "Customer name is required" }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="hotelName" label="Hotel">
-            <Input />
+          <Form.Item
+            name="hotelName"
+            label="Hotel"
+            rules={[{ required: true, message: "Please pick a hotel from the list or type a new one" }]}
+            required
+          >
+            <AutoComplete
+              options={coordinates.map((c: any) => ({ value: c.hotelName }))}
+              filterOption={(input, option) =>
+                String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())
+              }
+              onChange={(value) => {
+                const c = coordinates.find(
+                  (x: any) => x.hotelName.toLowerCase() === String(value ?? "").trim().toLowerCase(),
+                );
+                if (c) {
+                  bookingForm.setFieldsValue({
+                    address: c.address,
+                    latitude: c.latitude,
+                    longitude: c.longitude,
+                  });
+                } else {
+                  bookingForm.setFieldsValue({
+                    address: undefined,
+                    latitude: undefined,
+                    longitude: undefined,
+                  });
+                }
+              }}
+              placeholder="Type to search hotels, or enter a new one"
+            />
           </Form.Item>
-          <Form.Item name="phone" label="Phone">
+          <Form.Item name="address" label="Address" rules={[{ required: true, message: "Address is required" }]}>
+            <Input placeholder="Auto-filled when the hotel is picked from the list" />
+          </Form.Item>
+          <Form.Item name="phone" label="Phone" rules={[{ required: true, message: "Phone is required" }]}>
             <Input />
           </Form.Item>
           <Form.Item name="mail" label="Email">
             <Input />
           </Form.Item>
-          <Form.Item name="startingDate" label="Start date">
+          <Form.Item name="startingDate" label="Start date" rules={[{ required: true, message: "Start date is required" }]}>
             <DatePicker style={{ width: "100%" }} />
           </Form.Item>
-          <Form.Item name="totalPax" label="Total pax">
+          <Form.Item name="totalPax" label="Total pax" rules={[{ required: true, message: "Total pax is required" }]}>
             <InputNumber min={0} style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item name="paxDetail" label="Pax detail">
             <Input.TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="latitude" hidden>
+            <InputNumber />
+          </Form.Item>
+          <Form.Item name="longitude" hidden>
+            <InputNumber />
           </Form.Item>
           <Button type="primary" block loading={savingBooking} onClick={saveBooking}>
             Save
@@ -949,6 +1029,226 @@ export default function BookingsPage() {
         canUpdateAssignment={canUpdateAssignment}
         onChanged={loadAssignments}
       />
+
+      <Drawer
+        title={
+          <Space>
+            <AccountBookOutlined style={{ color: "#1677ff" }} />
+            <Typography.Text strong>Settlement Summary</Typography.Text>
+          </Space>
+        }
+        open={summaryOpen}
+        onClose={() => setSummaryOpen(false)}
+        width="100%"
+        destroyOnClose
+      >
+        <Flex vertical gap={16}>
+          <Flex wrap gap={8} align="center">
+            <DatePicker.RangePicker
+              value={summaryRange}
+              onChange={(v) => {
+                setSummaryRange(v);
+                if (!v) setSummaryData(null);
+              }}
+              style={{ flex: 1, minWidth: 240 }}
+            />
+            <Select
+              allowClear
+              showSearch
+              size="middle"
+              placeholder="Tour guide (all)"
+              style={{ width: 180 }}
+              value={summaryGuideId}
+              onChange={(v) => {
+                setSummaryGuideId(v ?? undefined);
+                setSummaryData(null);
+              }}
+              options={guideOptions}
+              optionFilterProp="label"
+            />
+            <Select
+              allowClear
+              showSearch
+              size="middle"
+              placeholder="Driver (all)"
+              style={{ width: 180 }}
+              value={summaryDriverId}
+              onChange={(v) => {
+                setSummaryDriverId(v ?? undefined);
+                setSummaryData(null);
+              }}
+              options={driverOptions}
+              optionFilterProp="label"
+            />
+            <Button
+              type="primary"
+              loading={summaryLoading}
+              onClick={loadSettlementSummary}
+            >
+              Load
+            </Button>
+          </Flex>
+          {!summaryData && (
+            <Typography.Text type="secondary">
+              Pick a date range (and optionally a tour guide or driver), then
+              click Load to audit &amp; inspect settlements.
+            </Typography.Text>
+          )}
+          {summaryData && (
+            <>
+              <div
+                style={{
+                  border: "1px solid #e6e6e6",
+                  borderRadius: 10,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "14px 16px",
+                    background: "#fafafa",
+                    borderBottom: "1px solid #e6e6e6",
+                  }}
+                >
+                  <Flex justify="space-between" align="flex-start" wrap gap={8}>
+                    <div>
+                      <Typography.Title level={5} style={{ margin: 0 }}>
+                        Tour Settlement Template
+                      </Typography.Title>
+                      <Typography.Text type="secondary">
+                        Period:{" "}
+                        {new Date(summaryData.from).toLocaleDateString()} →{" "}
+                        {new Date(summaryData.to).toLocaleDateString()}
+                      </Typography.Text>
+                    </div>
+                    <Flex vertical align="flex-end" gap={4}>
+                      {summaryData.guideName && (
+                        <Tag color="blue">Tour guide: {summaryData.guideName}</Tag>
+                      )}
+                      {summaryData.driverName && (
+                        <Tag color="cyan">Driver: {summaryData.driverName}</Tag>
+                      )}
+                    </Flex>
+                  </Flex>
+                </div>
+              <div style={{ padding: "0 16px", background: "#fff" }}>
+                  {(summaryData.lines ?? []).length === 0 ? (
+                    <div style={{ padding: "22px 0", textAlign: "center" }}>
+                      <Typography.Text type="secondary">
+                        No settled tours in this range yet — finalize a tour
+                        (&quot;Confirm finished&quot;) to show it here.
+                      </Typography.Text>
+                    </div>
+                  ) : (
+                    (summaryData.lines as any[]).map((r, i) => (
+                      <div
+                        key={r.id}
+                        style={{
+                          padding: "14px 0",
+                          borderBottom:
+                            i < (summaryData.lines ?? []).length - 1
+                              ? "1px dashed #e6e6e6"
+                              : "none",
+                        }}
+                      >
+                        <Flex justify="space-between" align="flex-start" wrap gap={8}>
+                          <Flex vertical gap={2}>
+                            <Typography.Text strong style={{ fontSize: 14 }}>
+                              {i + 1}. {r.tourName ?? "—"}
+                            </Typography.Text>
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                              {r.code} · {r.vehiclePlate ?? "no vehicle"} ·{" "}
+                              {new Date(r.startDate).toLocaleDateString()} →{" "}
+                              {new Date(r.endDate).toLocaleDateString()}
+                            </Typography.Text>
+                          </Flex>
+                          {r.settlementFlow === "PAY_MONEY" ? (
+                            <Tag color="green" style={{ margin: 0 }}>
+                              Company → Guide
+                            </Tag>
+                          ) : r.settlementFlow === "COLLECT_MONEY" ? (
+                            <Tag color="volcano" style={{ margin: 0 }}>
+                              Guide → Company
+                            </Tag>
+                          ) : (
+                            <Typography.Text type="secondary">—</Typography.Text>
+                          )}
+                        </Flex>
+                        <Divider style={{ margin: "10px 0" }} />
+                        <Flex wrap gap={16}>
+                          <Typography.Text>
+                            <Typography.Text type="secondary">Total price: </Typography.Text>
+                            <Typography.Text strong>
+                              ${Number(r.collectedAmount ?? 0).toLocaleString("en-US")}
+                            </Typography.Text>
+                          </Typography.Text>
+                          <Typography.Text>
+                            <Typography.Text type="secondary">Net: </Typography.Text>
+                            <Typography.Text strong>
+                              ${Number(r.netAmount ?? 0).toLocaleString("en-US")}
+                            </Typography.Text>
+                          </Typography.Text>
+                        </Flex>
+                        <div style={{ marginTop: 10 }}>
+                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                            Places they visit:
+                          </Typography.Text>
+                          <Flex wrap gap={4} style={{ marginTop: 4 }}>
+                            {(r.places as string[])?.length ? (
+                              (r.places as string[]).map((p, j) => (
+                                <Tag key={j} style={{ margin: 0, fontSize: 11 }}>
+                                  {p}
+                                </Tag>
+                              ))
+                            ) : (
+                              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                —
+                              </Typography.Text>
+                            )}
+                          </Flex>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div
+                  style={{
+                    padding: "12px 16px",
+                    background: "#fafafa",
+                    borderTop: "1px solid #e6e6e6",
+                  }}
+                >
+                  <Flex gap={8} wrap>
+                    <Flex vertical>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        Company returns to guide
+                      </Typography.Text>
+                      <Typography.Text strong style={{ fontSize: 16 }}>
+                        ${summaryData.summary.companyReturnsToGuide.total.toLocaleString("en-US")}
+                      </Typography.Text>
+                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                        {summaryData.summary.companyReturnsToGuide.count} tour(s)
+                      </Typography.Text>
+                    </Flex>
+                    <Divider type="vertical" style={{ height: 48, margin: "0 8px" }} />
+                    <Flex vertical>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        Guide returns to company
+                      </Typography.Text>
+                      <Typography.Text strong style={{ fontSize: 16 }}>
+                        ${summaryData.summary.guideReturnsToCompany.total.toLocaleString("en-US")}
+                      </Typography.Text>
+                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                        {summaryData.summary.guideReturnsToCompany.count} tour(s)
+                      </Typography.Text>
+                    </Flex>
+                  </Flex>
+                </div>
+              </div>
+</>
+          )}
+        </Flex>
+      </Drawer>
 
       <Drawer
         title={`RawDataMail payload · ${rawDetail?.id ?? ""}`}

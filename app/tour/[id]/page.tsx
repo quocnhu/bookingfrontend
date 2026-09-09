@@ -3,13 +3,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
+  AutoComplete,
   Button,
   Card,
   Col,
+  DatePicker,
   Divider,
   Empty,
   Flex,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
   Row,
+  Select,
   Spin,
   Tabs,
   Tag,
@@ -61,6 +68,13 @@ interface PublicTour {
   discountPercent?: number | null;
   promotionStartsAt?: string | null;
   promotionEndsAt?: string | null;
+  typePrices?: {
+    type: "PRIVATE_TOUR" | "GROUP_TOUR";
+    adultPrice?: string | number | null;
+    childPrice?: string | number | null;
+    infantPrice?: string | number | null;
+    currency?: string | null;
+  }[];
   mapQuery?: string | null;
   gallery?: GalleryImage[];
   overview?: string | null;
@@ -80,7 +94,19 @@ export default function PublicTourDetailPage() {
   const [tour, setTour] = useState<PublicTour | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const [bookingForm] = Form.useForm();
+  const [savingBooking, setSavingBooking] = useState(false);
+  const [coordinates, setCoordinates] = useState<any[]>([]);
+
   const canEdit = hasPermission("tour.itinerary.edit") || hasPermission("tour.update");
+
+  const selectedType = Form.useWatch("tourType", bookingForm) ?? tour?.type ?? "PRIVATE_TOUR";
+
+  const priceOf = (type?: string) => {
+    const p = tour?.typePrices?.find((x) => x.type === type);
+    return Number(p?.adultPrice ?? tour?.adultPrice ?? 0) || 0;
+  };
 
   useEffect(() => {
     api
@@ -89,6 +115,42 @@ export default function PublicTourDetailPage() {
       .catch((e) => message.error(getErrorMessage(e, "Failed to load tour")))
       .finally(() => setLoading(false));
   }, [params.id]);
+
+  useEffect(() => {
+    api
+      .get("/coordinates", { params: { limit: 1000 } })
+      .then((r) => setCoordinates(r.data.items ?? []))
+      .catch(() => {});
+  }, []);
+
+  const openBooking = () => {
+    bookingForm.resetFields();
+    bookingForm.setFieldsValue({
+      tourType: tour?.type ?? "PRIVATE_TOUR",
+      tourId: tour?.id,
+    });
+    setBookingOpen(true);
+  };
+
+  const saveBooking = async () => {
+    const values = await bookingForm.validateFields();
+    setSavingBooking(true);
+    try {
+      await api.post("/bookings", {
+        ...values,
+        tourId: tour?.id,
+        channel: "WEBSITE",
+        source: "website",
+        startingDate: values.startingDate?.toISOString(),
+      });
+      message.success("Booking submitted. We will contact you to confirm.");
+      setBookingOpen(false);
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to submit booking"));
+    } finally {
+      setSavingBooking(false);
+    }
+  };
 
   const days = useMemo(() => {
     const map = new Map<number, PublicItinerary[]>();
@@ -413,7 +475,25 @@ export default function PublicTourDetailPage() {
                   </div>
                   <Flex vertical gap={4} style={{ padding: 20 }}>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      TOTAL PRICE
+                      TOUR TYPE
+                    </Typography.Text>
+                    <Flex gap={8}>
+                      {["PRIVATE_TOUR", "GROUP_TOUR"].map((t) => (
+                        <Button
+                          key={t}
+                          shape="round"
+                          size="small"
+                          type={selectedType === t ? "primary" : "default"}
+                          onClick={() => bookingForm.setFieldsValue({ tourType: t })}
+                          style={{ fontWeight: 600 }}
+                        >
+                          {t === "PRIVATE_TOUR" ? "Private" : "Group"}
+                        </Button>
+                      ))}
+                    </Flex>
+
+                    <Typography.Text type="secondary" style={{ fontSize: 12, marginTop: 12 }}>
+                      TOTAL PRICE ({(selectedType ?? "").replace("_", " ").toUpperCase()})
                     </Typography.Text>
                     {isPromoActive(tour) ? (
                       <>
@@ -422,10 +502,10 @@ export default function PublicTourDetailPage() {
                           delete
                           style={{ fontSize: 15, lineHeight: 1 }}
                         >
-                          {usd(tour.adultPrice)} {tour.currency}
+                          {usd(priceOf(selectedType))} {tour.currency}
                         </Typography.Text>
                         <Typography.Title level={3} style={{ margin: 0, color: "#dc2626" }}>
-                          {usd(discountedPrice(tour.adultPrice, tour.discountPercent))}{" "}
+                          {usd(discountedPrice(priceOf(selectedType), tour.discountPercent))}{" "}
                           <Typography.Text type="secondary" style={{ fontSize: 14 }}>
                             {tour.currency}
                           </Typography.Text>
@@ -436,7 +516,7 @@ export default function PublicTourDetailPage() {
                       </>
                     ) : (
                       <Typography.Title level={3} style={{ margin: 0 }}>
-                        {usd(tour.adultPrice)}{" "}
+                        {usd(priceOf(selectedType))}{" "}
                         <Typography.Text type="secondary" style={{ fontSize: 14 }}>
                           {tour.currency}
                         </Typography.Text>
@@ -468,6 +548,7 @@ export default function PublicTourDetailPage() {
                       block
                       style={{ fontWeight: 700 }}
                       icon={<CalendarOutlined />}
+                      onClick={openBooking}
                     >
                       BOOK THIS TOUR NOW
                     </Button>
@@ -484,6 +565,117 @@ export default function PublicTourDetailPage() {
           </Flex>
         )}
       </Flex>
+
+      <Modal
+        title={tour ? `Book · ${tour.name}` : "Book this tour"}
+        open={bookingOpen}
+        onCancel={() => setBookingOpen(false)}
+        onOk={saveBooking}
+        confirmLoading={savingBooking}
+        okText="Submit booking"
+        width={520}
+      >
+        <Form form={bookingForm} layout="vertical">
+          <Form.Item
+            name="tourType"
+            label="Tour type"
+            rules={[{ required: true, message: "Please choose a tour type" }]}
+          >
+            <Select
+              options={[
+                { value: "PRIVATE_TOUR", label: "Private Tour" },
+                { value: "GROUP_TOUR", label: "Group Tour" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item label="Price" style={{ marginBottom: 8 }}>
+            <Typography.Text strong>
+              {usd(discountedPrice(priceOf(selectedType), tour?.discountPercent))}{" "}
+              <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                {tour?.currency} / person
+              </Typography.Text>
+            </Typography.Text>
+          </Form.Item>
+          <Form.Item
+            name="customerName"
+            label="Customer name"
+            rules={[{ required: true, message: "Customer name is required" }]}
+          >
+            <Input placeholder="Your full name" />
+          </Form.Item>
+          <Form.Item
+            name="hotelName"
+            label="Hotel"
+            rules={[{ required: true, message: "Please pick a hotel from the list or type a new one" }]}
+            required
+          >
+            <AutoComplete
+              options={coordinates.map((c: any) => ({ value: c.hotelName }))}
+              filterOption={(input, option) =>
+                String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())
+              }
+              onChange={(value) => {
+                const c = coordinates.find(
+                  (x: any) => x.hotelName.toLowerCase() === String(value ?? "").trim().toLowerCase(),
+                );
+                if (c) {
+                  bookingForm.setFieldsValue({
+                    address: c.address,
+                    latitude: c.latitude,
+                    longitude: c.longitude,
+                  });
+                } else {
+                  bookingForm.setFieldsValue({
+                    address: undefined,
+                    latitude: undefined,
+                    longitude: undefined,
+                  });
+                }
+              }}
+              placeholder="Type to search hotels, or enter a new one"
+            />
+          </Form.Item>
+          <Form.Item name="address" label="Address" rules={[{ required: true, message: "Address is required" }]}>
+            <Input placeholder="Auto-filled when the hotel is picked from the list" />
+          </Form.Item>
+          <Form.Item
+            name="phone"
+            label="Phone"
+            rules={[{ required: true, message: "Phone is required" }]}
+          >
+            <Input placeholder="Your phone number" />
+          </Form.Item>
+          <Form.Item name="mail" label="Email">
+            <Input placeholder="Your email (optional)" />
+          </Form.Item>
+          <Form.Item
+            name="startingDate"
+            label="Start date"
+            rules={[{ required: true, message: "Start date is required" }]}
+          >
+            <DatePicker style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            name="totalPax"
+            label="Total pax"
+            rules={[{ required: true, message: "Total pax is required" }]}
+          >
+            <InputNumber min={1} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item name="paxDetail" label="Pax detail">
+            <Input.TextArea rows={3} placeholder="e.g. 2 adults, 1 child" />
+          </Form.Item>
+          <Form.Item name="tourId" hidden>
+            <Input />
+          </Form.Item>
+          <Form.Item name="latitude" hidden>
+            <InputNumber />
+          </Form.Item>
+          <Form.Item name="longitude" hidden>
+            <InputNumber />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

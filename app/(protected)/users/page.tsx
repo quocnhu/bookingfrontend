@@ -40,7 +40,6 @@ import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
 import { useFillHeight } from "@/lib/use-fill-height";
-import FilterBar from "@/components/filter-bar";
 
 interface Permission {
   id: string;
@@ -112,8 +111,6 @@ export default function UsersPage() {
   const [roleFilter, setRoleFilter] = useState<string | undefined>();
   const [userTypeFilter, setUserTypeFilter] = useState<string | undefined>();
   const [statusFilter, setStatusFilter] = useState<boolean | undefined>();
-  const [search, setSearch] = useState("");
-  const [roleSearch, setRoleSearch] = useState("");
   const [userPage, setUserPage] = useState(1);
   const [userPageSize, setUserPageSize] = useState(20);
   const [rolePage, setRolePage] = useState(1);
@@ -146,12 +143,10 @@ export default function UsersPage() {
 
   const load = async () => {
     const userParams: Record<string, any> = {};
-    if (search) userParams.q = search;
     if (roleFilter) userParams.role = roleFilter;
     if (userTypeFilter) userParams.userType = userTypeFilter;
     if (statusFilter !== undefined) userParams.isActive = statusFilter;
     const roleParams: Record<string, any> = {};
-    if (roleSearch) roleParams.q = roleSearch;
     const [u, r, p] = await Promise.all([
       api.get("/users", { params: userParams }),
       api.get("/roles", { params: roleParams }),
@@ -164,7 +159,7 @@ export default function UsersPage() {
 
   useEffect(() => {
     if (canManageUsers || canManageRoles) load().catch((e) => message.error(getErrorMessage(e)));
-  }, [roleFilter, userTypeFilter, statusFilter, search, roleSearch]);
+  }, [roleFilter, userTypeFilter, statusFilter]);
 
   const canManageMailbox = hasPermission("gmail.manage");
 
@@ -249,17 +244,6 @@ export default function UsersPage() {
     } catch (e) {
       message.error(getErrorMessage(e, "Failed to remove mailbox"));
     }
-  };
-
-  const resetUserFilters = () => {
-    setSearch("");
-    setRoleFilter(undefined);
-    setUserTypeFilter(undefined);
-    setStatusFilter(undefined);
-  };
-
-  const resetRoleFilters = () => {
-    setRoleSearch("");
   };
 
   const openRoleModal = (role?: Role) => {
@@ -726,44 +710,36 @@ export default function UsersPage() {
                 title="Users"
                 extra={
                   <Flex wrap gap={8} align="center">
-                    <FilterBar
-                      onSearch={(v) => {
-                        setSearch(v.trim());
-                      }}
-                      onReset={resetUserFilters}
-                      searchPlaceholder="Search name or email..."
-                    >
-                      <Select
-                        allowClear
-                        size="small"
-                        placeholder="Role"
-                        style={{ width: 150 }}
-                        value={roleFilter}
-                        onChange={setRoleFilter}
-                        options={ROLE_OPTIONS}
-                      />
-                      <Select
-                        allowClear
-                        size="small"
-                        placeholder="Type"
-                        style={{ width: 130 }}
-                        value={userTypeFilter}
-                        onChange={setUserTypeFilter}
-                        options={USER_TYPE_OPTIONS}
-                      />
-                      <Select
-                        allowClear
-                        size="small"
-                        placeholder="Status"
-                        style={{ width: 120 }}
-                        value={statusFilter}
-                        onChange={setStatusFilter}
-                        options={[
-                          { value: true, label: "Active" },
-                          { value: false, label: "Disabled" },
-                        ]}
-                      />
-                    </FilterBar>
+                    <Select
+                      allowClear
+                      size="small"
+                      placeholder="Role"
+                      style={{ width: 150 }}
+                      value={roleFilter}
+                      onChange={setRoleFilter}
+                      options={ROLE_OPTIONS}
+                    />
+                    <Select
+                      allowClear
+                      size="small"
+                      placeholder="Type"
+                      style={{ width: 130 }}
+                      value={userTypeFilter}
+                      onChange={setUserTypeFilter}
+                      options={USER_TYPE_OPTIONS}
+                    />
+                    <Select
+                      allowClear
+                      size="small"
+                      placeholder="Status"
+                      style={{ width: 120 }}
+                      value={statusFilter}
+                      onChange={setStatusFilter}
+                      options={[
+                        { value: true, label: "Active" },
+                        { value: false, label: "Disabled" },
+                      ]}
+                    />
                     {canManageUsers && (
                       <Button
                         type="primary"
@@ -803,13 +779,6 @@ export default function UsersPage() {
                 title="Roles"
                 extra={
                   <Flex wrap gap={8} align="center">
-                    <FilterBar
-                      onSearch={(v) => {
-                        setRoleSearch(v.trim());
-                      }}
-                      onReset={resetRoleFilters}
-                      searchPlaceholder="Search role name..."
-                    />
                     {canManageRoles && (
                       <Button type="primary" icon={<PlusOutlined />} onClick={() => openRoleModal()}>
                         Add Role

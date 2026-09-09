@@ -6,7 +6,6 @@ import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
 import { useFillHeight } from "@/lib/use-fill-height";
-import FilterBar from "@/components/filter-bar";
 
 interface AuthActivity {
   id: string;
@@ -34,7 +33,6 @@ export default function AuthActivitiesPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
 
   const tableHeight = useFillHeight({
     rootSelector: ".auth-activities-page",
@@ -47,7 +45,7 @@ export default function AuthActivitiesPage() {
     setLoading(true);
     api
       .get("/auth-activities", {
-        params: { page, limit: pageSize, q: search || undefined },
+        params: { page, limit: pageSize },
       })
       .then((r) => {
         setData(r.data.items ?? []);
@@ -55,14 +53,9 @@ export default function AuthActivitiesPage() {
       })
       .catch((e) => message.error(getErrorMessage(e)))
       .finally(() => setLoading(false));
-  }, [page, pageSize, search]);
+  }, [page, pageSize]);
 
   const canRead = hasPermission("auth.read");
-
-  const resetFilters = () => {
-    setSearch("");
-    setPage(1);
-  };
 
   const columns = centerColumns([
     indexColumn(page, pageSize),
@@ -128,16 +121,6 @@ export default function AuthActivitiesPage() {
         <Card
           variant="borderless"
           title="Auth Activities"
-          extra={
-            <FilterBar
-              onSearch={(v) => {
-                setSearch(v.trim());
-                setPage(1);
-              }}
-              onReset={resetFilters}
-              searchPlaceholder="Search event, IP, user..."
-            />
-          }
         >
           <Table
             size="small"

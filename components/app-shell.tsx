@@ -50,7 +50,7 @@ const menuItems = [
     label: "Service",
     children: [
       { key: "/service/transportation", icon: <CarOutlined />, label: "Transportation" },
-      { key: "/service/coordinate", icon: <EnvironmentOutlined />, label: "Coordinate" },
+      { key: "/service/coordinate", icon: <EnvironmentOutlined />, label: "Coordinate & Hotel" },
     ],
   },
   { key: "/audit", icon: <HistoryOutlined />, label: "Audit" },
@@ -104,6 +104,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <Layout style={{ minHeight: "100vh" }}>
       <Sider
         breakpoint="lg"
+        width={224}
         collapsedWidth={64}
         collapsed={collapsed}
         trigger={null}

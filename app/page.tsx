@@ -28,6 +28,10 @@ interface HomepageTour {
   discountPercent?: number | null;
   promotionStartsAt?: string | null;
   promotionEndsAt?: string | null;
+  typePrices?: {
+    type: "PRIVATE_TOUR" | "GROUP_TOUR";
+    adultPrice?: string | number | null;
+  }[];
 }
 
 const TYPE_COLOR: Record<string, string> = {
@@ -121,8 +125,22 @@ export default function HomePage() {
           <Row gutter={[16, 16]}>
             {tours.map((tour) => {
               const promo = isPromoActive(tour);
-              const price = usd(tour.adultPrice);
-              const discounted = usd(discountedPrice(tour.adultPrice, tour.discountPercent));
+              const typePrices = tour.typePrices ?? [];
+              const hasPrice = (type: string) =>
+                Number(typePrices.find((p) => p.type === type)?.adultPrice ?? 0) > 0;
+              const bothTypes = hasPrice("PRIVATE_TOUR") && hasPrice("GROUP_TOUR");
+              const fromPrice =
+                typePrices.length > 0
+                  ? Math.min(
+                      ...typePrices.map((p) => Number(p.adultPrice ?? 0)).filter((n) => n > 0),
+                    )
+                  : Number(tour.adultPrice ?? 0);
+              const price = usd(Number.isFinite(fromPrice) && fromPrice > 0 ? fromPrice : tour.adultPrice);
+              const discounted = usd(discountedPrice(Number.isFinite(fromPrice) && fromPrice > 0 ? fromPrice : tour.adultPrice, tour.discountPercent));
+              const typeLabel = bothTypes
+                ? "Private · Group"
+                : (tour.type ?? "").replace("_", " ");
+              const typeColor = bothTypes ? "blue" : TYPE_COLOR[tour.type] ?? "blue";
               return (
                 <Col
                   xs={24}
@@ -229,10 +247,10 @@ export default function HomePage() {
                   >
                     <Flex justify="space-between" align="center" wrap gap={8}>
                       <Tag
-                        color={TYPE_COLOR[tour.type] ?? "blue"}
+                        color={typeColor}
                         style={{ borderRadius: 999, fontWeight: 600 }}
                       >
-                        {tour.type.replace("_", " ")}
+                        {typeLabel}
                       </Tag>
                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                         {tour.code}
