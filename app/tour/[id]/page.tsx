@@ -38,7 +38,7 @@ import {
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { useMapSrc } from "@/lib/use-map-src";
-import { discountedPrice, isPromoActive } from "@/lib/promo";
+import { discountedPrice, discountFor, isTypePromoActive } from "@/lib/promo";
 import PromoCountdown from "@/components/promo-countdown";
 import PublicHeader from "@/components/public-header";
 import TourSlideshow from "@/components/tour-slideshow";
@@ -65,7 +65,8 @@ interface PublicTour {
   transportation?: string | null;
   adultPrice?: string | number | null;
   currency?: string;
-  discountPercent?: number | null;
+  privateDiscountPercent?: number | null;
+  groupDiscountPercent?: number | null;
   promotionStartsAt?: string | null;
   promotionEndsAt?: string | null;
   typePrices?: {
@@ -495,7 +496,7 @@ export default function PublicTourDetailPage() {
                     <Typography.Text type="secondary" style={{ fontSize: 12, marginTop: 12 }}>
                       TOTAL PRICE ({(selectedType ?? "").replace("_", " ").toUpperCase()})
                     </Typography.Text>
-                    {isPromoActive(tour) ? (
+                    {isTypePromoActive(tour, selectedType) ? (
                       <>
                         <Typography.Text
                           type="secondary"
@@ -505,13 +506,13 @@ export default function PublicTourDetailPage() {
                           {usd(priceOf(selectedType))} {tour.currency}
                         </Typography.Text>
                         <Typography.Title level={3} style={{ margin: 0, color: "#dc2626" }}>
-                          {usd(discountedPrice(priceOf(selectedType), tour.discountPercent))}{" "}
+{usd(discountedPrice(priceOf(selectedType), discountFor(tour ?? {}, selectedType)))}{" "}
                           <Typography.Text type="secondary" style={{ fontSize: 14 }}>
                             {tour.currency}
                           </Typography.Text>
                         </Typography.Title>
                         <Tag color="red" style={{ alignSelf: "flex-start" }}>
-                          Save {tour.discountPercent}%
+                          Save {discountFor(tour, selectedType)}%
                         </Tag>
                       </>
                     ) : (
@@ -590,7 +591,7 @@ export default function PublicTourDetailPage() {
           </Form.Item>
           <Form.Item label="Price" style={{ marginBottom: 8 }}>
             <Typography.Text strong>
-              {usd(discountedPrice(priceOf(selectedType), tour?.discountPercent))}{" "}
+              {usd(discountedPrice(priceOf(selectedType), discountFor(tour ?? {}, selectedType)))}{" "}
               <Typography.Text type="secondary" style={{ fontSize: 13 }}>
                 {tour?.currency} / person
               </Typography.Text>

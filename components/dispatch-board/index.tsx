@@ -10,6 +10,7 @@ import {
   Drawer,
   Empty,
   Flex,
+  Modal,
   Row,
   Space,
   Statistic,
@@ -23,8 +24,10 @@ import type { DatePickerProps } from "antd";
 import {
   CalendarOutlined,
   CheckCircleOutlined,
+  LoadingOutlined,
   SendOutlined,
   ScheduleOutlined,
+  TeamOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
@@ -33,13 +36,44 @@ import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
 dayjs.extend(isSameOrBefore);
 dayjs.extend(isSameOrAfter);
 import { api, getErrorMessage } from "@/lib/api";
-import type { BoardItem } from "./types";
+import type { BoardCrew, BoardItem } from "./types";
 import { TYPE_META, sortByDate } from "./types";
 import BoardColumn from "./BoardColumn";
+import BookingAdditionsModal from "./BookingAdditionsModal";
 import ConfirmFinishedModal from "./ConfirmFinishedModal";
+import CrewAvailabilityDrawer from "./CrewAvailabilityDrawer";
 import TourTemplateModal from "./TourTemplateModal";
+import VerifyReportModal from "./VerifyReportModal";
 
 const { Text } = Typography;
+
+function BoardLoadingOverlay({ text }: { text: string }) {
+  const { token } = antdTheme.useToken();
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1000,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 16,
+        background: "rgba(255, 255, 255, 0.55)",
+        backdropFilter: "blur(2px)",
+      }}
+    >
+      <LoadingOutlined
+        spin
+        style={{ fontSize: 42, color: token.colorPrimary }}
+      />
+      <Text type="secondary" style={{ fontSize: 14, letterSpacing: 0.3 }}>
+        {text}
+      </Text>
+    </div>
+  );
+}
 
 export default function DispatchBoard({
   open,
@@ -56,27 +90,64 @@ export default function DispatchBoard({
 
   const [boardData, setBoardData] = useState<BoardItem[]>([]);
   const [boardLoading, setBoardLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [crew, setCrew] = useState<BoardCrew>({ guides: [], drivers: [] });
   const [confirmingId] = useState<string | null>(null);
   const [dispatchingId, setDispatchingId] = useState<string | null>(null);
   const [finishing, setFinishing] = useState<BoardItem | null>(null);
   const [templateTarget, setTemplateTarget] = useState<BoardItem | null>(null);
+  const [verifyTarget, setVerifyTarget] = useState<BoardItem | null>(null);
   const [filterDate, setFilterDate] = useState<Dayjs | null>(dayjs().startOf("day"));
+  const [additionsTarget, setAdditionsTarget] = useState<BoardItem | null>(null);
+  const [crewAvailOpen, setCrewAvailOpen] = useState(false);
 
-  const loadBoard = useCallback(() => {
-    setBoardLoading(true);
+  const loadBoard = useCallback((background = false) => {
+    if (background) setRefreshing(true);
+    else setBoardLoading(true);
     api
       .get("/assignments/board")
-      .then((r) => setBoardData(r.data ?? []))
+      .then((r) => {
+        const data: BoardItem[] = r.data ?? [];
+        setBoardData(data);
+      })
       .catch((e) => message.error(getErrorMessage(e, "Failed to load board")))
-      .finally(() => setBoardLoading(false));
+      .finally(() => {
+        setBoardLoading(false);
+        setRefreshing(false);
+      });
   }, []);
 
   useEffect(() => {
     if (open) {
       setFilterDate(dayjs().startOf("day"));
       loadBoard();
+      api
+        .get("/assignments/board/crew")
+        .then((r) => setCrew(r.data ?? { guides: [], drivers: [] }))
+        .catch(() => setCrew({ guides: [], drivers: [] }));
     }
   }, [open, loadBoard]);
+
+  const changeCrew = async (
+    assignment: BoardItem,
+    field: "guideId" | "driverId",
+    userId: string | null,
+  ) => {
+    if (!canUpdateAssignment) return;
+    try {
+      await api.put(`/assignments/${assignment.id}`, { [field]: userId });
+      const changed = field === "guideId" ? "guide" : "driver";
+      message.success(
+        userId
+          ? `Reassigned ${changed} for bus "${assignment.code}"`
+          : `Removed ${changed} from bus "${assignment.code}"`,
+      );
+      loadBoard(true);
+      onChanged?.();
+    } catch (e) {
+      message.error(getErrorMessage(e, `Failed to update ${field}`));
+    }
+  };
 
   const confirmTour = (assignment: BoardItem) => {
     setFinishing(assignment);
@@ -84,6 +155,10 @@ export default function DispatchBoard({
 
   const openTemplate = (assignment: BoardItem) => {
     setTemplateTarget(assignment);
+  };
+
+  const openVerify = (assignment: BoardItem) => {
+    setVerifyTarget(assignment);
   };
 
   const dispatchAssignment = async (assignment: BoardItem) => {
@@ -95,12 +170,44 @@ export default function DispatchBoard({
       message.success(
         `Bus "${assignment.code}" dispatched — bookings set to ASSIGNED`,
       );
-      loadBoard();
+      loadBoard(true);
       onChanged?.();
     } catch (e) {
       message.error(getErrorMessage(e, "Failed to dispatch bus"));
     } finally {
       setDispatchingId(null);
+    }
+  };
+
+  const [recalling, setRecalling] = useState<BoardItem | null>(null);
+  const [recallingId, setRecallingId] = useState<string | null>(null);
+
+  const recallAssignment = async (assignment: BoardItem) => {
+    setRecallingId(assignment.id);
+    try {
+      await api.put(`/assignments/${assignment.id}/status`, {
+        status: "PENDING",
+      });
+      message.success(
+        `Bus "${assignment.code}" recall dispatched — bookings back to PENDING`,
+      );
+      loadBoard(true);
+      onChanged?.();
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to recall dispatch"));
+    } finally {
+      setRecallingId(null);
+    }
+  };
+
+  const onRecall = (assignment: BoardItem) => {
+    // After 7am the guide may be en route — ask for explicit confirmation.
+    const now = dayjs();
+    const cutoff = now.clone().startOf("day").add(7, "hour");
+    if (now.isAfter(cutoff)) {
+      setRecalling(assignment);
+    } else {
+      recallAssignment(assignment);
     }
   };
 
@@ -113,7 +220,7 @@ export default function DispatchBoard({
       const dispatched = r.data?.dispatched ?? 0;
       if (dispatched > 0) {
         message.success(`Dispatched ${dispatched} bus(es)`);
-        loadBoard();
+        loadBoard(true);
         onChanged?.();
       } else {
         message.info("No buses available to dispatch");
@@ -131,7 +238,7 @@ export default function DispatchBoard({
       message.success(
         `Switched to ${origin === "AUTO_ASSIGN" ? "Auto-assign" : "Manual"}`,
       );
-      loadBoard();
+      loadBoard(true);
       onChanged?.();
     } catch (e) {
       message.error(getErrorMessage(e, "Failed to update assignment origins"));
@@ -188,7 +295,7 @@ export default function DispatchBoard({
         }
         message.success({ content: "Booking moved between buses", key });
       }
-      loadBoard();
+      loadBoard(true);
       onChanged?.();
     } catch (e) {
       message.error({
@@ -200,9 +307,18 @@ export default function DispatchBoard({
 
   const filtered = useMemo(
     () =>
-      boardData.filter(
-        (a) => !filterDate || dayjs(a.startDate).isSame(filterDate, "day"),
-      ),
+      boardData.filter((a) => {
+        if (!filterDate) return true;
+        // Show every tour that is ACTIVE on the selected date (multi-day):
+        // startDate <= filterDate <= endDate. Tours on the board by overlapping
+        // the date, not only by their START date.
+        const start = dayjs(a.startDate).startOf("day");
+        const end = dayjs(a.endDate ?? a.startDate).startOf("day");
+        return (
+          start.isSameOrBefore(filterDate.startOf("day")) &&
+          end.isSameOrAfter(filterDate.startOf("day"))
+        );
+      }),
     [boardData, filterDate],
   );
 
@@ -243,7 +359,6 @@ export default function DispatchBoard({
       pending: filtered.filter((a) => a.status === "PENDING").length,
       dispatched: filtered.filter((a) => a.status === "DISPATCHED").length,
       verifying: filtered.filter((a) => a.status === "VERIFYING").length,
-      completed: filtered.filter((a) => a.status === "COMPLETED").length,
       group: groupItems.length,
       private: privateItems.length,
       other: otherItems.length,
@@ -294,16 +409,24 @@ export default function DispatchBoard({
       open={open}
       onClose={onClose}
       width="100%"
-      loading={boardLoading}
       destroyOnClose
     >
-      {filtered.length === 0 ? (
-        <Empty
-          description={filterDate ? "No tours on this date" : "No upcoming tours"}
-          style={{ padding: 48 }}
-        />
+      {boardLoading && filtered.length === 0 ? (
+        <BoardLoadingOverlay text="Loading schedule…" />
       ) : (
-        <div style={{ padding: "0 4px" }}>
+        <>
+          {refreshing && <BoardLoadingOverlay text="Refreshing…" />}
+          {filtered.length === 0 ? (
+            <Empty
+              description={
+                filterDate ? "No tours on this date" : "No upcoming tours"
+              }
+              style={{ padding: 48 }}
+            />
+          ) : (
+            <div
+              style={{ padding: "0 4px", position: "relative", minHeight: 120 }}
+            >
           <Card
             size="small"
             style={{ marginBottom: 16, borderRadius: 14 }}
@@ -366,6 +489,13 @@ export default function DispatchBoard({
                     {filtered.length} assignment
                     {filtered.length > 1 ? "s" : ""}
                   </Tag>
+                  <Button
+                    icon={<TeamOutlined />}
+                    onClick={() => setCrewAvailOpen(true)}
+                    style={{ borderRadius: 10 }}
+                  >
+                    Crew availability
+                  </Button>
                   {canUpdateAssignment && filtered.some((a) => a.status === "PENDING") && (
                     <Button
                       type="primary"
@@ -394,11 +524,17 @@ export default function DispatchBoard({
                 today={today}
                 confirmingId={confirmingId}
                 dispatchingId={dispatchingId}
+                recallingId={recallingId}
                 canConfirm={canUpdateAssignment}
                 onConfirm={confirmTour}
                 onDispatch={dispatchAssignment}
+                onRecall={onRecall}
                 onMoveBooking={moveBooking}
                 onTemplate={openTemplate}
+                onVerify={openVerify}
+                onAdditions={setAdditionsTarget}
+                crew={crew}
+                onCrewChange={canUpdateAssignment ? changeCrew : undefined}
               />
               <BoardColumn
                 meta={TYPE_META.PRIVATE_TOUR}
@@ -406,11 +542,17 @@ export default function DispatchBoard({
                 today={today}
                 confirmingId={confirmingId}
                 dispatchingId={dispatchingId}
+                recallingId={recallingId}
                 canConfirm={canUpdateAssignment}
                 onConfirm={confirmTour}
                 onDispatch={dispatchAssignment}
+                onRecall={onRecall}
                 onMoveBooking={moveBooking}
                 onTemplate={openTemplate}
+                onVerify={openVerify}
+                onAdditions={setAdditionsTarget}
+                crew={crew}
+                onCrewChange={canUpdateAssignment ? changeCrew : undefined}
               />
               {otherItems.length > 0 && (
                 <BoardColumn
@@ -419,11 +561,16 @@ export default function DispatchBoard({
                   today={today}
                   confirmingId={confirmingId}
                   dispatchingId={dispatchingId}
+                  recallingId={recallingId}
                   canConfirm={canUpdateAssignment}
                   onConfirm={confirmTour}
                   onDispatch={dispatchAssignment}
+                  onRecall={onRecall}
                   onMoveBooking={moveBooking}
                   onTemplate={openTemplate}
+                  onAdditions={setAdditionsTarget}
+                  crew={crew}
+                  onCrewChange={canUpdateAssignment ? changeCrew : undefined}
                 />
               )}
             </Row>
@@ -478,18 +625,13 @@ export default function DispatchBoard({
                     valueStyle={{ fontSize: 18, color: token.colorPrimary }}
                   />
                 </Col>
-                <Col xs={12} sm={4}>
-                  <Statistic
-                    title="Completed"
-                    value={stats.completed}
-                    valueStyle={{ fontSize: 18, color: "#52c41a" }}
-                  />
-                </Col>
               </Row>
             }
             style={{ borderRadius: 12, marginTop: 16 }}
           />
         </div>
+      )}
+        </>
       )}
 
       <ConfirmFinishedModal
@@ -497,7 +639,7 @@ export default function DispatchBoard({
         open={!!finishing}
         onClose={() => setFinishing(null)}
         onDone={() => {
-          loadBoard();
+          loadBoard(true);
           onChanged?.();
         }}
       />
@@ -506,6 +648,56 @@ export default function DispatchBoard({
         open={!!templateTarget}
         onClose={() => setTemplateTarget(null)}
       />
+      <VerifyReportModal
+        assignment={verifyTarget}
+        open={!!verifyTarget}
+        onClose={() => setVerifyTarget(null)}
+        onDone={() => {
+          loadBoard(true);
+          onChanged?.();
+        }}
+      />
+      <BookingAdditionsModal
+        assignment={additionsTarget}
+        open={!!additionsTarget}
+        onClose={() => setAdditionsTarget(null)}
+        onDone={() => {
+          loadBoard(true);
+          onChanged?.();
+        }}
+      />
+      <CrewAvailabilityDrawer
+        open={crewAvailOpen}
+        onClose={() => setCrewAvailOpen(false)}
+      />
+      <Modal
+        open={!!recalling}
+        title="Recall dispatch"
+        okText="Recall"
+        okType="danger"
+        cancelText="Keep dispatched"
+        confirmLoading={!!recalling && recallingId === recalling.id}
+        onOk={() => {
+          if (recalling) {
+            const target = recalling;
+            setRecalling(null);
+            recallAssignment(target);
+          }
+        }}
+        onCancel={() => setRecalling(null)}
+      >
+        <p>
+          Bus{" "}
+          <Text strong>{recalling?.code ?? ""}</Text> has already been dispatched
+          for more than the 7:00 cutoff — the guide may already be en route to
+          pick up tourists.
+        </p>
+        <p style={{ marginBottom: 0 }}>
+          Recalling returns the bus to <Text strong>PENDING</Text> so you can
+          re-assign it. Driver and guide are notified of both the recall and any
+          re-dispatch.
+        </p>
+      </Modal>
     </Drawer>
   );
 }

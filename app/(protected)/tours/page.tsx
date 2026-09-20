@@ -24,6 +24,7 @@ import { PlusOutlined, DeleteOutlined, EditOutlined, PictureOutlined, ScheduleOu
 import dayjs, { type Dayjs } from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
+import { isTypePromoActive } from "@/lib/promo";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
 import { useFillHeight } from "@/lib/use-fill-height";
 import ThumbnailPicker from "@/components/thumbnail-picker";
@@ -41,7 +42,8 @@ interface Tour {
   childPrice?: string | number | null;
   infantPrice?: string | number | null;
   currency?: string;
-  discountPercent?: number | null;
+  privateDiscountPercent?: number | null;
+  groupDiscountPercent?: number | null;
   promotionStartsAt?: string | null;
   promotionEndsAt?: string | null;
   typePrices?: {
@@ -75,17 +77,26 @@ const typePrice = (
 const LIMIT = 20;
 
 function promotionState(
-  discountPercent: number | null | undefined,
+  pct: number | null | undefined,
   startsAt: string | null | undefined,
   endsAt: string | null | undefined,
 ): { label: string; color: string } | null {
-  if (!discountPercent || discountPercent <= 0) return null;
+  if (!pct || pct <= 0) return null;
   const now = Date.now();
   const start = startsAt ? new Date(startsAt).getTime() : null;
   const end = endsAt ? new Date(endsAt).getTime() : null;
-  if (start && now < start) return { label: `-${discountPercent}% (upcoming)`, color: "orange" };
-  if (end && now > end) return { label: `-${discountPercent}% (ended)`, color: "default" };
-  return { label: `-${discountPercent}%`, color: "red" };
+  if (start && now < start) return { label: `-${pct}% (upcoming)`, color: "orange" };
+  if (end && now > end) return { label: `-${pct}% (ended)`, color: "default" };
+  return { label: `-${pct}%`, color: "red" };
+}
+
+function promotionTags(r: Tour) {
+  const tags: React.ReactNode[] = [];
+  const stP = promotionState(r.privateDiscountPercent, r.promotionStartsAt, r.promotionEndsAt);
+  const stG = promotionState(r.groupDiscountPercent, r.promotionStartsAt, r.promotionEndsAt);
+  if (stP) tags.push(<Tag key="private" color={stP.color}>Private {stP.label}</Tag>);
+  if (stG) tags.push(<Tag key="group" color={stG.color}>Group {stG.label}</Tag>);
+  return tags.length > 0 ? tags : null;
 }
 
 export default function ToursPage() {
@@ -150,7 +161,8 @@ export default function ToursPage() {
       groupPricesChild: grp?.childPrice ?? (tour?.type === "GROUP_TOUR" ? tour?.childPrice : 0) ?? 0,
       groupPricesInfant: grp?.infantPrice ?? (tour?.type === "GROUP_TOUR" ? tour?.infantPrice : 0) ?? 0,
       currency: tour?.currency ?? "USD",
-      discountPercent: tour?.discountPercent ?? 0,
+      privateDiscountPercent: tour?.privateDiscountPercent ?? 0,
+      groupDiscountPercent: tour?.groupDiscountPercent ?? 0,
       promotionWindow:
         tour?.promotionStartsAt && tour?.promotionEndsAt
           ? [dayjs(tour.promotionStartsAt), dayjs(tour.promotionEndsAt)]
@@ -196,7 +208,8 @@ export default function ToursPage() {
       durationDays: values.durationDays,
       departureLocation: values.departureLocation,
       currency: values.currency,
-      discountPercent: values.discountPercent,
+      privateDiscountPercent: values.privateDiscountPercent,
+      groupDiscountPercent: values.groupDiscountPercent,
       promotionStartsAt: window ? window[0].toISOString() : null,
       promotionEndsAt: window ? window[1].toISOString() : null,
       adultPrice: primaryTypePrices.adultPrice,
@@ -299,9 +312,8 @@ export default function ToursPage() {
       title: "Promotion",
       key: "promotion",
       render: (_: any, r: Tour) => {
-        const st = promotionState(r.discountPercent, r.promotionStartsAt, r.promotionEndsAt);
-        if (!st) return <Typography.Text type="secondary">—</Typography.Text>;
-        return <Tag color={st.color}>{st.label}</Tag>;
+        const tags = promotionTags(r);
+        return tags ?? <Typography.Text type="secondary">—</Typography.Text>;
       },
       filters: [
         { text: "Active", value: "active" },
@@ -309,8 +321,9 @@ export default function ToursPage() {
         { text: "Expired", value: "expired" },
       ],
       onFilter: (v: any, r: Tour) => {
-        const st = promotionState(r.discountPercent, r.promotionStartsAt, r.promotionEndsAt);
-        return st?.label.toLowerCase() === String(v).toLowerCase();
+        const pct = Math.max(Number(r.privateDiscountPercent ?? 0), Number(r.groupDiscountPercent ?? 0));
+        const st = promotionState(pct, r.promotionStartsAt, r.promotionEndsAt);
+        return st?.label.toLowerCase().includes(String(v).toLowerCase()) ?? false;
       },
     },
     {
@@ -479,25 +492,28 @@ export default function ToursPage() {
           </Form.Item>
           <Row gutter={12}>
             <Col span={12}>
-              <Form.Item name="discountPercent" label="Promotion discount (%)" initialValue={0}>
+              <Form.Item name="privateDiscountPercent" label="Private promotion discount (%)" initialValue={0}>
                 <InputNumber style={{ width: "100%" }} min={0} max={100} addonAfter="%" />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="promotionWindow" label="Promotion window (start → end)">
-                <DatePicker.RangePicker showTime style={{ width: "100%" }} />
+              <Form.Item name="groupDiscountPercent" label="Group promotion discount (%)" initialValue={0}>
+                <InputNumber style={{ width: "100%" }} min={0} max={100} addonAfter="%" />
               </Form.Item>
             </Col>
           </Row>
+          <Form.Item name="promotionWindow" label="Promotion window (start → end)">
+            <DatePicker.RangePicker showTime style={{ width: "100%" }} />
+          </Form.Item>
           <Button
             danger
             block
             icon={<CloseCircleOutlined />}
             onClick={() =>
-              form.setFieldsValue({ discountPercent: 0, promotionWindow: null })
+              form.setFieldsValue({ privateDiscountPercent: 0, groupDiscountPercent: 0, promotionWindow: null })
             }
           >
-            Reset discount & window
+            Reset discounts & window
           </Button>
         </Form>
       </Modal>

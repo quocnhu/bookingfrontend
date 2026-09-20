@@ -1,19 +1,49 @@
 "use client";
 
 export interface PromoFields {
-  adultPrice?: string | number | null;
-  discountPercent?: number | null;
+  privateDiscountPercent?: number | null;
+  groupDiscountPercent?: number | null;
   promotionStartsAt?: string | null;
   promotionEndsAt?: string | null;
 }
 
-/** True when the promotion is currently running (within the window, discount > 0). */
-export function isPromoActive(t: PromoFields): boolean {
-  if (!t.discountPercent || t.discountPercent <= 0) return false;
+const inWindow = (t: PromoFields): boolean => {
   const now = Date.now();
   if (t.promotionStartsAt && now < new Date(t.promotionStartsAt).getTime()) return false;
   if (t.promotionEndsAt && now > new Date(t.promotionEndsAt).getTime()) return false;
   return true;
+};
+
+/** Discount percent for a given tour type. */
+export function discountFor(
+  t: PromoFields,
+  type?: string | null,
+): number {
+  const pct =
+    type === "GROUP_TOUR"
+      ? Number(t.groupDiscountPercent ?? 0)
+      : type === "PRIVATE_TOUR"
+        ? Number(t.privateDiscountPercent ?? 0)
+        : Number(t.privateDiscountPercent ?? 0) || Number(t.groupDiscountPercent ?? 0);
+  return pct > 0 ? pct : 0;
+}
+
+/** True when the promotion is currently running for a specific tour type. */
+export function isTypePromoActive(
+  t: PromoFields,
+  type?: string | null,
+): boolean {
+  const pct = discountFor(t, type);
+  return pct > 0 && inWindow(t);
+}
+
+/** True when any promotion (private or group) is currently running. */
+export function isPromoActive(t: PromoFields): boolean {
+  const pct = Math.max(
+    Number(t.privateDiscountPercent ?? 0),
+    Number(t.groupDiscountPercent ?? 0),
+  );
+  return pct > 0 && inWindow(t);
 }
 
 /** Price after applying the discount percent. */

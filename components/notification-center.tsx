@@ -12,6 +12,9 @@ const TYPE_COLORS: Record<string, string> = {
   CANCELED: "red",
   REPORT_VERIFIED: "green",
   REPORT_REJECTED: "red",
+  LEAVE_REQUESTED: "volcano",
+  LEAVE_APPROVED: "green",
+  LEAVE_REJECTED: "red",
   GENERAL: "default",
 };
 
@@ -61,7 +64,7 @@ export default function NotificationCenter() {
   };
 
   const content = (
-    <div style={{ width: 360, maxHeight: 400, overflow: "auto" }}>
+    <div style={{ width: 360, maxWidth: "calc(100vw - 24px)", maxHeight: 400, overflow: "auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, padding: "0 4px" }}>
         <Typography.Text strong>Notifications</Typography.Text>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>

@@ -5,6 +5,7 @@ import { CarOutlined, FileTextOutlined, UserOutlined, CalendarOutlined, ProfileO
 
 const DRIVER_MENU = [
   { key: "/driver/my-trips", icon: <CarOutlined />, label: "My Trips" },
+  { key: "/driver/day-off", icon: <CalendarOutlined />, label: "Day Off" },
   { key: "/driver/profile", icon: <UserOutlined />, label: "Profile" },
 ];
 

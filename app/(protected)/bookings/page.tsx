@@ -332,89 +332,160 @@ export default function BookingsPage() {
   const bookingColumns = centerColumns([
     indexColumn(bookingsPage, bookingsPageSize),
     {
-      title: "Ref", dataIndex: "bookingRef", key: "bookingRef", width: 100, ellipsis: true,
+      title: "Ref",
+      dataIndex: "bookingRef",
+      key: "bookingRef",
+      width: 110,
+      ellipsis: true,
+      render: (v: any) => (
+        <Typography.Text strong style={{ fontSize: 12 }}>
+          {v ?? "—"}
+        </Typography.Text>
+      ),
       onFilter: (v: any, r: any) => (r.bookingRef ?? "").toLowerCase().includes(v.toLowerCase()),
     },
     {
       title: "Customer",
       dataIndex: "customerName",
       key: "customerName",
-      width: 140,
+      width: 150,
       ellipsis: true,
-      render: (v: any) => v ?? "—",
+      render: (v: any) =>
+        v ? (
+          <Typography.Text style={{ fontSize: 12 }} title={v}>
+            {v}
+          </Typography.Text>
+        ) : "—",
       onFilter: (v: any, r: any) => (r.customerName ?? "").toLowerCase().includes(v.toLowerCase()),
     },
     {
-      title: "Tour",
-      key: "tourName",
-      width: 160,
+      title: "Hotel",
+      key: "hotel",
+      width: 200,
       ellipsis: true,
       render: (_: any, r: any) => {
+        const h = r.hotelName;
+        return h ? (
+          <Typography.Text style={{ fontSize: 12 }} title={h}>
+            {h}
+          </Typography.Text>
+        ) : "—";
+      },
+      filters: Array.from(new Set(bookings.map((b: any) => b.hotelName).filter(Boolean))).sort().map((h: any) => ({ text: h, value: h })),
+      onFilter: (v: any, r: any) => (r.hotelName ?? "").toLowerCase().includes(String(v).toLowerCase()),
+    },
+    {
+      title: "Address",
+      key: "address",
+      width: 260,
+      ellipsis: true,
+      render: (_: any, r: any) => {
+        const a = r.address;
+        return a ? (
+          <Typography.Text style={{ fontSize: 12 }} title={a}>
+            {a}
+          </Typography.Text>
+        ) : "—";
+      },
+      filters: Array.from(new Set(bookings.map((b: any) => b.address).filter(Boolean))).sort().map((a: any) => ({ text: a, value: a })),
+      onFilter: (v: any, r: any) => (r.address ?? "").toLowerCase().includes(String(v).toLowerCase()),
+    },
+    {
+      title: "Phone",
+      key: "phone",
+      width: 140,
+      render: (_: any, r: any) => {
+        const p = r.phone;
+        return p ? (
+          <Typography.Text style={{ fontSize: 12 }} title={p}>
+            {p}
+          </Typography.Text>
+        ) : "—";
+      },
+      onFilter: (v: any, r: any) => (r.phone ?? "").toLowerCase().includes(v.toLowerCase()),
+    },
+    {
+      title: "Tour",
+      key: "tourInfo",
+      width: 220,
+      render: (_: any, r: any) => {
         const name = r.tourName ?? r.tour?.name;
-        if (!name) return "—";
-        return <Typography.Text style={{ fontSize: 12 }}>{name}</Typography.Text>;
+        const type = r.tour?.type ?? r.tourType;
+        const days = r.tour?.durationDays ?? r.durationDays;
+        return (
+          <Flex vertical gap={2}>
+            <Typography.Text
+              style={{ fontSize: 12 }}
+              ellipsis={{ tooltip: name ?? "—" }}
+            >
+              {name ?? "—"}
+            </Typography.Text>
+            <Space size={4} wrap>
+              {type && (
+                <Tag
+                  color={type === "PRIVATE_TOUR" ? "purple" : "cyan"}
+                  style={{ margin: 0, fontSize: 10 }}
+                >
+                  {type.replace("_", " ")}
+                </Tag>
+              )}
+              {days ? (
+                <Tag style={{ margin: 0, fontSize: 10 }}>
+                  {days === 1 ? "1 Day" : `${days} Days`}
+                </Tag>
+              ) : null}
+            </Space>
+          </Flex>
+        );
       },
       onFilter: (v: any, r: any) => ((r.tourName ?? r.tour?.name) ?? "").toLowerCase().includes(v.toLowerCase()),
     },
     {
-      title: "Date", dataIndex: "startingDate", key: "startingDate", width: 95,
+      title: "Date",
+      dataIndex: "startingDate",
+      key: "startingDate",
+      width: 100,
       render: (v: any) => (v ? new Date(v).toLocaleDateString() : "—"),
-      filters: bookings.map((b: any) => b.startingDate ? { text: new Date(b.startingDate).toLocaleDateString(), value: b.startingDate } : undefined).filter((v: any): v is { text: string; value: any } => !!v).filter((v, i, a) => a.findIndex((x) => x.value === v.value) === i),
-      onFilter: (v: any, r: any) => r.startingDate === v,
+      sorter: (a: any, b: any) =>
+        new Date(a.startingDate).getTime() - new Date(b.startingDate).getTime(),
     },
     {
-      title: "Tour type",
-      key: "tourType",
-      width: 120,
-      render: (_: any, r: any) => {
-        const t = r.tour?.type ?? r.tourType;
-        return t ? <Tag color={t === "PRIVATE_TOUR" ? "purple" : "cyan"} style={{ margin: 0, fontSize: 10 }}>{t.replace("_", " ")}</Tag> : "—";
-      },
-      filters: TOUR_TYPES.map((t) => ({ text: t.replace("_", " "), value: t })),
-      onFilter: (v: any, r: any) => (r.tour?.type ?? r.tourType) === v,
-    },
-    {
-      title: "Days",
-      key: "durationDays",
-      width: 72,
-      render: (_: any, r: any) => {
-        const d = r.tour?.durationDays ?? r.durationDays;
-        return d ? <Tag style={{ margin: 0, fontSize: 10 }}>{d === 1 ? "1 Day" : `${d} Days`}</Tag> : "—";
-      },
-      filters: Array.from(new Set(bookings.map((b: any) => b.tour?.durationDays ?? b.durationDays).filter(Boolean))).sort((a: number, b: number) => a - b).map((d: any) => ({ text: d === 1 ? "1 Day" : `${d} Days`, value: d })),
-      onFilter: (v: any, r: any) => (r.tour?.durationDays ?? r.durationDays) === v,
-    },
-    {
-      title: "Pax", dataIndex: "totalPax", key: "totalPax", width: 72,
-      filters: Array.from(new Set(bookings.map((b: any) => b.totalPax).filter(Boolean))).sort((a: number, b: number) => a - b).map((d: any) => ({ text: d, value: d })),
-      onFilter: (v: any, r: any) => r.totalPax === v,
+      title: "Pax",
+      dataIndex: "totalPax",
+      key: "totalPax",
+      width: 60,
+      render: (v: number) => (v ? <Typography.Text strong>{v}</Typography.Text> : "—"),
     },
     {
       title: "Channel",
       dataIndex: "channel",
       key: "channel",
-      width: 90,
+      width: 110,
       render: (v: string) => <Tag style={{ margin: 0, fontSize: 10 }}>{v ?? "—"}</Tag>,
       filters: BOOKING_CHANNELS.map((c) => ({ text: c, value: c })),
       onFilter: (v: any, r: any) => r.channel === v,
+    },
+    {
+      title: "Payment",
+      dataIndex: "payment",
+      key: "payment",
+      width: 90,
+      render: (v: string | null) => (v ? <Tag color="green" style={{ margin: 0, fontSize: 10 }}>{v}</Tag> : "—"),
+      filters: PAYMENT_STATUS.map((s) => ({ text: s, value: s })),
+      onFilter: (v: any, r: any) => r.payment === v,
     },
     {
       title: "Status",
       dataIndex: "status",
       key: "status",
       width: 90,
-      render: (v: string) => <Tag color="blue" style={{ margin: 0, fontSize: 10 }}>{v}</Tag>,
+      render: (v: string) => (
+        <Tag color={v === "CANCELED" ? "red" : "blue"} style={{ margin: 0, fontSize: 10 }}>
+          {v}
+        </Tag>
+      ),
       filters: BOOKING_STATUS.map((s) => ({ text: s, value: s })),
       onFilter: (v: any, r: any) => r.status === v,
-    },
-    {
-      title: "Payment",
-      dataIndex: "payment",
-      key: "payment",
-      width: 100,
-      render: (v: string | null) => (v ? <Tag color="green" style={{ margin: 0, fontSize: 10 }}>{v}</Tag> : "—"),
-      filters: PAYMENT_STATUS.map((s) => ({ text: s, value: s })),
-      onFilter: (v: any, r: any) => r.payment === v,
     },
     ...(canUpdateBooking
       ? [
@@ -839,7 +910,7 @@ export default function BookingsPage() {
                   columns={bookingColumns}
                   dataSource={bookings}
                   loading={bookingsLoading}
-                  scroll={{ x: 1100, y: tableHeight }}
+                  scroll={{ x: 1660, y: tableHeight }}
                   onRow={(record) => ({
                     style: { cursor: "pointer" },
                     onClick: () => setBookingDetail(record),

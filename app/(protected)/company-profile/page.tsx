@@ -8,6 +8,7 @@ import {
   Flex,
   Form,
   Input,
+  InputNumber,
   Row,
   Space,
   Typography,
@@ -48,6 +49,8 @@ export default function CompanyProfilePage() {
           email: p.email ?? "",
           taxId: p.taxId ?? "",
           website: p.website ?? "",
+          rootLatitude: p.rootLatitude ?? undefined,
+          rootLongitude: p.rootLongitude ?? undefined,
         });
       })
       .catch((e) => message.error(getErrorMessage(e, "Failed to load company profile")))
@@ -58,7 +61,17 @@ export default function CompanyProfilePage() {
     const values = await form.validateFields();
     setSaving(true);
     try {
-      await api.put("/company-profile", values);
+      await api.put("/company-profile", {
+        ...values,
+        rootLatitude:
+          values.rootLatitude === undefined || values.rootLatitude === null
+            ? null
+            : values.rootLatitude,
+        rootLongitude:
+          values.rootLongitude === undefined || values.rootLongitude === null
+            ? null
+            : values.rootLongitude,
+      });
       setDirty(false);
       message.success("Company profile saved");
     } catch (e) {
@@ -131,6 +144,51 @@ export default function CompanyProfilePage() {
             <Col xs={24} md={8}>
               <Form.Item name="website" label="Website">
                 <Input prefix={<GlobalOutlined />} placeholder="https://..." />
+              </Form.Item>
+            </Col>
+            <Col xs={24}>
+              <Form.Item
+                label={
+                  <Space size={6}>
+                    <EnvironmentOutlined />
+                    <span>
+                      Root coordinate
+                      <Text type="secondary" style={{ fontWeight: 400, fontSize: 12 }}>
+                        {" "}
+                        — distance / pickup sorting uses this as the origin
+                      </Text>
+                    </span>
+                  </Space>
+                }
+              >
+                <Row gutter={16}>
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      name="rootLatitude"
+                      noStyle
+                      rules={[{ type: "number", min: -90, max: 90, message: "Latitude must be between -90 and 90" }]}
+                    >
+                      <InputNumber
+                        style={{ width: "100%" }}
+                        placeholder="Latitude e.g. 16.068"
+                        step={0.000001}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      name="rootLongitude"
+                      noStyle
+                      rules={[{ type: "number", min: -180, max: 180, message: "Longitude must be between -180 and 180" }]}
+                    >
+                      <InputNumber
+                        style={{ width: "100%" }}
+                        placeholder="Longitude e.g. 108.2297"
+                        step={0.000001}
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
               </Form.Item>
             </Col>
           </Row>

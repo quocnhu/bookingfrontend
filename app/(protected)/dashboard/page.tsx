@@ -157,7 +157,7 @@ export default function DashboardPage() {
 
       {canRead && (
         <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(480px, 1fr))", gap: 16, marginBottom: 16 }}>
+      <div className="dashboard-stats-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 480px), 1fr))", gap: 16, marginBottom: 16 }}>
         {statGroups.map((group) => (
           <Card
             key={group.title}

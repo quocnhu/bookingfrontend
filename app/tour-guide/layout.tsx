@@ -1,11 +1,12 @@
 "use client";
 
 import RoleShell from "@/components/role-shell";
-import { CarOutlined, UserOutlined, FileTextOutlined, WalletOutlined } from "@ant-design/icons";
+import { CarOutlined, UserOutlined, FileTextOutlined, WalletOutlined, CalendarOutlined } from "@ant-design/icons";
 
 const GUIDE_MENU = [
   { key: "/tour-guide/my-trips", icon: <CarOutlined />, label: "My Trips" },
   { key: "/tour-guide/submit-report", icon: <FileTextOutlined />, label: "Submit Report" },
+  { key: "/tour-guide/day-off", icon: <CalendarOutlined />, label: "Day Off" },
   { key: "/tour-guide/payments", icon: <WalletOutlined />, label: "Payments" },
   { key: "/tour-guide/profile", icon: <UserOutlined />, label: "Profile" },
 ];

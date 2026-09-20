@@ -11,6 +11,8 @@ import {
   Spin,
   Tag,
   Flex,
+  Drawer,
+  Grid,
   Typography,
   theme as antdTheme,
 } from "antd";
@@ -43,9 +45,12 @@ interface RoleShellProps {
 export default function RoleShell({ children, menuItems, roleLabel, roleColor }: RoleShellProps) {
   const { user, loading, theme, toggleTheme, logout } = useApp();
   const { token } = antdTheme.useToken();
+  const screens = Grid.useBreakpoint();
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const isMobile = !screens.lg;
   const isDark = theme === "dark";
 
   useEffect(() => {
@@ -53,6 +58,10 @@ export default function RoleShell({ children, menuItems, roleLabel, roleColor }:
       router.replace("/login");
     }
   }, [loading, user, router]);
+
+  useEffect(() => {
+    if (!isMobile) setMobileNavOpen(false);
+  }, [isMobile]);
 
   if (loading || !user) {
     return (
@@ -65,50 +74,108 @@ export default function RoleShell({ children, menuItems, roleLabel, roleColor }:
   const selectedKey = "/" + (pathname.split("/")[1] ?? "") + "/" + (pathname.split("/")[2] ?? "");
   const normalizedKey = selectedKey.replace(/\/+$/, "") || "/";
 
+  const navigate = (key: string) => {
+    router.push(key);
+    setMobileNavOpen(false);
+  };
+
+  const navMenu = (
+    <Menu
+      mode="inline"
+      selectedKeys={[normalizedKey]}
+      items={menuItems}
+      onClick={({ key }) => navigate(key)}
+      style={{ borderInlineEnd: "none", paddingBlock: 8 }}
+    />
+  );
+
   return (
     <Layout style={{ minHeight: "100vh" }}>
-      <Sider
-        breakpoint="lg"
-        collapsedWidth={64}
-        collapsed={collapsed}
-        trigger={null}
-        theme={isDark ? "dark" : "light"}
-        style={{ position: "sticky", top: 0, height: "100vh", overflow: "auto", zIndex: 20 }}
-      >
-        <Flex
-          align="center"
-          justify="center"
-          gap={8}
-          style={{ height: 56, borderBottom: `1px solid ${token.colorSplit}` }}
+      {!isMobile && (
+        <Sider
+          breakpoint="lg"
+          collapsedWidth={64}
+          collapsed={collapsed}
+          trigger={null}
+          theme={isDark ? "dark" : "light"}
+          style={{ position: "sticky", top: 0, height: "100vh", zIndex: 20, display: "flex", flexDirection: "column" }}
         >
-          <RocketFilled style={{ color: token.colorPrimary, fontSize: 20 }} />
-          {!collapsed && (
-            <Typography.Text strong style={{ fontSize: 17, color: token.colorText }}>
+          <Flex vertical style={{ height: "100%" }}>
+            <Flex
+              align="center"
+              justify="center"
+              gap={8}
+              style={{ height: 56, borderBottom: `1px solid ${token.colorSplit}` }}
+            >
+              <RocketFilled style={{ color: token.colorPrimary, fontSize: 20 }} />
+              {!collapsed && (
+                <Typography.Text strong style={{ fontSize: 17, color: token.colorText }}>
+                  {roleLabel}
+                </Typography.Text>
+              )}
+            </Flex>
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{navMenu}</div>
+            <div
+              style={{
+                borderTop: `1px solid ${token.colorSplit}`,
+                padding: "10px 8px",
+                textAlign: "center",
+              }}
+            >
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {collapsed ? "QN-HN" : "Designed by QN-HN"}
+              </Typography.Text>
+            </div>
+          </Flex>
+        </Sider>
+      )}
+      <Drawer
+        title={
+          <Flex align="center" gap={8}>
+            <RocketFilled style={{ color: token.colorPrimary, fontSize: 20 }} />
+            <Typography.Text strong style={{ fontSize: 16 }}>
               {roleLabel}
             </Typography.Text>
-          )}
+          </Flex>
+        }
+        open={isMobile && mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+        placement="left"
+        width={260}
+        styles={{ body: { padding: 0 } }}
+      >
+        <Flex vertical style={{ height: "100%" }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{navMenu}</div>
+          <div
+            style={{
+              borderTop: `1px solid ${token.colorSplit}`,
+              padding: "10px 16px",
+              textAlign: "center",
+            }}
+          >
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              Designed by QN-HN
+            </Typography.Text>
+          </div>
         </Flex>
-        <Menu
-          mode="inline"
-          selectedKeys={[normalizedKey]}
-          items={menuItems}
-          onClick={({ key }) => router.push(key)}
-          style={{ borderInlineEnd: "none", paddingBlock: 8 }}
-        />
-      </Sider>
+      </Drawer>
       <Layout>
         <Header>
-          <Flex align="center" justify="space-between" gap={16} style={{ height: "100%" }}>
-            <Flex align="center" gap={12}>
+          <Flex align="center" justify="space-between" gap={12} style={{ height: "100%" }}>
+            <Flex align="center" gap={8} style={{ minWidth: 0 }}>
               <Button
                 type="text"
-                icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-                onClick={() => setCollapsed((c) => !c)}
-                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                icon={
+                  !isMobile ? (collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />) : <MenuUnfoldOutlined />
+                }
+                onClick={() => (isMobile ? setMobileNavOpen((o) => !o) : setCollapsed((c) => !c))}
+                aria-label={isMobile ? "Open navigation" : collapsed ? "Expand sidebar" : "Collapse sidebar"}
               />
-              <Typography.Text strong>Welcome, {user.name ?? user.email}</Typography.Text>
+              <Typography.Text strong ellipsis style={{ maxWidth: "100%" }}>
+                Welcome, {user.name ?? user.email}
+              </Typography.Text>
             </Flex>
-            <Flex align="center" gap={16}>
+            <Flex align="center" gap={8}>
               <Button
                 type="text"
                 icon={isDark ? <SunOutlined /> : <MoonOutlined />}
@@ -141,7 +208,7 @@ export default function RoleShell({ children, menuItems, roleLabel, roleColor }:
                   gap={8}
                   style={{
                     cursor: "pointer",
-                    padding: "6px 12px",
+                    padding: "6px 8px",
                     borderRadius: 999,
                     background: token.colorFillQuaternary,
                   }}
@@ -152,10 +219,14 @@ export default function RoleShell({ children, menuItems, roleLabel, roleColor }:
                     icon={<UserOutlined />}
                     style={{ backgroundColor: roleColor }}
                   />
-                  <Typography.Text strong>{user.name ?? user.email}</Typography.Text>
-                  <Tag color={roleColor} style={{ marginInlineEnd: 0 }}>
-                    {user.role}
-                  </Tag>
+                  {!isMobile && (
+                    <>
+                      <Typography.Text strong>{user.name ?? user.email}</Typography.Text>
+                      <Tag color={roleColor} style={{ marginInlineEnd: 0 }}>
+                        {user.role}
+                      </Tag>
+                    </>
+                  )}
                 </Flex>
               </Dropdown>
             </Flex>

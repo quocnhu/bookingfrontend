@@ -13,6 +13,7 @@ export interface SessionUser {
   userType?: string | null;
   authProvider?: string | null;
   createdAt?: string | null;
+  providerId?: string | null;
   permissions: string[];
   roles?: any[];
 }

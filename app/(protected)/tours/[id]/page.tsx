@@ -39,7 +39,7 @@ import {
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { useMapSrc } from "@/lib/use-map-src";
-import { discountedPrice, isPromoActive } from "@/lib/promo";
+import { discountedPrice, discountFor, isTypePromoActive } from "@/lib/promo";
 import PromoCountdown from "@/components/promo-countdown";
 import GalleryManager, { type GalleryImage } from "@/components/gallery-manager";
 import TourSlideshow from "@/components/tour-slideshow";
@@ -83,7 +83,8 @@ interface TourState {
   childPrice?: string | number | null;
   infantPrice?: string | number | null;
   currency?: string;
-  discountPercent?: number | null;
+  privateDiscountPercent?: number | null;
+  groupDiscountPercent?: number | null;
   promotionStartsAt?: string | null;
   promotionEndsAt?: string | null;
   overview?: string | null;
@@ -652,7 +653,7 @@ export default function TourItineraryEditorPage() {
                 </Flex>
               ) : (
                 <>
-                  {isPromoActive(tour) ? (
+                  {isTypePromoActive(tour, tour.type) ? (
                     <>
                       <Typography.Text
                         type="secondary"
@@ -662,11 +663,11 @@ export default function TourItineraryEditorPage() {
                         {Number(tour.adultPrice ?? 0).toLocaleString()} {tour.currency}
                       </Typography.Text>
                       <Typography.Title level={3} style={{ margin: 0, color: "#dc2626" }}>
-                        {Number(discountedPrice(tour.adultPrice, tour.discountPercent)).toLocaleString()}{" "}
+                        {Number(discountedPrice(tour.adultPrice, discountFor(tour, tour.type))).toLocaleString()}{" "}
                         {tour.currency}
                       </Typography.Title>
                       <Tag color="red" style={{ alignSelf: "flex-start" }}>
-                        Save {tour.discountPercent}%
+                        Save {discountFor(tour, tour.type)}%
                       </Tag>
                     </>
                   ) : (

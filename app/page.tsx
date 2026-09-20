@@ -13,7 +13,7 @@ import {
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp, getDefaultRoute } from "@/lib/app-context";
 import PromoCountdown from "@/components/promo-countdown";
-import { discountedPrice, isPromoActive } from "@/lib/promo";
+import { discountedPrice, discountFor, isTypePromoActive } from "@/lib/promo";
 
 interface HomepageTour {
   id: string;
@@ -25,7 +25,8 @@ interface HomepageTour {
   childPrice?: string | number | null;
   infantPrice?: string | number | null;
   currency?: string;
-  discountPercent?: number | null;
+  privateDiscountPercent?: number | null;
+  groupDiscountPercent?: number | null;
   promotionStartsAt?: string | null;
   promotionEndsAt?: string | null;
   typePrices?: {
@@ -99,9 +100,9 @@ export default function HomePage() {
       <Flex
         vertical
         align="center"
-        style={{ textAlign: "center", padding: "56px 24px 40px" }}
+        style={{ textAlign: "center", padding: "clamp(24px, 6vw, 56px) 16px 32px" }}
       >
-        <Typography.Title style={{ fontSize: 40, marginBottom: 8 }}>
+        <Typography.Title style={{ fontSize: "clamp(24px, 6vw, 40px)", marginBottom: 8 }}>
           Explore Vietnam's Best Tours
         </Typography.Title>
         <Typography.Text type="secondary" style={{ fontSize: 16, maxWidth: 640 }}>
@@ -124,19 +125,20 @@ export default function HomePage() {
         ) : (
           <Row gutter={[16, 16]}>
             {tours.map((tour) => {
-              const promo = isPromoActive(tour);
               const typePrices = tour.typePrices ?? [];
               const hasPrice = (type: string) =>
                 Number(typePrices.find((p) => p.type === type)?.adultPrice ?? 0) > 0;
               const bothTypes = hasPrice("PRIVATE_TOUR") && hasPrice("GROUP_TOUR");
-              const fromPrice =
-                typePrices.length > 0
-                  ? Math.min(
-                      ...typePrices.map((p) => Number(p.adultPrice ?? 0)).filter((n) => n > 0),
-                    )
-                  : Number(tour.adultPrice ?? 0);
+              const cheapest = typePrices
+                .map((p) => ({ type: p.type, price: Number(p.adultPrice ?? 0) }))
+                .filter((p) => p.price > 0)
+                .sort((a, b) => a.price - b.price)[0];
+              const fromPrice = cheapest ? cheapest.price : Number(tour.adultPrice ?? 0);
+              const fromType = cheapest ? cheapest.type : tour.type;
+              const pct = discountFor(tour, fromType);
+              const promo = isTypePromoActive(tour, fromType);
               const price = usd(Number.isFinite(fromPrice) && fromPrice > 0 ? fromPrice : tour.adultPrice);
-              const discounted = usd(discountedPrice(Number.isFinite(fromPrice) && fromPrice > 0 ? fromPrice : tour.adultPrice, tour.discountPercent));
+              const discounted = usd(discountedPrice(Number.isFinite(fromPrice) && fromPrice > 0 ? fromPrice : tour.adultPrice, pct));
               const typeLabel = bothTypes
                 ? "Private · Group"
                 : (tour.type ?? "").replace("_", " ");
@@ -223,7 +225,7 @@ export default function HomePage() {
                               }}
                             >
                               <span style={{ fontSize: 16, fontWeight: 800, lineHeight: 1 }}>
-                                -{tour.discountPercent}%
+                                -{pct}%
                               </span>
                               <span style={{ fontSize: 9, letterSpacing: 0.5, opacity: 0.9 }}>
                                 OFF

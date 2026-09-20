@@ -73,7 +73,10 @@ export default function DriverMyTripsPage() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"list" | "calendar">("list");
   const [calMonth, setCalMonth] = useState(dayjs());
-  const [calendarData, setCalendarData] = useState<any[]>([]);
+  const [calendarData, setCalendarData] = useState<{
+    assignments: any[];
+    leaves: any[];
+  }>({ assignments: [], leaves: [] });
 
   const loadAssignments = async () => {
     setLoading(true);
@@ -92,7 +95,7 @@ export default function DriverMyTripsPage() {
       const r = await api.get("/assignments/my-calendar", {
         params: { year: calMonth.year(), month: calMonth.month() + 1 },
       });
-      setCalendarData(r.data ?? []);
+      setCalendarData(r.data ?? { assignments: [], leaves: [] });
     } catch {
       // silent
     }
@@ -121,13 +124,25 @@ export default function DriverMyTripsPage() {
   for (let i = 0; i < startDayOfWeek; i++) calCells.push(null);
   for (let d = 1; d <= daysInMonth; d++) {
     const cellDate = calMonth.date(d);
-    const match = calendarData.filter((c) => {
+    const match = calendarData.assignments.filter((c) => {
       const s = dayjs(c.startDate);
       const e = dayjs(c.endDate);
       return cellDate.isSameOrAfter(s, "day") && cellDate.isSameOrBefore(e, "day");
     });
     calCells.push(match.length > 0 ? match[0] : null);
   }
+
+  const coversDay = (
+    start: string,
+    end: string,
+    cellDate: dayjs.Dayjs,
+  ): boolean =>
+    cellDate.isSameOrAfter(dayjs(start), "day") &&
+    cellDate.isSameOrBefore(dayjs(end), "day");
+
+  const DOT_RED = "#ff4d4f";
+  const DOT_ORANGE = "#fa8c16";
+  const DOT_GREEN = "#52c41a";
 
   return (
     <div>
@@ -258,44 +273,82 @@ export default function DriverMyTripsPage() {
               &gt;
             </Button>
           </Flex>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-              <div key={d} style={{ textAlign: "center", fontWeight: 600, padding: 8, fontSize: 12, color: token.colorTextSecondary }}>
-                {d}
-              </div>
-            ))}
-            {calCells.map((cell, i) => {
-              const dayNum = i - startDayOfWeek + 1;
-              const isToday = calMonth.date(dayNum).isSame(today, "day");
-              return (
-                <div
-                  key={i}
-                  style={{
-                    minHeight: 80,
-                    padding: 4,
-                    borderRadius: 8,
-                    border: isToday ? `2px solid ${token.colorPrimary}` : `1px solid ${token.colorBorderSecondary}`,
-                    background: isToday ? token.colorPrimaryBg : token.colorBgContainer,
-                  }}
-                >
-                  {dayNum >= 1 && dayNum <= daysInMonth && (
-                    <>
-                      <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 400, marginBottom: 2 }}>
-                        {dayNum}
+          <div style={{ display: "flex", justifyContent: "center", gap: 16, marginBottom: 12 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: DOT_GREEN, marginRight: 5 }} />
+              Available
+            </Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: DOT_ORANGE, marginRight: 5 }} />
+              On tour
+            </Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: DOT_RED, marginRight: 5 }} />
+              Day off
+            </Typography.Text>
+          </div>
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(46px, 1fr))", gap: 4, minWidth: 340 }}>
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                <div key={d} style={{ textAlign: "center", fontWeight: 600, padding: 8, fontSize: 12, color: token.colorTextSecondary }}>
+                  {d}
+                </div>
+              ))}
+              {calCells.map((cell, i) => {
+                const dayNum = i - startDayOfWeek + 1;
+                const isToday = calMonth.date(dayNum).isSame(today, "day");
+                const cellDate = calMonth.date(dayNum);
+                const onLeave =
+                  dayNum >= 1 &&
+                  dayNum <= daysInMonth &&
+                  calendarData.leaves.find((l) => coversDay(l.startDate, l.endDate, cellDate));
+                const onTour = dayNum >= 1 && dayNum <= daysInMonth && cell;
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      minHeight: 80,
+                      padding: 4,
+                      borderRadius: 8,
+                      border: isToday ? `2px solid ${token.colorPrimary}` : `1px solid ${token.colorBorderSecondary}`,
+                      background: isToday ? token.colorPrimaryBg : token.colorBgContainer,
+                    }}
+                  >
+                    {onLeave ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4, height: "100%" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: DOT_RED }} />
+                          <span style={{ fontSize: 11, fontWeight: 600, color: DOT_RED }}>OFF</span>
+                        </div>
+                        <span style={{ fontSize: 10, color: token.colorTextSecondary, lineHeight: 1.3 }}>
+                          {onLeave.reason || "On leave"}
+                        </span>
                       </div>
-                      {cell && (
+                    ) : onTour ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: DOT_ORANGE }} />
+                          <span style={{ fontSize: 12, fontWeight: isToday ? 700 : 400 }}>{dayNum}</span>
+                        </div>
                         <Tag
-                          color={cell.status === "DISPATCHED" ? "blue" : cell.status === "COMPLETED" ? "green" : "orange"}
+                          color={cell.status === "COMPLETED" ? "green" : cell.status === "DISPATCHED" ? "blue" : "orange"}
                           style={{ fontSize: 10, lineHeight: "14px", padding: "0 4px", margin: 0, display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
                         >
                           {cell.tourName ?? cell.code}
                         </Tag>
-                      )}
-                    </>
-                  )}
-                </div>
-              );
-            })}
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: DOT_GREEN }} />
+                          <span style={{ fontSize: 12, fontWeight: isToday ? 700 : 400 }}>{dayNum}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

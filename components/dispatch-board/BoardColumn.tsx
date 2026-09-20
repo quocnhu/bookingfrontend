@@ -2,7 +2,7 @@
 
 import { Col, Empty, Tag, theme as antdTheme } from "antd";
 import type { Dayjs } from "dayjs";
-import type { BoardItem, TourMeta } from "./types";
+import type { BoardCrew, BoardItem, TourMeta } from "./types";
 import BoardCard from "./BoardCard";
 
 export default function BoardColumn({
@@ -11,26 +11,42 @@ export default function BoardColumn({
   today,
   confirmingId,
   dispatchingId,
+  recallingId,
   canConfirm,
   onConfirm,
   onDispatch,
+  onRecall,
   onMoveBooking,
   onTemplate,
+  onVerify,
+  onAdditions,
+  crew,
+  onCrewChange,
 }: {
   meta: TourMeta;
   items: BoardItem[];
   today: Dayjs;
   confirmingId: string | null;
   dispatchingId: string | null;
+  recallingId: string | null;
   canConfirm: boolean;
   onConfirm: (assignment: BoardItem) => void;
   onDispatch: (assignment: BoardItem) => void;
+  onRecall: (assignment: BoardItem) => void;
   onMoveBooking: (
     bookingId: string,
     toAssignmentId: string,
     beforeBookingId?: string | null,
   ) => void;
   onTemplate: (assignment: BoardItem) => void;
+  onVerify?: (assignment: BoardItem) => void;
+  onAdditions?: (assignment: BoardItem) => void;
+  crew?: BoardCrew;
+  onCrewChange?: (
+    assignment: BoardItem,
+    field: "guideId" | "driverId",
+    userId: string | null,
+  ) => void;
 }) {
   const { token } = antdTheme.useToken();
 
@@ -76,11 +92,17 @@ export default function BoardColumn({
             today={today}
             confirming={confirmingId === a.id}
             dispatching={dispatchingId === a.id}
+            recalling={recallingId === a.id}
             canConfirm={canConfirm}
             onConfirm={onConfirm}
             onDispatch={onDispatch}
-            onMoveBooking={onMoveBooking}
-            onTemplate={onTemplate}
+            onRecall={onRecall}
+onMoveBooking={onMoveBooking}
+              onTemplate={onTemplate}
+              onVerify={onVerify}
+              onAdditions={onAdditions}
+              crew={crew}
+              onCrewChange={onCrewChange}
           />
         ))
       ) : (
