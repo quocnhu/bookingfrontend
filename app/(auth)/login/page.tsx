@@ -11,9 +11,9 @@ import {
   Input,
   Spin,
   Typography,
-  message,
   theme as antdTheme,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import { GoogleOutlined, LockOutlined, MailOutlined, RocketFilled } from "@ant-design/icons";
 import { useApp, getDefaultRoute } from "@/lib/app-context";
 import { getErrorMessage } from "@/lib/api";

@@ -20,8 +20,8 @@ import {
   Tabs,
   Tag,
   Typography,
-  message,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import {
   AccountBookOutlined,
   CarOutlined,
@@ -38,7 +38,7 @@ import DispatchBoard from "@/components/dispatch-board";
 
 const BOOKING_STATUS = ["PENDING", "ASSIGNED", "CANCELED"];
 const ASSIGNMENT_STATUS = ["PENDING", "DISPATCHED", "COMPLETED", "CANCELED"];
-const BOOKING_CHANNELS = ["TRIPADVISOR", "WEBSITE", "MANUAL", "AIRBNB", "BOOKING_COM"];
+const BOOKING_CHANNELS = ["TRIPADVISOR", "GETYOURGUIDE", "WEBSITE", "MANUAL", "AIRBNB", "BOOKING_COM"];
 const PAYMENT_STATUS = ["PENDING", "PAID", "REFUNDED"];
 const TOUR_TYPES = ["PRIVATE_TOUR", "GROUP_TOUR"];
 
@@ -975,7 +975,7 @@ extra={
       />
       )}
 
-      <Drawer title="Add Booking" open={bookingOpen} onClose={() => setBookingOpen(false)} width={480}>
+      <Drawer title="Add Booking" open={bookingOpen} onClose={() => setBookingOpen(false)} size={480}>
         <Form form={bookingForm} layout="vertical">
           <Form.Item name="bookingRef" label="Booking Ref">
             <Input placeholder="Auto: PRV/GR-YYYYMMDD-#### (leave empty to auto-generate)" />
@@ -1069,7 +1069,7 @@ extra={
         title={`Assign bookings to ${linkAssignment?.code ?? ""}`}
         open={linkOpen}
         onClose={() => setLinkOpen(false)}
-        width={480}
+        size={480}
       >
         <Select
           mode="multiple"
@@ -1110,7 +1110,7 @@ extra={
         }
         open={summaryOpen}
         onClose={() => setSummaryOpen(false)}
-        width="100%"
+        size="100%"
         destroyOnClose
       >
         <Flex vertical gap={16}>
@@ -1325,7 +1325,7 @@ extra={
         title={`RawDataMail payload · ${rawDetail?.id ?? ""}`}
         open={Boolean(rawDetail)}
         onClose={() => setRawDetail(null)}
-        width={720}
+        size={720}
       >
         {rawDetail && (
           <Flex vertical gap={8}>
@@ -1374,7 +1374,7 @@ extra={
         title={`Booking · ${bookingDetail?.bookingRef ?? ""}`}
         open={Boolean(bookingDetail)}
         onClose={() => setBookingDetail(null)}
-        width={520}
+        size={520}
       >
         {bookingDetail && (
           <Descriptions

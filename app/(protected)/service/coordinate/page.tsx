@@ -12,8 +12,8 @@ import {
   Select,
   Table,
   Typography,
-  message,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import { EditOutlined, PlusOutlined, DeleteOutlined, EnvironmentOutlined } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
@@ -228,7 +228,7 @@ export default function CoordinatePage() {
         title={editing ? "Edit Coordinate" : "Add Coordinate"}
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        width={520}
+        size={520}
       >
         <Form form={form} layout="vertical">
           <Form.Item name="hotelName" label="Hotel Name" rules={[{ required: true }]}>

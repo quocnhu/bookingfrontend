@@ -18,9 +18,9 @@ import {
   Tag,
   Typography,
   Upload,
-  message,
   theme as antdTheme,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -258,7 +258,7 @@ export default function SubmitReportPage() {
         title={`Tour Report — ${detail?.tourName ?? detail?.code ?? ""}`}
         open={Boolean(detail)}
         onClose={() => setDetail(null)}
-        width={520}
+        size={520}
         footer={
           detail && canEditReport(detail) ? (
             <Flex justify="end">

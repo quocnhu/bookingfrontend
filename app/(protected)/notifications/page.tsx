@@ -12,8 +12,8 @@ import {
   Space,
   Tag,
   Typography,
-  message,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import { SendOutlined, TeamOutlined, UserOutlined } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";

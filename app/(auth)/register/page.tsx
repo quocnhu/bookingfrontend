@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, Flex, Form, Input, Typography, message, theme as antdTheme } from "antd";
+import { Button, Card, Flex, Form, Input, Typography, theme as antdTheme } from "antd";
+import { message } from "@/lib/antd-message";
 import { LockOutlined, MailOutlined, RocketFilled, UserOutlined } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";

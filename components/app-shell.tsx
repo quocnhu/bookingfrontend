@@ -36,6 +36,7 @@ import {
   EnvironmentOutlined,
   CalendarOutlined,
   BellOutlined,
+  FileDoneOutlined,
 } from "@ant-design/icons";
 import { useApp } from "@/lib/app-context";
 import NotificationCenter from "@/components/notification-center";
@@ -47,6 +48,15 @@ const menuItems = [
   { key: "/tours", icon: <CarOutlined />, label: "Tours" },
   { key: "/bookings", icon: <FileTextOutlined />, label: "Bookings" },
   { key: "/drive", icon: <CloudOutlined />, label: "Drive" },
+  {
+    key: "/accounting",
+    icon: <DollarOutlined />,
+    label: "Accounting",
+    children: [
+      { key: "/accounting/verify", icon: <FileDoneOutlined />, label: "Verify Reports" },
+      { key: "/accounting/settlements", icon: <DollarOutlined />, label: "Guide Settlements" },
+    ],
+  },
   { key: "/leaves", icon: <CalendarOutlined />, label: "Day Off Requests" },
   { key: "/users", icon: <TeamOutlined />, label: "Users" },
   { key: "/notifications", icon: <BellOutlined />, label: "Notifications" },
@@ -74,7 +84,7 @@ const roleColors: Record<string, { tag: string; avatar: string }> = {
   CUSTOMER: { tag: "pink", avatar: "#EC4899" },
 };
 
-const ADMIN_ONLY_KEYS = new Set(["/users", "/notifications", "/audit", "/auth-activities", "/company-profile"]);
+const ADMIN_ONLY_KEYS = new Set(["/users", "/notifications", "/audit", "/auth-activities", "/company-profile", "/accounting", "/accounting/verify", "/accounting/settlements"]);
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading, theme, toggleTheme, logout } = useApp();
@@ -110,6 +120,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const filteredMenuItems = menuItems.filter((item) => {
     if (user.role === "ADMIN" || user.role === "OFFICE") return true;
+    if (item.children && item.children.length > 0) return false;
     return !ADMIN_ONLY_KEYS.has(item.key);
   });
 
@@ -181,7 +192,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         open={isMobile && mobileNavOpen}
         onClose={() => setMobileNavOpen(false)}
         placement="left"
-        width={260}
+        size={260}
         styles={{ body: { padding: 0 } }}
       >
         <Flex vertical style={{ height: "100%" }}>

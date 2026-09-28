@@ -11,8 +11,8 @@ import {
   Space,
   Tag,
   Typography,
-  message,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,

@@ -7,6 +7,7 @@ import {
   Card,
   Flex,
   List,
+  message,
   Select,
   Progress,
   Popover,
@@ -23,12 +24,14 @@ import {
   CheckOutlined,
   EnvironmentOutlined,
   FileTextOutlined,
+  DownOutlined,
   PhoneOutlined,
   PlusOutlined,
   PrinterOutlined,
   SafetyCertificateOutlined,
   SendOutlined,
   UndoOutlined,
+  UpOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import type { ReactNode } from "react";
@@ -37,6 +40,20 @@ import type { BoardCrew, BoardItem, TourMeta } from "./types";
 import { STATUS_COLORS, LEAVE_COLOR } from "./types";
 
 const { Text } = Typography;
+
+// Module-level on purpose: a cross-bus drag starts in one card and drops in a
+// different one, so a per-component ref cannot carry the id. dataTransfer alone
+// is not enough either - getData() can come back empty at drop time (Safari,
+// and some touch/pen paths), which made the whole board look inert.
+let draggingBookingId: string | null = null;
+
+function readDraggedBookingId(e: React.DragEvent): string | null {
+  return draggingBookingId ?? e.dataTransfer.getData("text/plain") ?? null;
+}
+
+function clearDraggedBooking() {
+  draggingBookingId = null;
+}
 
 // Root coordinate (office/depot) used for geo-sorted pickup order.
 const ROOT_COORD = { lat: 10.765555329583654, lng: 106.70405681003786 };
@@ -339,6 +356,7 @@ export default function BoardCard({
     bookingId: string,
     toAssignmentId: string,
     beforeBookingId?: string | null,
+    position?: "before" | "after",
   ) => void;
   onTemplate: (assignment: BoardItem) => void;
   onVerify?: (assignment: BoardItem) => void;
@@ -352,11 +370,26 @@ export default function BoardCard({
 }) {
   const { token } = antdTheme.useToken();
   const [dragOver, setDragOver] = useState(false);
-  const [hoverRow, setHoverRow] = useState<string | null>(null);
+  // Vị trí chèn sẽ hiện (trên/dưới row đang hover) - thay cho việc tô sáng cả
+  // row, vốn gây hiểu nhầm là sẽ thay thế booking đó. Gộp rowId + pos vào
+  // một state để không bao giờ lệch nhau.
+  const [dropTarget, setDropTarget] = useState<{
+    rowId: string;
+    pos: "before" | "after";
+  } | null>(null);
+  // dragenter/dragleave fire again for every child element the pointer
+  // crosses, so a naive onDragLeave={() => setDragOver(false)} flickers the
+  // highlight off mid-drag. Count enters/leaves and only clear at zero.
+  const dragDepth = useRef(0);
   const { color, accent } = meta;
   const capacity = a.vehicle?.capacity ?? 12;
   const isFull = a.totalPax >= capacity;
   const isToday = dayjs(a.startDate).startOf("day").isSame(today);
+  const activeTodayMs = today.startOf("day").valueOf();
+  const startDayMs = dayjs(a.startDate).startOf("day").valueOf();
+  const endDayMs = dayjs(a.endDate ?? a.startDate).startOf("day").valueOf();
+  const isActiveToday = startDayMs <= activeTodayMs && endDayMs >= activeTodayMs;
+  const recallLocked = Date.now() > dayjs(a.startDate).startOf("day").add(5, "hour").valueOf();
   const isEven = index % 2 === 0;
   const tint = isEven ? `${accent}12` : `${accent}1c`;
   const tintStrong = `${accent}2e`;
@@ -365,8 +398,16 @@ export default function BoardCard({
   const isRejected = a.tourReport?.status === "REJECTED";
   const procStatus = isRejected ? "REJECTED" : a.status;
   const procColor = isRejected ? "red" : STATUS_COLORS[a.status];
+  // Chuyến đã kết thúc (endDate < hôm nay) coi như đã xong: không kéo/thả
+  // được, kể cả khi ai đó quên bấm Complete nên status vẫn còn PENDING.
+  const isPastTour = dayjs(a.endDate).endOf("day").isBefore(
+    dayjs().startOf("day"),
+  );
   const interactive =
-    canConfirm && a.status !== "COMPLETED" && a.status !== "CANCELED";
+    canConfirm &&
+    a.status !== "COMPLETED" &&
+    a.status !== "CANCELED" &&
+    !isPastTour;
   const hasMovedBooking =
     a.bookings?.some((b) => b.movedFromBus) ?? false;
 
@@ -374,11 +415,17 @@ export default function BoardCard({
     (e: React.DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      dragDepth.current = 0;
       setDragOver(false);
-      setHoverRow(null);
+      setDropTarget(null);
       if (!interactive) return;
-      const bookingId = e.dataTransfer.getData("text/plain");
-      if (bookingId) onMoveBooking(bookingId, a.id, null);
+      const bookingId = readDraggedBookingId(e);
+      clearDraggedBooking();
+      if (!bookingId) {
+        message.error("Could not read the dragged assignment - try again");
+        return;
+      }
+      onMoveBooking(bookingId, a.id, null);
     },
     [interactive, onMoveBooking, a.id],
   );
@@ -387,14 +434,46 @@ export default function BoardCard({
     (e: React.DragEvent, beforeBookingId: string) => {
       e.preventDefault();
       e.stopPropagation();
+      dragDepth.current = 0;
       setDragOver(false);
-      setHoverRow(null);
+      const pos = dropTarget?.rowId === beforeBookingId ? dropTarget.pos : null;
+      setDropTarget(null);
       if (!interactive) return;
-      const bookingId = e.dataTransfer.getData("text/plain");
-      if (bookingId) onMoveBooking(bookingId, a.id, beforeBookingId);
+      const bookingId = readDraggedBookingId(e);
+      clearDraggedBooking();
+      if (!bookingId) {
+        message.error("Could not read the dragged assignment - try again");
+        return;
+      }
+      if (bookingId === beforeBookingId) return;
+      onMoveBooking(bookingId, a.id, beforeBookingId, pos ?? "before");
     },
-    [interactive, onMoveBooking, a.id],
+    [interactive, onMoveBooking, a.id, dropTarget],
   );
+
+  /** Nút mũi tên: dời booking lên/xuống một chỗ trong cùng bus. */
+  const nudge = useCallback(
+    (bookingId: string, dir: "up" | "down") => {
+      if (!interactive) return;
+      const ids = (a.bookings ?? []).map((b) => b.id);
+      const at = ids.indexOf(bookingId);
+      if (at === -1) return;
+      if (dir === "up") {
+        if (at === 0) return;
+        onMoveBooking(bookingId, a.id, ids[at - 1], "before");
+      } else {
+        if (at === ids.length - 1) return;
+        onMoveBooking(bookingId, a.id, ids[at + 1], "after");
+      }
+    },
+    [interactive, onMoveBooking, a.id, a.bookings],
+  );
+
+  /** Nửa trên/dưới của row quyết định chèn trước hay sau. */
+  const rowDropPos = (e: React.DragEvent): "before" | "after" => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+  };
 
   const driverProviderColors = useMemo(() => {
     const map: Record<string, string> = {};
@@ -490,12 +569,37 @@ export default function BoardCard({
   return (
     <Card
       size="small"
+      // A card that can't accept a drop used to fail silently - the browser
+      // just showed the "not allowed" cursor. Say why instead.
+      title={
+        !canConfirm
+          ? "You do not have permission to move bookings"
+          : isPastTour
+            ? "This trip has already run - assignments cannot be changed"
+            : a.status === "COMPLETED" || a.status === "CANCELED"
+              ? "This bus is closed and cannot take new bookings"
+              : undefined
+      }
+      onDragEnter={(e) => {
+        if (!interactive) return;
+        e.preventDefault();
+        dragDepth.current += 1;
+        setDragOver(true);
+      }}
       onDragOver={(e) => {
         if (!interactive) return;
         e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
         setDragOver(true);
       }}
-      onDragLeave={() => setDragOver(false)}
+      onDragLeave={() => {
+        if (!interactive) return;
+        dragDepth.current -= 1;
+        if (dragDepth.current <= 0) {
+          dragDepth.current = 0;
+          setDragOver(false);
+        }
+      }}
       onDrop={handleDrop}
       style={{
         marginBottom: 12,
@@ -650,13 +754,19 @@ export default function BoardCard({
                 className="board-bk-grid"
                 style={{
                   display: "grid",
+                  // Phải khớp với template của các row bên dưới, nếu không
+                  // nhãn cột sẽ lệch khỏi dữ liệu.
                   gridTemplateColumns:
-                    "20px minmax(90px,1.05fr) 70px minmax(150px,1.6fr) 64px 36px 24px",
+                    (interactive && (a.bookings?.length ?? 0) > 1
+                      ? "18px "
+                      : "") +
+                    "20px minmax(0,1.05fr) 70px minmax(0,1.6fr) 64px 36px 24px",
                   alignItems: "center",
                   gap: 8,
                   padding: "2px 8px",
                 }}
               >
+              {interactive && (a.bookings?.length ?? 0) > 1 && <span />}
               <Text
                 type="secondary"
                 style={{
@@ -739,48 +849,83 @@ export default function BoardCard({
                 key={b.id}
                 draggable={interactive}
                 onDragStart={(e) => {
+                  draggingBookingId = b.id;
                   e.dataTransfer.setData("text/plain", b.id);
                   e.dataTransfer.effectAllowed = "move";
                 }}
                 onDragEnd={() => {
+                  clearDraggedBooking();
+                  dragDepth.current = 0;
                   setDragOver(false);
-                  setHoverRow(null);
+                  setDropTarget(null);
                 }}
-                onDragOver={(e) => {
+                onDragEnter={(e) => {
                   if (!interactive) return;
                   e.preventDefault();
                   e.stopPropagation();
-                  setHoverRow(b.id);
+                  setDropTarget({ rowId: b.id, pos: rowDropPos(e) });
+                  setDragOver(true);
                 }}
-                onDragLeave={() =>
-                  setHoverRow((h) => (h === b.id ? null : h))
-                }
+                onDragOver={(e) => {
+                  if (!interactive) return;
+                  // No stopPropagation here: the card-level handler still needs
+                  // to run so the bus highlight stays lit while over a row.
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  setDropTarget({ rowId: b.id, pos: rowDropPos(e) });
+                }}
+                onDragLeave={(e) => {
+                  if (!interactive) return;
+                  e.stopPropagation();
+                  setDropTarget((d) => (d?.rowId === b.id ? null : d));
+                }}
                 onDrop={(e) => handleRowDrop(e, b.id)}
                 style={{
                   padding: "8px 4px",
                   borderBottom: `1px solid ${isMoved ? "#ff4d4f" : token.colorSplit}`,
-                  borderTop:
-                    hoverRow === b.id
-                      ? `2px solid ${accent}`
-                      : "2px solid transparent",
+                  borderTop: "2px solid transparent",
                   borderRadius: 4,
-                  background: isMoved
-                    ? "rgba(255, 77, 79, 0.14)"
-                    : hoverRow === b.id
-                      ? `${accent}14`
-                      : "transparent",
+                  background: isMoved ? "rgba(255, 77, 79, 0.14)" : "transparent",
+                  position: "relative",
                   cursor: interactive ? "grab" : "default",
                   opacity: interactive ? 1 : 0.75,
                   transition: "background 0.15s ease",
                 }}
               >
+                {/* Đường chèn: cho biết chính xác booking sẽ nằm ở đâu. */}
+                {dropTarget?.rowId === b.id && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      right: 0,
+                      height: 3,
+                      borderRadius: 2,
+                      background: accent,
+                      boxShadow: `0 0 0 1px ${accent}55`,
+                      pointerEvents: "none",
+                      zIndex: 2,
+                      [dropTarget.pos === "before" ? "top" : "bottom"]: -2,
+                    }}
+                  />
+                )}
                 <div
                   className="board-bk-grid"
                   style={{
-                    width: "100%",
+                    flex: 1,
+                    minWidth: 0,
                     display: "grid",
-gridTemplateColumns:
-                    "20px minmax(90px,1.05fr) 70px minmax(150px,1.6fr) 64px 36px 24px",
+                    // Cột đầu là mũi tên lên/xuống. Các cột "fr" dùng minmax(0)
+                    // để co lại được - trước đây min cứng khiến grid tràn ra ngoài
+                    // và chữ xuống dòng, làm row cao thêm và đẩy các bus phía
+                    // dưới xuống mỗi lần đổi thứ tự.
+                    // Cột đầu chỉ tồn tại khi mũi tên được render, để số cột
+                    // luôn khớp số phần tử con.
+                    gridTemplateColumns:
+                      (interactive && (a.bookings?.length ?? 0) > 1
+                        ? "18px "
+                        : "") +
+                      "20px minmax(0,1.05fr) 70px minmax(0,1.6fr) 64px 36px 24px",
                     alignItems: "center",
                     gap: 8,
                     padding: "4px 4px",
@@ -802,6 +947,50 @@ gridTemplateColumns:
                       .join("\n")
                   }
                 >
+                  {/* Mũi tên lên/xuống: chỉnh từng chỗ, không cần kéo-thả.
+                      Nằm trong grid (không phải flex sibling) để không đẩy
+                      layout; disable ở hai đầu danh sách. */}
+                  {interactive && (a.bookings?.length ?? 0) > 1 && (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "center",
+                        gap: 0,
+                      }}
+                    >
+                      <Button
+                        size="small"
+                        type="text"
+                        aria-label="Move booking up"
+                        disabled={i === 0}
+                        onClick={() => nudge(b.id, "up")}
+                        style={{
+                          height: 13,
+                          width: 18,
+                          minWidth: 0,
+                          padding: 0,
+                          lineHeight: 1,
+                        }}
+                        icon={<UpOutlined style={{ fontSize: 8 }} />}
+                      />
+                      <Button
+                        size="small"
+                        type="text"
+                        aria-label="Move booking down"
+                        disabled={i === (a.bookings?.length ?? 0) - 1}
+                        onClick={() => nudge(b.id, "down")}
+                        style={{
+                          height: 13,
+                          width: 18,
+                          minWidth: 0,
+                          padding: 0,
+                          lineHeight: 1,
+                        }}
+                        icon={<DownOutlined style={{ fontSize: 8 }} />}
+                      />
+                    </div>
+                  )}
                   {interactive ? (
                     <Text
                       strong
@@ -1074,16 +1263,25 @@ gridTemplateColumns:
 
       {interactive && a.status === "PENDING" ? (
         <Flex gap={8} style={{ marginTop: 12 }}>
-          <Button
-            type="primary"
-            size="small"
-            style={{ flex: 1 }}
-            icon={<SendOutlined />}
-            loading={dispatching}
-            onClick={() => onDispatch(a)}
+          <Tooltip
+            title={
+              isActiveToday
+                ? undefined
+                : "Only tours active today can be dispatched — future departures wait until their tour day."
+            }
           >
-            Dispatch bus
-          </Button>
+            <Button
+              type="primary"
+              size="small"
+              style={{ flex: 1 }}
+              icon={<SendOutlined />}
+              loading={dispatching}
+              disabled={!isActiveToday}
+              onClick={() => onDispatch(a)}
+            >
+              Dispatch bus
+            </Button>
+          </Tooltip>
           <Tooltip title="Dispatch the bus first to confirm finished">
             <Button
               type="default"
@@ -1167,17 +1365,26 @@ gridTemplateColumns:
           >
             Confirm tour finished
           </Button>
-          <Button
-            type="default"
-            size="small"
-            danger
-            icon={<UndoOutlined />}
-            loading={recalling}
-            onClick={() => onRecall(a)}
-            style={{ borderRadius: 8 }}
+          <Tooltip
+            title={
+              recallLocked
+                ? "Recall is locked — the 05:00 cutoff has passed. The bus is considered departed."
+                : undefined
+            }
           >
-            Recall
-          </Button>
+            <Button
+              type="default"
+              size="small"
+              danger
+              icon={<UndoOutlined />}
+              loading={recalling}
+              disabled={recallLocked}
+              onClick={() => onRecall(a)}
+              style={{ borderRadius: 8 }}
+            >
+              Recall
+            </Button>
+          </Tooltip>
         </Space.Compact>
       ) : null}
       {canConfirm && (

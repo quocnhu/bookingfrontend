@@ -15,8 +15,8 @@ import {
   Tag,
   Typography,
   theme as antdTheme,
-  message,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import {
   CalendarOutlined,
   CalendarTwoTone,

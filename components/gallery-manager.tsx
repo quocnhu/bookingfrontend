@@ -2,7 +2,8 @@
 
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
-import { Button, Flex, Modal, Typography, message, Upload } from "antd";
+import { Button, Flex, Modal, Typography, Upload } from "antd";
+import { message } from "@/lib/antd-message";
 import {
   ArrowUpOutlined,
   ArrowDownOutlined,

@@ -11,8 +11,8 @@ import {
   Spin,
   Typography,
   Upload,
-  message,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import {
   DeleteOutlined,
   ExclamationCircleOutlined,

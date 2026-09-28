@@ -20,8 +20,8 @@ import {
   Tag,
   Tooltip,
   Typography,
-  message,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import {
   CalendarOutlined,
   CarOutlined,
@@ -1399,7 +1399,7 @@ export default function TransportationPage() {
       <Drawer
         title="Add Tour Price"
         placement="right"
-        width={420}
+        size={420}
         open={priceDrawer}
         onClose={() => setPriceDrawer(false)}
         extra={

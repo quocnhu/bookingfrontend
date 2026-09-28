@@ -23,7 +23,7 @@ const ROLE_DEFAULT_ROUTES: Record<string, string> = {
   TOUR_GUIDE: "/tour-guide/my-trips",
   ADMIN: "/dashboard",
   OFFICE: "/dashboard",
-  TRANSPORT_PROVIDER: "/dashboard",
+  TRANSPORT_PROVIDER: "/transport-provider/my-trips",
   CUSTOMER: "/",
 };
 

@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Button, Empty, Flex, Modal, Skeleton, Typography, message } from "antd";
+import { Button, Empty, Flex, Modal, Skeleton, Typography } from "antd";
+import { message } from "@/lib/antd-message";
 import { PrinterOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";

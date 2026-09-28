@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
   Card,
@@ -17,7 +17,6 @@ import {
   Table,
   Tabs,
   Tag,
-  message,
   Checkbox,
   Popconfirm,
   Progress,
@@ -25,6 +24,7 @@ import {
   Space,
   Upload,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -45,6 +45,7 @@ interface Permission {
   id: string;
   name: string;
   code: string;
+  group?: string | null;
 }
 
 interface Role {
@@ -94,6 +95,82 @@ const USER_TYPE_OPTIONS = [
   { value: "customer", label: "Customer" },
 ];
 
+const TAG_COLORS = [
+  "magenta",
+  "red",
+  "volcano",
+  "orange",
+  "gold",
+  "lime",
+  "green",
+  "cyan",
+  "blue",
+  "geekblue",
+  "purple",
+];
+
+// Assigns a stable, distinct color to any role/type — new roles added in the
+// future get a color automatically from the palette (deterministic by name).
+function colorFor(value: string): string {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash * 31 + value.charCodeAt(i)) | 0;
+  }
+  return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
+}
+
+function PermissionPicker({
+  perms,
+  selected,
+  onToggle,
+}: {
+  perms: Permission[];
+  selected: string[];
+  onToggle: (id: string, checked: boolean) => void;
+}) {
+  const grouped = useMemo(() => {
+    const map = new Map<string, Permission[]>();
+    for (const p of perms) {
+      const g = p.group || "Other";
+      if (!map.has(g)) map.set(g, []);
+      map.get(g)!.push(p);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [perms]);
+
+  return (
+    <div style={{ maxHeight: "55vh", overflowY: "auto" }}>
+      {grouped.map(([group, items]) => (
+        <div key={group} style={{ marginBottom: 12 }}>
+          <Typography.Text
+            strong
+            style={{
+              fontSize: 12,
+              textTransform: "uppercase" as const,
+              color: "#8c8c8c",
+              letterSpacing: 0.4,
+            }}
+          >
+            {group}
+          </Typography.Text>
+          <Row gutter={[8, 8]} style={{ marginTop: 4 }}>
+            {items.map((p) => (
+              <Col key={p.id}>
+                <Checkbox
+                  checked={selected.includes(p.id)}
+                  onChange={(e) => onToggle(p.id, e.target.checked)}
+                >
+                  {p.code}
+                </Checkbox>
+              </Col>
+            ))}
+          </Row>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function UsersPage() {
   const { user: me, refreshProfile, hasPermission } = useApp();  const canManageUsers = hasPermission("user.create");
   const canManageRoles = hasPermission("role.manage");
@@ -115,6 +192,15 @@ export default function UsersPage() {
   const [userPageSize, setUserPageSize] = useState(20);
   const [rolePage, setRolePage] = useState(1);
   const [rolePageSize, setRolePageSize] = useState(20);
+  const [permPage, setPermPage] = useState(1);
+  const [permPageSize, setPermPageSize] = useState(20);
+  const [permTable, setPermTable] = useState<Permission[]>([]);
+  const [permTotal, setPermTotal] = useState(0);
+  const [permLoading, setPermLoading] = useState(false);
+  const [permissionModalOpen, setPermissionModalOpen] = useState(false);
+  const [permissionForm] = Form.useForm();
+  const [editingPermission, setEditingPermission] = useState<Permission | null>(null);
+  const [savingPermission, setSavingPermission] = useState(false);
 
   const [activeTab, setActiveTab] = useState("users");
   const tableHeight = useFillHeight({
@@ -150,11 +236,11 @@ export default function UsersPage() {
     const [u, r, p] = await Promise.all([
       api.get("/users", { params: userParams }),
       api.get("/roles", { params: roleParams }),
-      api.get("/permissions"),
+      api.get("/permissions/all"),
     ]);
     setUsers(u.data.items ?? u.data ?? []);
     setRoles(r.data.items ?? r.data ?? []);
-    setPerms(p.data.items ?? p.data ?? []);
+    setPerms(p.data ?? []);
   };
 
   useEffect(() => {
@@ -394,7 +480,7 @@ export default function UsersPage() {
       title: "Type",
       dataIndex: "userType",
       key: "userType",
-      render: (v: string) => <Tag>{v}</Tag>,
+      render: (v: string) => <Tag color={colorFor(v)}>{v}</Tag>,
       filters: Array.from(new Set(users.map((u) => u.userType).filter(Boolean))).map((t) => ({ text: t!, value: t! })),
       onFilter: (v: any, r: User) => r.userType === v,
     },
@@ -404,7 +490,7 @@ export default function UsersPage() {
       key: "role",
       render: (v: string | null, r: User) => {
         const isAdmin = me?.id === r.id;
-        return v ? <Tag color="blue">{v}</Tag> : <Tag color="red">None</Tag>;
+        return v ? <Tag color={colorFor(v)}>{v}</Tag> : <Tag color="red">None</Tag>;
       },
       filters: Array.from(new Set(users.map((u) => u.role).filter(Boolean))).map((t) => ({ text: t!, value: t! })),
       onFilter: (v: any, r: User) => r.role === v,
@@ -644,6 +730,126 @@ export default function UsersPage() {
     },
   ]);
 
+  const loadPermissions = useCallback(async () => {
+    setPermLoading(true);
+    try {
+      const r = await api.get("/permissions", {
+        params: { page: permPage, limit: permPageSize },
+      });
+      setPermTable(r.data.items ?? []);
+      setPermTotal(r.data.total ?? 0);
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to load permissions"));
+    } finally {
+      setPermLoading(false);
+    }
+  }, [permPage, permPageSize]);
+
+  useEffect(() => {
+    if (canManageRoles) loadPermissions().catch(() => {});
+  }, [canManageRoles, loadPermissions]);
+
+  const openPermissionModal = (p?: Permission) => {
+    setEditingPermission(p ?? null);
+    permissionForm.setFieldsValue({
+      code: p?.code ?? "",
+      name: p?.name ?? "",
+      group: p?.group ?? "",
+    });
+    setPermissionModalOpen(true);
+  };
+
+  const savePermission = async () => {
+    const values = await permissionForm.validateFields();
+    setSavingPermission(true);
+    try {
+      if (editingPermission) {
+        await api.put(`/permissions/${editingPermission.id}`, {
+          name: values.name,
+          group: values.group ?? null,
+        });
+        message.success("Permission updated");
+      } else {
+        await api.post("/permissions", values);
+        message.success("Permission created");
+      }
+      setPermissionModalOpen(false);
+      load();
+      loadPermissions();
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to save permission"));
+    } finally {
+      setSavingPermission(false);
+    }
+  };
+
+  const deletePermission = async (p: Permission) => {
+    try {
+      await api.delete(`/permissions/${p.id}`);
+      message.success("Permission deleted");
+      load();
+      loadPermissions();
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to delete permission"));
+    }
+  };
+
+  const permissionColumns = centerColumns<Permission>([
+    indexColumn<Permission>(permPage, permPageSize),
+    {
+      title: "Code",
+      dataIndex: "code",
+      key: "code",
+      render: (v: string) => <Typography.Text code>{v}</Typography.Text>,
+      filters: Array.from(new Set(perms.map((p) => p.code).filter(Boolean))).map(
+        (c) => ({ text: c!, value: c! }),
+      ),
+      onFilter: (v: any, r: Permission) => r.code === v,
+    },
+    {
+      title: "Name",
+      dataIndex: "name",
+      key: "name",
+      onFilter: (v: any, r: Permission) =>
+        (r.name ?? "").toLowerCase().includes(String(v).toLowerCase()),
+    },
+    {
+      title: "Group",
+      dataIndex: "group",
+      key: "group",
+      render: (v: string | null | undefined) =>
+        v ? <Tag color="geekblue">{v}</Tag> : "—",
+      filters: Array.from(
+        new Set(perms.map((p) => p.group).filter(Boolean) as string[]),
+      ).map((g) => ({ text: g, value: g })),
+      onFilter: (v: any, r: Permission) => r.group === v,
+    },
+    ...(canManageRoles
+      ? [
+          {
+            title: "Actions",
+            key: "actions",
+            render: (_: any, r: Permission) => (
+              <Space size={8}>
+                <Button
+                  size="small"
+                  icon={<EditOutlined />}
+                  onClick={() => openPermissionModal(r)}
+                  aria-label={`Edit ${r.code}`}
+                />
+                <Popconfirm
+                  title="Delete this permission?"
+                  onConfirm={() => deletePermission(r)}
+                >
+                  <Button danger size="small" icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </Space>
+            ),
+          },
+        ]
+      : []),
+  ]);
+
   return (
     <div className="users-page">
       {!canManageUsers && !canManageRoles && !canManageMailbox && (
@@ -814,14 +1020,38 @@ export default function UsersPage() {
             key: "permissions",
             label: "Permissions",
             children: (
-              <Card variant="borderless" title="Permissions">
-                <Row gutter={[12, 12]}>
-                  {perms.map((p) => (
-                    <Col key={p.id}>
-                      <Tag color="geekblue">{p.code}</Tag>
-                    </Col>
-                  ))}
-                </Row>
+              <Card
+                variant="borderless"
+                title="Permissions"
+                extra={
+                  canManageRoles && (
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => openPermissionModal()}
+                    >
+                      Add Permission
+                    </Button>
+                  )
+                }
+              >
+                <Table
+                  rowKey="id"
+                  size="small"
+                  columns={permissionColumns}
+                  dataSource={permTable}
+                  loading={permLoading}
+                  scroll={{ x: "max-content", y: tableHeight }}
+                  pagination={{
+                    current: permPage,
+                    pageSize: permPageSize,
+                    showSizeChanger: true,
+                    pageSizeOptions: PAGE_SIZE_OPTIONS,
+                    total: permTotal,
+                    onChange: paginationChange(setPermPage, setPermPageSize, permPageSize),
+                    showTotal: (t) => `Total: ${t}`,
+                  }}
+                />
               </Card>
             ),
           },
@@ -976,22 +1206,15 @@ export default function UsersPage() {
           })}
         </Row>
         <Typography.Title level={5}>Permissions</Typography.Title>
-        <Row gutter={[8, 8]}>
-          {perms.map((p) => (
-            <Col key={p.id}>
-              <Checkbox
-                checked={selectedPermIds.includes(p.id)}
-                onChange={(e) =>
-                  setSelectedPermIds((prev) =>
-                    e.target.checked ? [...prev, p.id] : prev.filter((id) => id !== p.id),
-                  )
-                }
-              >
-                {p.code}
-              </Checkbox>
-            </Col>
-          ))}
-        </Row>
+        <PermissionPicker
+          perms={perms}
+          selected={selectedPermIds}
+          onToggle={(id, checked) =>
+            setSelectedPermIds((prev) =>
+              checked ? [...prev, id] : prev.filter((x) => x !== id),
+            )
+          }
+        />
       </Modal>
 
       <Modal
@@ -1011,24 +1234,45 @@ export default function UsersPage() {
             <Input />
           </Form.Item>
           <Form.Item label="Permissions">
-            <Row gutter={[8, 8]}>
-              {perms.map((p) => (
-                <Col key={p.id}>
-                  <Checkbox
-                    checked={selectedPerms.includes(p.id)}
-                    onChange={(e) =>
-                      setSelectedPerms((prev) =>
-                        e.target.checked
-                          ? [...prev, p.id]
-                          : prev.filter((id) => id !== p.id)
-                      )
-                    }
-                  >
-                    {p.code}
-                  </Checkbox>
-                </Col>
-              ))}
-            </Row>
+            <PermissionPicker
+              perms={perms}
+              selected={selectedPerms}
+              onToggle={(id, checked) =>
+                setSelectedPerms((prev) =>
+                  checked ? [...prev, id] : prev.filter((x) => x !== id),
+                )
+              }
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={editingPermission ? `Edit Permission: ${editingPermission.code}` : "Add Permission"}
+        open={permissionModalOpen}
+        onCancel={() => setPermissionModalOpen(false)}
+        onOk={savePermission}
+        confirmLoading={savingPermission}
+        width={480}
+      >
+        <Form form={permissionForm} layout="vertical">
+          <Form.Item
+            name="code"
+            label="Code"
+            rules={[{ required: true, message: "Code required" }]}
+            extra="Codes follow the format resource.action (e.g. assignment.create)"
+          >
+            <Input disabled={!!editingPermission} placeholder="e.g. assignment.create" />
+          </Form.Item>
+          <Form.Item
+            name="name"
+            label="Name"
+            rules={[{ required: true, message: "Name required" }]}
+          >
+            <Input placeholder="e.g. Create assignment" />
+          </Form.Item>
+          <Form.Item name="group" label="Group">
+            <Input placeholder="e.g. assignment" />
           </Form.Item>
         </Form>
       </Modal>

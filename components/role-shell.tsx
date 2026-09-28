@@ -141,7 +141,7 @@ export default function RoleShell({ children, menuItems, roleLabel, roleColor }:
         open={isMobile && mobileNavOpen}
         onClose={() => setMobileNavOpen(false)}
         placement="left"
-        width={260}
+        size={260}
         styles={{ body: { padding: 0 } }}
       >
         <Flex vertical style={{ height: "100%" }}>

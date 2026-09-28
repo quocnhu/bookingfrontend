@@ -13,8 +13,8 @@ import {
   Tag,
   Tooltip,
   Typography,
-  message,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import type { ColumnsType } from "antd/es/table";
 import { ReloadOutlined } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
@@ -364,7 +364,7 @@ export default function CrewAvailabilityDrawer({
       title="Crew availability calendar"
       open={open}
       onClose={onClose}
-      width="92%"
+      size="92%"
       destroyOnClose
       extra={
         <Space>

@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Badge, Button, List, Popover, Tag, Typography, message, theme as antdTheme } from "antd";
+import { Badge, Button, List, Popover, Tag, Typography, theme as antdTheme } from "antd";
+import { message } from "@/lib/antd-message";
 import { BellOutlined, CheckOutlined } from "@ant-design/icons";
+import dayjs from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";
 import { useSocket } from "@/lib/use-socket";
 
@@ -104,9 +106,15 @@ export default function NotificationCenter() {
                 </div>
               }
               description={
-                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                  {item.body}
-                </Typography.Text>
+                <>
+                  <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                    {item.body}
+                  </Typography.Text>
+                  <div style={{ marginTop: 2, fontSize: 10, color: token.colorTextTertiary }}>
+                    {item.sender?.name && <span>{item.sender.name}</span>}
+                    <span>{item.sender?.name ? " · " : ""}{dayjs(item.createdAt).format("DD MMM · HH:mm")}</span>
+                  </div>
+                </>
               }
             />
           </List.Item>

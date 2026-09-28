@@ -9,8 +9,8 @@ import {
   Modal,
   Table,
   Typography,
-  message,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import type { ColumnsType } from "antd/es/table";
 import { api, getErrorMessage } from "@/lib/api";
 import type { BoardItem } from "./types";

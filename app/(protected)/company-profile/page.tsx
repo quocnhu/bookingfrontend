@@ -12,8 +12,8 @@ import {
   Row,
   Space,
   Typography,
-  message,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import {
   BankOutlined,
   EnvironmentOutlined,

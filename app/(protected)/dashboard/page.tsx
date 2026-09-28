@@ -197,7 +197,7 @@ export default function DashboardPage() {
                     style={{ background: group.color, color: "#fff", borderRadius: 12 }}
                   />
                   <div>
-                    <Statistic value={s.value} valueStyle={{ fontWeight: 700, fontSize: 22 }} />
+                    <Statistic value={s.value} styles={{ content: { fontWeight: 700, fontSize: 22 } }} />
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                       {s.title}
                     </Typography.Text>

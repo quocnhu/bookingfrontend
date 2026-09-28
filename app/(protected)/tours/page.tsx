@@ -18,8 +18,8 @@ import {
   Table,
   Tag,
   Typography,
-  message,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import { PlusOutlined, DeleteOutlined, EditOutlined, PictureOutlined, ScheduleOutlined, CloseCircleOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";

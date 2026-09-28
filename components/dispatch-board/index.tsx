@@ -10,7 +10,6 @@ import {
   Drawer,
   Empty,
   Flex,
-  Modal,
   Row,
   Space,
   Statistic,
@@ -18,8 +17,8 @@ import {
   Tag,
   Typography,
   theme as antdTheme,
-  message,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import type { DatePickerProps } from "antd";
 import {
   CalendarOutlined,
@@ -97,7 +96,7 @@ export default function DispatchBoard({
   const [finishing, setFinishing] = useState<BoardItem | null>(null);
   const [templateTarget, setTemplateTarget] = useState<BoardItem | null>(null);
   const [verifyTarget, setVerifyTarget] = useState<BoardItem | null>(null);
-  const [filterDate, setFilterDate] = useState<Dayjs | null>(dayjs().startOf("day"));
+  const [filterDate, setFilterDate] = useState<Dayjs>(dayjs().startOf("day"));
   const [additionsTarget, setAdditionsTarget] = useState<BoardItem | null>(null);
   const [crewAvailOpen, setCrewAvailOpen] = useState(false);
 
@@ -179,7 +178,6 @@ export default function DispatchBoard({
     }
   };
 
-  const [recalling, setRecalling] = useState<BoardItem | null>(null);
   const [recallingId, setRecallingId] = useState<string | null>(null);
 
   const recallAssignment = async (assignment: BoardItem) => {
@@ -201,14 +199,9 @@ export default function DispatchBoard({
   };
 
   const onRecall = (assignment: BoardItem) => {
-    // After 7am the guide may be en route — ask for explicit confirmation.
-    const now = dayjs();
-    const cutoff = now.clone().startOf("day").add(7, "hour");
-    if (now.isAfter(cutoff)) {
-      setRecalling(assignment);
-    } else {
-      recallAssignment(assignment);
-    }
+    // Server-enforced: recall is blocked after the 05:00 cutoff on the
+    // departure day. Before that we recall immediately.
+    recallAssignment(assignment);
   };
 
   const [dispatchingAll, setDispatchingAll] = useState(false);
@@ -249,13 +242,25 @@ export default function DispatchBoard({
     bookingId: string,
     toAssignmentId: string,
     beforeBookingId?: string | null,
+    position: "before" | "after" = "before",
   ) => {
     const source = boardData.find((a) =>
       a.bookings?.some((b) => b.id === bookingId),
     );
-    if (!source) return;
     const target = boardData.find((a) => a.id === toAssignmentId);
-    if (!target) return;
+    // These used to return silently, so a stale/unknown id looked exactly like
+    // drag-and-drop being broken. Say what went wrong instead.
+    if (!bookingId || !source || !target) {
+      message.error(
+        !bookingId
+          ? "Could not read the dragged assignment - try again"
+          : !source
+            ? "That assignment is no longer on the board - refresh and retry"
+            : "That bus is no longer on the board - refresh and retry",
+      );
+      loadBoard(true);
+      return;
+    }
 
     const sameBus = source.id === toAssignmentId;
     const key = `dd-${bookingId}`;
@@ -265,7 +270,9 @@ export default function DispatchBoard({
       const without = order.filter((id) => id !== bookingId);
       if (beforeBookingId) {
         const at = without.indexOf(beforeBookingId);
-        without.splice(at === -1 ? without.length : at, 0, bookingId);
+        // "after" = chèn ngay dưới mốc; "before" = chèn ngay trên mốc.
+        if (at === -1) without.push(bookingId);
+        else without.splice(position === "after" ? at + 1 : at, 0, bookingId);
       } else {
         without.push(bookingId);
       }
@@ -308,16 +315,11 @@ export default function DispatchBoard({
   const filtered = useMemo(
     () =>
       boardData.filter((a) => {
-        if (!filterDate) return true;
-        // Show every tour that is ACTIVE on the selected date (multi-day):
-        // startDate <= filterDate <= endDate. Tours on the board by overlapping
-        // the date, not only by their START date.
+        // Only show tours whose DEPARTURE (start) date matches the selected
+        // date. Multi-day tours are shown only on the day they start, so the
+        // board for today never lists buses from previous days.
         const start = dayjs(a.startDate).startOf("day");
-        const end = dayjs(a.endDate ?? a.startDate).startOf("day");
-        return (
-          start.isSameOrBefore(filterDate.startOf("day")) &&
-          end.isSameOrAfter(filterDate.startOf("day"))
-        );
+        return start.isSame(filterDate.startOf("day"));
       }),
     [boardData, filterDate],
   );
@@ -352,7 +354,15 @@ export default function DispatchBoard({
     return dates;
   }, [boardData]);
   const today = dayjs().startOf("day");
-  const isFilterToday = !!filterDate && filterDate.startOf("day").isSame(today);
+  const isFilterToday = filterDate.startOf("day").isSame(today);
+  // Backend nạp sẵn chuyến từ 30 ngày trước tới 90 ngày sau
+  // (BOARD_LOOKBACK_DAYS trong assignments.service.ts). Chọn ngoài cửa sổ này
+  // sẽ hiện "No tours on this date" dù có chuyến → chặn luôn.
+  const minLoadedDate = today.subtract(30, "day");
+  const maxLoadedDate = today.add(90, "day");
+  const isOutsideLoadedWindow = (d: Dayjs) =>
+    d.startOf("day").isBefore(minLoadedDate) ||
+    d.startOf("day").isAfter(maxLoadedDate);
 
   const stats = useMemo(
     () => ({
@@ -375,8 +385,7 @@ export default function DispatchBoard({
     const dateStr = (current as Dayjs).format("YYYY-MM-DD");
     const hasBookings = bookingDates.has(dateStr);
     const isToday = dateStr === today.format("YYYY-MM-DD");
-    const isSelected =
-      !!filterDate && dateStr === filterDate.format("YYYY-MM-DD");
+    const isSelected = dateStr === filterDate.format("YYYY-MM-DD");
     return (
       <div style={{ position: "relative" }}>
         {info.originNode}
@@ -408,7 +417,7 @@ export default function DispatchBoard({
       }
       open={open}
       onClose={onClose}
-      width="100%"
+      size="100%"
       destroyOnClose
     >
       {boardLoading && filtered.length === 0 ? (
@@ -418,9 +427,7 @@ export default function DispatchBoard({
           {refreshing && <BoardLoadingOverlay text="Refreshing…" />}
           {filtered.length === 0 ? (
             <Empty
-              description={
-                filterDate ? "No tours on this date" : "No upcoming tours"
-              }
+              description="No tours on this date"
               style={{ padding: 48 }}
             />
           ) : (
@@ -442,9 +449,7 @@ export default function DispatchBoard({
                       </Tag>
                     )}
                     <Text strong style={{ fontSize: 17 }}>
-                      {filterDate
-                        ? filterDate.format("dddd, MMMM D, YYYY")
-                        : "All upcoming tours"}
+                      {filterDate.format("dddd, MMMM D, YYYY")}
                     </Text>
                   </Space>
                   <Space wrap>
@@ -452,9 +457,12 @@ export default function DispatchBoard({
                     <Text type="secondary">Filter by date:</Text>
                     <DatePicker
                       value={filterDate}
-                      onChange={(d) => setFilterDate(d)}
-                      allowClear
-                      placeholder="All dates"
+                      onChange={(d) => {
+                        if (d) setFilterDate(d);
+                      }}
+                      allowClear={false}
+                      disabledDate={isOutsideLoadedWindow}
+                      placeholder="Select a date"
                       style={{ width: 200 }}
                       cellRender={renderDateCell}
                     />
@@ -587,42 +595,42 @@ export default function DispatchBoard({
                   <Statistic
                     title="Pending"
                     value={stats.pending}
-                    valueStyle={{ fontSize: 18, color: "#faad14" }}
+                    styles={{ content: { fontSize: 18, color: "#faad14" } }}
                   />
                 </Col>
                 <Col xs={12} sm={4}>
                   <Statistic
                     title="Verifying"
                     value={stats.verifying}
-                    valueStyle={{ fontSize: 18, color: "#722ed1" }}
+                    styles={{ content: { fontSize: 18, color: "#722ed1" } }}
                   />
                 </Col>
                 <Col xs={12} sm={4}>
                   <Statistic
                     title="Group Tours"
                     value={stats.group}
-                    valueStyle={{ fontSize: 18, color: "#1677ff" }}
+                    styles={{ content: { fontSize: 18, color: "#1677ff" } }}
                   />
                 </Col>
                 <Col xs={12} sm={4}>
                   <Statistic
                     title="Private Tours"
                     value={stats.private}
-                    valueStyle={{ fontSize: 18, color: "#722ed1" }}
+                    styles={{ content: { fontSize: 18, color: "#722ed1" } }}
                   />
                 </Col>
                 <Col xs={12} sm={4}>
                   <Statistic
                     title="Other"
                     value={stats.other}
-                    valueStyle={{ fontSize: 18, color: "#8c8c8c" }}
+                    styles={{ content: { fontSize: 18, color: "#8c8c8c" } }}
                   />
                 </Col>
                 <Col xs={12} sm={4}>
                   <Statistic
                     title="Total"
                     value={stats.total}
-                    valueStyle={{ fontSize: 18, color: token.colorPrimary }}
+                    styles={{ content: { fontSize: 18, color: token.colorPrimary } }}
                   />
                 </Col>
               </Row>
@@ -670,34 +678,6 @@ export default function DispatchBoard({
         open={crewAvailOpen}
         onClose={() => setCrewAvailOpen(false)}
       />
-      <Modal
-        open={!!recalling}
-        title="Recall dispatch"
-        okText="Recall"
-        okType="danger"
-        cancelText="Keep dispatched"
-        confirmLoading={!!recalling && recallingId === recalling.id}
-        onOk={() => {
-          if (recalling) {
-            const target = recalling;
-            setRecalling(null);
-            recallAssignment(target);
-          }
-        }}
-        onCancel={() => setRecalling(null)}
-      >
-        <p>
-          Bus{" "}
-          <Text strong>{recalling?.code ?? ""}</Text> has already been dispatched
-          for more than the 7:00 cutoff — the guide may already be en route to
-          pick up tourists.
-        </p>
-        <p style={{ marginBottom: 0 }}>
-          Recalling returns the bus to <Text strong>PENDING</Text> so you can
-          re-assign it. Driver and guide are notified of both the recall and any
-          re-dispatch.
-        </p>
-      </Modal>
     </Drawer>
   );
 }

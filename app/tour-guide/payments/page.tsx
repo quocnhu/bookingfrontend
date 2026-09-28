@@ -14,9 +14,9 @@ import {
   Table,
   Tag,
   Typography,
-  message,
   theme as antdTheme,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import {
   CarOutlined,
   DollarOutlined,
@@ -24,6 +24,8 @@ import {
   WalletOutlined,
   ArrowUpOutlined,
   ArrowDownOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
@@ -49,7 +51,22 @@ interface PaymentLine {
   collected: number;
   paid: number;
   net: number;
+  isPaid: boolean;
+  paidAt?: string | null;
   items: SettlementItem[];
+}
+
+interface PaymentPeriod {
+  id: string;
+  fromDate: string;
+  toDate: string;
+  tourCount: number;
+  guideReturnsToCompany: number;
+  companyReturnsToGuide: number;
+  totalNet: number;
+  note?: string | null;
+  createdByName?: string | null;
+  createdAt: string;
 }
 
 const money = (n: number) =>
@@ -65,9 +82,31 @@ export default function TourGuidePaymentsPage() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<{
     guideType: string;
-    summary: { tours: number; totalCollected: number; totalPaid: number; totalNet: number };
+    summary: {
+      tours: number;
+      totalCollected: number;
+      totalPaid: number;
+      totalNet: number;
+      paidNet: number;
+      unpaidNet: number;
+      lastPaidAt?: string | null;
+    };
+    periods: PaymentPeriod[];
     lines: PaymentLine[];
-  }>({ guideType: "", summary: { tours: 0, totalCollected: 0, totalPaid: 0, totalNet: 0 }, lines: [] });
+  }>({
+    guideType: "",
+    summary: {
+      tours: 0,
+      totalCollected: 0,
+      totalPaid: 0,
+      totalNet: 0,
+      paidNet: 0,
+      unpaidNet: 0,
+      lastPaidAt: null,
+    },
+    periods: [],
+    lines: [],
+  });
 
   const load = async (start?: Dayjs, end?: Dayjs) => {
     setLoading(true);
@@ -108,6 +147,18 @@ export default function TourGuidePaymentsPage() {
           {dayjs(r.endDate).format("DD/MM/YYYY")}
         </span>
       ),
+    },
+    {
+      title: "Status",
+      key: "status",
+      render: (_: any, r: PaymentLine) =>
+        r.isPaid ? (
+          <Tag color="green">
+            Paid{r.paidAt ? ` · ${dayjs(r.paidAt).format("DD/MM/YYYY")}` : ""}
+          </Tag>
+        ) : (
+          <Tag color="orange">Unpaid</Tag>
+        ),
     },
     {
       title: "Collected",
@@ -163,6 +214,15 @@ export default function TourGuidePaymentsPage() {
           : "You are a freelance guide — the net amount below is what you collect for this period."}
       </Typography.Text>
 
+      {data.summary.lastPaidAt && (
+        <Typography.Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
+          <Tag color="green" style={{ marginInlineEnd: 8 }}>
+            Marked paid up to {dayjs(data.summary.lastPaidAt).format("DD/MM/YYYY")}
+          </Tag>
+          This is accounting's watermark — earlier periods are settled, so only the unpaid lines below are pending.
+        </Typography.Text>
+      )}
+
       <Row gutter={[16, 16]}>
         <Col xs={12} lg={6}>
           <Card variant="borderless">
@@ -175,7 +235,7 @@ export default function TourGuidePaymentsPage() {
               title="Collected"
               value={data.summary.totalCollected}
               prefix={<ArrowUpOutlined />}
-              valueStyle={{ color: token.colorSuccess }}
+              styles={{ content: { color: token.colorSuccess } }}
               formatter={(v) => money(Number(v))}
             />
           </Card>
@@ -186,7 +246,7 @@ export default function TourGuidePaymentsPage() {
               title="Paid (expenses)"
               value={data.summary.totalPaid}
               prefix={<ArrowDownOutlined />}
-              valueStyle={{ color: token.colorError }}
+              styles={{ content: { color: token.colorError } }}
               formatter={(v) => money(Number(v))}
             />
           </Card>
@@ -199,7 +259,34 @@ export default function TourGuidePaymentsPage() {
             <Statistic
               title={isOfficial ? "To return to company" : "Money to collect"}
               value={data.summary.totalNet}
-              valueStyle={{ color: data.summary.totalNet >= 0 ? token.colorSuccess : token.colorError, fontWeight: 700 }}
+              styles={{ content: { color: data.summary.totalNet >= 0 ? token.colorSuccess : token.colorError, fontWeight: 700 } }}
+              formatter={(v) => money(Number(v))}
+            />
+          </Card>
+        </Col>
+      </Row>
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={12} lg={6}>
+          <Card variant="borderless">
+            <Statistic
+              title="Marked paid (net)"
+              value={data.summary.paidNet}
+              prefix={<CheckCircleOutlined />}
+              styles={{ content: { color: token.colorSuccess } }}
+              formatter={(v) => money(Number(v))}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} lg={6}>
+          <Card
+            variant="borderless"
+            style={{ border: `1px solid ${data.summary.unpaidNet ? token.colorWarning : token.colorSuccess}` }}
+          >
+            <Statistic
+              title="Pending — unpaid"
+              value={data.summary.unpaidNet}
+              prefix={<ClockCircleOutlined />}
+              styles={{ content: { color: data.summary.unpaidNet ? token.colorWarning : token.colorSuccess, fontWeight: 700 } }}
               formatter={(v) => money(Number(v))}
             />
           </Card>
@@ -248,6 +335,61 @@ export default function TourGuidePaymentsPage() {
               ),
           }}
         />
+      </Card>
+
+      <Card
+        variant="borderless"
+        title={`Paid periods (${data.periods.length})`}
+        style={{ marginTop: 16 }}
+      >
+        {data.periods.length === 0 ? (
+          <Typography.Text type="secondary">
+            No payment period has been exported for you yet. Once accounting marks a range as paid,
+            it will appear here so you can confirm you won't be settled twice.
+          </Typography.Text>
+        ) : (
+          <Table<PaymentPeriod>
+            rowKey="id"
+            size="small"
+            pagination={false}
+            dataSource={data.periods}
+            columns={[
+              {
+                title: "Period",
+                key: "period",
+                render: (_: any, p: PaymentPeriod) => (
+                  <span style={{ whiteSpace: "nowrap" }}>
+                    {dayjs(p.fromDate).format("DD/MM/YYYY")} — {dayjs(p.toDate).format("DD/MM/YYYY")}
+                  </span>
+                ),
+              },
+              { title: "Tours", dataIndex: "tourCount", key: "tours", width: 90 },
+              {
+                title: "Net",
+                dataIndex: "totalNet",
+                key: "net",
+                align: "right" as const,
+                render: (v: number) => (
+                  <span style={{ color: v >= 0 ? token.colorSuccess : token.colorError, fontWeight: 700 }}>
+                    {money(v)}
+                  </span>
+                ),
+              },
+              {
+                title: "Marked by",
+                key: "by",
+                render: (_: any, p: PaymentPeriod) => (
+                  <span style={{ fontSize: 12 }}>
+                    {p.createdByName ?? "—"}
+                    <Typography.Text type="secondary" style={{ display: "block", fontSize: 11 }}>
+                      {dayjs(p.createdAt).format("DD/MM/YYYY HH:mm")}
+                    </Typography.Text>
+                  </span>
+                ),
+              },
+            ]}
+          />
+        )}
       </Card>
     </div>
   );

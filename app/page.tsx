@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, Col, Empty, Flex, Row, Spin, Tag, Typography, message } from "antd";
+import { Button, Card, Col, Empty, Flex, Row, Spin, Tag, Typography } from "antd";
+import { message } from "@/lib/antd-message";
 import {
   CompassOutlined,
   LoginOutlined,

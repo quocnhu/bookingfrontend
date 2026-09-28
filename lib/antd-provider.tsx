@@ -1,7 +1,9 @@
 'use client';
 
-import { ConfigProvider, theme as antdTheme } from 'antd';
+import React from 'react';
+import { App, ConfigProvider, theme as antdTheme } from 'antd';
 import { useApp } from './app-context';
+import AntdMessageBridge from './antd-message';
 
 const LIGHT = {
   colorPrimary: '#7C3AED',
@@ -106,7 +108,10 @@ export default function AntdProvider({ children }: { children: React.ReactNode }
         },
       }}
     >
-      {children}
+      <App component={false}>
+        <AntdMessageBridge />
+        {children}
+      </App>
     </ConfigProvider>
   );
 }

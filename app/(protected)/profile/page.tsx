@@ -19,8 +19,8 @@ import {
   Typography,
   Upload,
   theme as antdTheme,
-  message,
 } from "antd";
+import { message } from "@/lib/antd-message";
 import {
   CameraOutlined,
   CheckCircleOutlined,
@@ -218,14 +218,14 @@ export default function ProfilePage() {
             <Statistic
               title="Permissions"
               value={user.permissions?.length ?? 0}
-              valueStyle={{ fontWeight: 700 }}
+              styles={{ content: { fontWeight: 700 } }}
             />
           </Col>
           <Col xs={12} lg={6}>
             <Statistic
               title="Member since"
               value={user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "—"}
-              valueStyle={{ fontSize: 18, fontWeight: 700 }}
+              styles={{ content: { fontSize: 18, fontWeight: 700 } }}
             />
           </Col>
           <Col xs={12} lg={6}>
@@ -244,7 +244,7 @@ export default function ProfilePage() {
             <Statistic
               title="Status"
               value="Active"
-              valueStyle={{ fontSize: 18, fontWeight: 700 }}
+              styles={{ content: { fontSize: 18, fontWeight: 700 } }}
             />
           </Col>
         </Row>

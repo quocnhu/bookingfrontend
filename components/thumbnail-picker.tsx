@@ -3,7 +3,8 @@
 import { useCallback, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import { useDropzone } from "react-dropzone";
-import { Button, Flex, Modal, Slider, Typography, message } from "antd";
+import { Button, Flex, Modal, Slider, Typography } from "antd";
+import { message } from "@/lib/antd-message";
 import { DeleteOutlined, PictureOutlined, PlusOutlined } from "@ant-design/icons";
 
 const OUTPUT_SIZE = 600;
