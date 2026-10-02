@@ -70,7 +70,7 @@ export default function GuideBookingsPanel({
   const [draft, setDraft] = useState<Draft | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const { money, loading, load: loadMoney, perBooking, addMoney, reverseMoney } =
+  const { money, loading, load: loadMoney, perBooking, addMoney, deleteMoney } =
     useTourMoney(assignmentId);
 
   // Notes saved on the server are the source of truth; in-progress edits live in `drafts`.
@@ -140,17 +140,17 @@ export default function GuideBookingsPanel({
     }
   };
 
-  const reverseRow = (row: MoneyRow) => {
+  const deleteRow = (row: MoneyRow) => {
     modal.confirm({
-      title: "Reverse this entry?",
+      title: "Delete this entry?",
       content:
-        "The system creates a negative offsetting line instead of deleting the old one. The amount will be deducted from the money sheet.",
-      okText: "Reverse",
+        "The entry will be permanently removed from this trip's money sheet.",
+      okText: "Delete",
       okButtonProps: { danger: true },
       cancelText: "Cancel",
       onOk: async () => {
-        const ok = await reverseMoney(row.id);
-        if (!ok) throw new Error("reverse failed");
+        const ok = await deleteMoney(row.id);
+        if (!ok) throw new Error("delete failed");
       },
     });
   };
@@ -365,11 +365,11 @@ export default function GuideBookingsPanel({
                     render: (_, r) => {
                       if (money?.locked) return null;
                       if (r.reversesId) return null;
-                      if (r.createdById && user && r.createdById !== user.id) return null;
+                      if (user?.role !== "ADMIN" && r.createdById && user && r.createdById !== user.id) return null;
                       return (
-                        <Tooltip title="Reverse this line (creates a negative offsetting line)">
-                          <Button size="small" type="text" onClick={() => reverseRow(r)}>
-                            Reverse
+                        <Tooltip title="Delete this line permanently">
+                          <Button size="small" type="text" danger onClick={() => deleteRow(r)}>
+                            Delete
                           </Button>
                         </Tooltip>
                       );

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   Button,
   Card,
   Flex,
@@ -12,6 +11,7 @@ import {
   Progress,
   Popover,
   Space,
+  Spin,
   Tag,
   Tooltip,
   Typography,
@@ -38,7 +38,8 @@ import {
 } from "@ant-design/icons";
 import type { ReactNode } from "react";
 import dayjs, { Dayjs } from "dayjs";
-import type { BoardCrew, BoardItem, TourMeta } from "./types";
+import type { BoardCrew, BoardItem, BookingItem, TourMeta } from "./types";
+import { api } from "@/lib/api";
 import { STATUS_COLORS, LEAVE_COLOR } from "./types";
 
 const { Text } = Typography;
@@ -324,6 +325,180 @@ function PersonSelect({
   );
 }
 
+interface BookingMoneyEntry {
+  id: string;
+  amount: number | string;
+  note?: string | null;
+  createdByName?: string | null;
+  category?: { name?: string | null; flowType?: string | null } | null;
+}
+
+const fmtInfoVnd = (n: number) =>
+  new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(Math.round(n));
+
+// INFO cell: gold icon when the booking has a note and/or collect-refund
+// entries added by admin/privileged users. Clicking opens a box with the
+// note plus the collect/refund lines for that booking.
+function BookingInfoCell({
+  booking: b,
+  assignmentId,
+}: {
+  booking: BookingItem;
+  assignmentId: string;
+}) {
+  const [entries, setEntries] = useState<BookingMoneyEntry[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const hasNote = !!b.notes?.trim();
+
+  const loadEntries = async () => {
+    if (entries !== null || loading) return;
+    setLoading(true);
+    try {
+      const { data } = await api.get(`/assignments/${assignmentId}/money`);
+      const rows: BookingMoneyEntry[] = (data?.rows ?? []).filter(
+        (r: BookingMoneyEntry & { bookingId?: string }) => r.bookingId === b.id,
+      );
+      setEntries(rows);
+    } catch {
+      setEntries([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const hasMoney = (entries ?? []).length > 0;
+  const collected = (entries ?? [])
+    .filter((e) => e.category?.flowType === "COLLECT_MONEY")
+    .reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const refunded = (entries ?? [])
+    .filter((e) => e.category?.flowType !== "COLLECT_MONEY")
+    .reduce((s, e) => s + (Number(e.amount) || 0), 0);
+
+  return (
+    <Popover
+      trigger="click"
+      placement="leftTop"
+      title="Booking details"
+      onOpenChange={(v) => {
+        if (v) void loadEntries();
+      }}
+      content={
+        <div style={{ maxWidth: 280, minWidth: 220 }}>
+          <div style={{ marginBottom: 8 }}>
+            <Text strong style={{ fontSize: 12 }}>
+              Note:{" "}
+            </Text>
+            <Text style={{ fontSize: 12 }}>
+              {b.notes?.trim() || <Text type="secondary">—</Text>}
+            </Text>
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              marginBottom: 4,
+              borderTop: "1px solid #f0f0f0",
+              paddingTop: 8,
+            }}
+          >
+            Collect / Refund
+          </div>
+          {loading ? (
+            <Flex justify="center" style={{ padding: 8 }}>
+              <Spin size="small" />
+            </Flex>
+          ) : !entries ? (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Click to load…
+            </Text>
+          ) : entries.length === 0 ? (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              No collect/refund yet.
+            </Text>
+          ) : (
+            <>
+              {entries.map((e) => {
+                const isCollect = e.category?.flowType === "COLLECT_MONEY";
+                return (
+                  <Flex
+                    key={e.id}
+                    justify="space-between"
+                    align="center"
+                    style={{ marginBottom: 4 }}
+                  >
+                    <span style={{ fontSize: 12, minWidth: 0 }}>
+                      <Text style={{ fontSize: 12 }}>
+                        {e.category?.name ?? "—"}
+                      </Text>
+                      {e.note ? (
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          {" "}
+                          · {e.note}
+                        </Text>
+                      ) : null}
+                      {e.createdByName ? (
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          {" "}
+                          ({e.createdByName})
+                        </Text>
+                      ) : null}
+                    </span>
+                    <Text
+                      strong
+                      style={{
+                        fontSize: 12,
+                        color: isCollect ? "#0f766e" : "#b91c1c",
+                        whiteSpace: "nowrap",
+                        marginLeft: 8,
+                      }}
+                    >
+                      {isCollect ? "+" : "-"}
+                      {fmtInfoVnd(Number(e.amount) || 0)}
+                    </Text>
+                  </Flex>
+                );
+              })}
+              <Flex
+                justify="space-between"
+                style={{
+                  borderTop: "1px solid #f0f0f0",
+                  paddingTop: 6,
+                  marginTop: 6,
+                }}
+              >
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  Collected:{" "}
+                  <Text strong style={{ color: "#0f766e", fontSize: 11 }}>
+                    {fmtInfoVnd(collected)}
+                  </Text>
+                </Text>
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  Refunded:{" "}
+                  <Text strong style={{ color: "#b91c1c", fontSize: 11 }}>
+                    {fmtInfoVnd(refunded)}
+                  </Text>
+                </Text>
+              </Flex>
+            </>
+          )}
+        </div>
+      }
+    >
+      <span
+        style={{
+          color: hasNote || hasMoney ? "#faad14" : "#d9d9d9",
+          fontSize: 12,
+          lineHeight: 1,
+          display: "inline-flex",
+          cursor: "pointer",
+        }}
+      >
+        <FileTextOutlined />
+      </span>
+    </Popover>
+  );
+}
+
 export default function BoardCard({
   assignment: a,
   index,
@@ -394,7 +569,9 @@ export default function BoardCard({
   const startDayMs = dayjs(a.startDate).startOf("day").valueOf();
   const endDayMs = dayjs(a.endDate ?? a.startDate).startOf("day").valueOf();
   const isActiveToday = startDayMs <= activeTodayMs && endDayMs >= activeTodayMs;
-  const recallLocked = Date.now() > dayjs(a.startDate).startOf("day").add(5, "hour").valueOf();
+  const recallLocked =
+    Date.now() >
+    dayjs(a.startDate).startOf("day").add(6, "hour").add(30, "minute").valueOf();
   const isEven = index % 2 === 0;
   const tint = isEven ? `${accent}12` : `${accent}1c`;
   const tintStrong = `${accent}2e`;
@@ -580,13 +757,20 @@ export default function BoardCard({
       // A card that can't accept a drop used to fail silently - the browser
       // just showed the "not allowed" cursor. Say why instead.
       title={
-        !canConfirm
-          ? "You do not have permission to move bookings"
-          : isPastTour
-            ? "This trip has already run - assignments cannot be changed"
-            : a.status === "COMPLETED" || a.status === "CANCELED"
-              ? "This bus is closed and cannot take new bookings"
-              : undefined
+        !canConfirm ? (
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            You do not have permission to move bookings
+          </Text>
+        ) : isPastTour ? (
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            This trip has already run - assignments cannot be changed
+          </Text>
+        ) : a.status === "COMPLETED" || a.status === "CANCELED" ? (
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            <LockOutlined style={{ fontSize: 10 }} /> This bus is closed, no
+            one can change anymore
+          </Text>
+        ) : undefined
       }
       onDragEnter={(e) => {
         if (!interactive) return;
@@ -623,8 +807,44 @@ export default function BoardCard({
             ? `0 0 0 2px ${accent}40`
             : `0 2px 6px ${accent}22`,
         transition: "box-shadow 0.15s ease, background 0.15s ease",
+        position: "relative",
       }}
     >
+      {/* Promo-style corner seal: sits flush in the top-right curve of the
+          card (matches its 12px radius). Separate from the COMPLETED status
+          pill — marks the trip immutable. */}
+      {a.status === "COMPLETED" && (
+        <Tooltip title="Sealed — trip completed and money locked. No further changes allowed.">
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              zIndex: 3,
+            }}
+          >
+            <Tag
+              icon={<LockOutlined />}
+              style={{
+                margin: 0,
+                color: "#fff",
+                fontWeight: 800,
+                fontSize: 11,
+                letterSpacing: 1.5,
+                padding: "4px 12px",
+                border: "none",
+                borderRadius: "0 12px 0 8px",
+                background:
+                  "linear-gradient(135deg, #f5222d 0%, #a8071a 100%)",
+                boxShadow: "0 2px 6px rgba(168, 7, 26, 0.45)",
+              }}
+            >
+              SEALED
+            </Tag>
+          </div>
+        </Tooltip>
+      )}
+
       <div
         style={{
           display: "flex",
@@ -650,80 +870,24 @@ export default function BoardCard({
             {a.vehicle.plateNumber}
           </Tag>
         )}
-        <Text strong style={{ flex: 1, whiteSpace: "normal", fontSize: 14 }}>
-          {a.tourName}
-        </Text>
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            background: `${accent}14`,
+            borderLeft: `3px solid ${accent}`,
+            borderRadius: 6,
+            padding: "2px 10px",
+          }}
+        >
+          <Text strong style={{ whiteSpace: "normal", fontSize: 14 }}>
+            {a.tourName}
+          </Text>
+        </span>
         {isToday && (
           <Tag color="red" style={{ fontSize: 10, margin: 0 }}>
             Today
           </Tag>
-        )}
-        {a.tourReport?.status === "VERIFIED" && a.reportVerifier?.name && (
-          <Tag
-            icon={<SafetyCertificateOutlined />}
-            color="success"
-            style={{ margin: 0, fontWeight: 600 }}
-          >
-            Verified by {a.reportVerifier.name}
-          </Tag>
-        )}
-        {a.tourReport?.status === "REJECTED" && (
-          <Tag color="error" style={{ margin: 0, fontWeight: 600 }}>
-            Need to verify again
-          </Tag>
-        )}
-        {/* Watermark Accounting: money locked = no longer editable.
-            Exported period = already paid, gone from the queue entirely. */}
-        {a.tourReport?.moneyVerifiedAt && (
-          <Tooltip
-            title={
-              a.tourReport.moneyVerifiedByName
-                ? `Money locked by ${a.tourReport.moneyVerifiedByName} — ${new Date(
-                    a.tourReport.moneyVerifiedAt,
-                  ).toLocaleDateString("vi-VN")}. Amounts are now immutable.`
-                : "Money locked by Accounting — amounts are now immutable."
-            }
-          >
-            <Tag
-              icon={<LockOutlined />}
-              color="purple"
-              style={{ margin: 0, fontWeight: 600 }}
-            >
-              Money locked
-            </Tag>
-          </Tooltip>
-        )}
-        {a.tourReport?.moneyVerifiedAt && a.tourReport.netAmount != null && (
-          <Tag
-            color={
-              Number(a.tourReport.netAmount) > 0 ? "orange" : "blue"
-            }
-            style={{ margin: 0, fontSize: 10, fontWeight: 600 }}
-          >
-            {Number(a.tourReport.netAmount) > 0
-              ? "Guide/Driver pays company"
-              : Number(a.tourReport.netAmount) < 0
-                ? "Company pays Guide/Driver"
-                : "Settled"}
-          </Tag>
-        )}
-        {a.paymentLines && a.paymentLines.length > 0 && (
-          <Tooltip
-            title={`Paid in period(s): ${a.paymentLines
-              .map(
-                (l) =>
-                  `${l.payableTo?.name ?? "—"} · ${new Date(l.tourDate).toLocaleDateString("vi-VN")}`,
-              )
-              .join(" · ")}`}
-          >
-            <Tag
-              icon={<CheckCircleOutlined />}
-              color="success"
-              style={{ margin: 0, fontWeight: 600 }}
-            >
-              Paid
-            </Tag>
-          </Tooltip>
         )}
         <Tag
           color={color === "blue" ? "geekblue" : "magenta"}
@@ -748,15 +912,94 @@ export default function BoardCard({
         </Tag>
       </div>
 
+      {/* Verification + money tags below the tour name: no box, just the tags. */}
+      {(a.tourReport?.status === "VERIFIED" ||
+        a.tourReport?.status === "REJECTED" ||
+        a.tourReport?.moneyVerifiedAt ||
+        (a.paymentLines && a.paymentLines.length > 0)) && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+            marginBottom: 10,
+          }}
+        >
+          {a.tourReport?.status === "VERIFIED" && a.reportVerifier?.name && (
+            <Tag
+              icon={<SafetyCertificateOutlined />}
+              color="success"
+              style={{ margin: 0, fontWeight: 600 }}
+            >
+              Verified by {a.reportVerifier.name}
+            </Tag>
+          )}
+          {a.tourReport?.status === "REJECTED" && (
+            <Tag color="error" style={{ margin: 0, fontWeight: 600 }}>
+              Need to verify again
+            </Tag>
+          )}
+          {/* Watermark Accounting: money locked = no longer editable.
+              Exported period = already paid, gone from the queue entirely. */}
+          {a.tourReport?.moneyVerifiedAt && (
+            <Tooltip
+              title={
+                a.tourReport.moneyVerifiedByName
+                  ? `Money locked by ${a.tourReport.moneyVerifiedByName} — ${new Date(
+                      a.tourReport.moneyVerifiedAt,
+                    ).toLocaleDateString("vi-VN")}. Amounts are now immutable.`
+                  : "Money locked by Accounting — amounts are now immutable."
+              }
+            >
+              <Tag
+                icon={<LockOutlined />}
+                color="purple"
+                style={{ margin: 0, fontWeight: 600 }}
+              >
+                Money locked
+              </Tag>
+            </Tooltip>
+          )}
+          {a.tourReport?.moneyVerifiedAt && a.tourReport.netAmount != null && (
+            <Tag
+              color={
+                Number(a.tourReport.netAmount) > 0 ? "orange" : "blue"
+              }
+              style={{ margin: 0, fontSize: 10, fontWeight: 600 }}
+            >
+              {Number(a.tourReport.netAmount) > 0
+                ? "Guide/Driver pays company"
+                : Number(a.tourReport.netAmount) < 0
+                  ? "Company pays Guide/Driver"
+                  : "Settled"}
+            </Tag>
+          )}
+          {a.paymentLines && a.paymentLines.length > 0 && (
+            <Tooltip
+              title={`Paid in period(s): ${a.paymentLines
+                .map(
+                  (l) =>
+                    `${l.payableTo?.name ?? "—"} · ${new Date(l.tourDate).toLocaleDateString("vi-VN")}`,
+                )
+                .join(" · ")}`}
+            >
+              <Tag
+                icon={<CheckCircleOutlined />}
+                color="success"
+                style={{ margin: 0, fontWeight: 600 }}
+              >
+                Paid
+              </Tag>
+            </Tooltip>
+          )}
+        </div>
+      )}
+
       <Flex wrap gap={6} align="center" style={{ marginBottom: 10 }}>
         <Tag icon={<CalendarOutlined />} style={{ marginInlineEnd: 0 }}>
           {day} · {a.durationDays} day{a.durationDays > 1 ? "s" : ""}
         </Tag>
-        {a.provider?.name && (
-          <Tag color="geekblue" style={{ marginInlineEnd: 0 }}>
-            {a.provider.name}
-          </Tag>
-        )}
         {isFull && (
           <Tag color="red" style={{ marginInlineEnd: 0 }}>
             FULL
@@ -1252,35 +1495,7 @@ export default function BoardCard({
                       width: "100%",
                     }}
                   >
-                    {b.notes ? (
-                      <Popover
-                        trigger="click"
-                        placement="leftTop"
-                        title="Booking details"
-                        content={
-                          <div style={{ maxWidth: 260 }}>
-                            {b.notes && (
-                              <div style={{ marginBottom: 6 }}>
-                                <Text strong>Note: </Text>
-                                <Text>{b.notes}</Text>
-                              </div>
-                            )}
-                          </div>
-                        }
-                      >
-                        <span
-                          style={{
-                            color: "#faad14",
-                            fontSize: 12,
-                            lineHeight: 1,
-                            display: "inline-flex",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <FileTextOutlined />
-                        </span>
-                      </Popover>
-                    ) : null}
+                    <BookingInfoCell booking={b} assignmentId={a.id} />
                   </span>
                 </div>
               </List.Item>
@@ -1297,9 +1512,11 @@ export default function BoardCard({
         <Flex gap={8} style={{ marginTop: 12 }}>
           <Tooltip
             title={
-              isActiveToday
-                ? undefined
-                : "Only tours active today can be dispatched — future departures wait until their tour day."
+              !a.guide?.id || !a.driver?.id
+                ? "Assign a tour guide and a driver first — a bus cannot depart without crew."
+                : !isActiveToday
+                  ? "Only tours active today can be dispatched — future departures wait until their tour day."
+                  : undefined
             }
           >
             <Button
@@ -1308,7 +1525,7 @@ export default function BoardCard({
               style={{ flex: 1 }}
               icon={<SendOutlined />}
               loading={dispatching}
-              disabled={!isActiveToday}
+              disabled={!isActiveToday || !a.guide?.id || !a.driver?.id}
               onClick={() => onDispatch(a)}
             >
               Dispatch bus
@@ -1344,7 +1561,11 @@ export default function BoardCard({
             <Text strong style={{ fontSize: 12 }}>
               {a.tourReport?.status === "REJECTED"
                 ? "⚠️ Report rejected. The guide must submit again."
-                : "⏳ Waiting for Admin verification"}
+                : a.tourReport?.status === "VERIFIED" && !a.tourReport?.moneyVerifiedAt
+                  ? "✅ Report verified — waiting for Accounting to lock money"
+                  : a.tourReport?.moneyVerifiedAt
+                    ? "💰 Money locked — waiting for Admin to verify the report"
+                    : "⏳ Waiting for Admin verification"}
             </Text>
             <Tag color={a.tourReport?.status === "REJECTED" ? "red" : "purple"} style={{ margin: 0, fontSize: 10 }}>
               {a.tourReport?.status === "REJECTED" ? "REJECTED" : "VERIFYING"}
@@ -1363,9 +1584,13 @@ export default function BoardCard({
           <Text type="secondary" style={{ fontSize: 11 }}>
             {a.tourReport?.status === "REJECTED"
               ? "The guide must resend the report and its evidence on the Submit Report page."
-              : "The guide has submitted the report. Waiting for an administrator to verify it…"}
+              : a.tourReport?.status === "VERIFIED" && !a.tourReport?.moneyVerifiedAt
+                ? "Admin confirmed the report. Accounting must now verify & lock the money before the trip can complete."
+                : a.tourReport?.moneyVerifiedAt
+                  ? "Accounting locked the money. An administrator still needs to verify the report to complete the trip."
+                  : "The guide has submitted the report. Waiting for an administrator to verify it…"}
           </Text>
-          {canConfirm && (
+          {canConfirm && a.tourReport?.status !== "VERIFIED" && (
             <Space wrap style={{ marginTop: 8 }}>
               <Button
                 type="primary"
@@ -1386,14 +1611,6 @@ export default function BoardCard({
             </Space>
           )}
         </div>
-      ) : a.status === "COMPLETED" ? (
-        <Alert
-          type="success"
-          showIcon
-          icon={<CheckCircleOutlined />}
-          message="Completed"
-          style={{ marginTop: 12, borderRadius: 8 }}
-        />
       ) : a.status === "DISPATCHED" && canConfirm ? (
         <Space.Compact block style={{ marginTop: 12 }}>
           <Button
@@ -1409,7 +1626,7 @@ export default function BoardCard({
           <Tooltip
             title={
               recallLocked
-                ? "Recall is locked — the 05:00 cutoff has passed. The bus is considered departed."
+                ? "Recall is locked — the 06:30 cutoff has passed. The guide may already have seen the assignment."
                 : undefined
             }
           >
@@ -1428,7 +1645,7 @@ export default function BoardCard({
           </Tooltip>
         </Space.Compact>
       ) : null}
-      {canConfirm && (
+      {canConfirm && !a.tourReport?.locked && (
         <Button
           type="dashed"
           size="small"
@@ -1438,6 +1655,18 @@ export default function BoardCard({
           onClick={() => onAdditions?.(a)}
         >
           Booking details — notes, collect & refund
+        </Button>
+      )}
+      {canConfirm && a.tourReport?.locked && (
+        <Button
+          type="dashed"
+          size="small"
+          block
+          icon={<LockOutlined />}
+          style={{ marginTop: 12, borderRadius: 8 }}
+          disabled
+        >
+          Booking details locked — report submitted for verification
         </Button>
       )}
     </Card>

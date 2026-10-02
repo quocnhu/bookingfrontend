@@ -16,7 +16,6 @@ import {
 } from "antd";
 import { message } from "@/lib/antd-message";
 import type { ColumnsType } from "antd/es/table";
-import { ReloadOutlined } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
 import { api, getErrorMessage } from "@/lib/api";
@@ -296,6 +295,9 @@ export default function CrewAvailabilityDrawer({
           }
           const busy = row.member.assignments.find((a) => covers(d, a));
           if (busy) {
+            // Completed tours read grey — only running buses stay orange,
+            // so free-to-assign days are obvious at a glance.
+            const done = busy.status === "COMPLETED";
             return (
               <Tooltip
                 title={`${busy.code ?? "Bus"} · ${busy.tourName ?? "Tour"} · ${busy.status ?? ""}`}
@@ -304,8 +306,12 @@ export default function CrewAvailabilityDrawer({
                   style={{
                     height: 40,
                     borderRadius: 10,
-                    background: "rgba(250, 140, 22, 0.16)",
-                    border: "1px solid rgba(250, 140, 22, 0.35)",
+                    background: done
+                      ? "rgba(0, 0, 0, 0.04)"
+                      : "rgba(250, 140, 22, 0.16)",
+                    border: done
+                      ? "1px solid #d9d9d9"
+                      : "1px solid rgba(250, 140, 22, 0.35)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -317,13 +323,13 @@ export default function CrewAvailabilityDrawer({
                     strong
                     style={{
                       fontSize: 11,
-                      color: "#d46b08",
+                      color: done ? "#8c8c8c" : "#d46b08",
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                     }}
                   >
-                    {busy.code ?? "Busy"}
+                    {done ? `✓ ${busy.code ?? "Done"}` : (busy.code ?? "Busy")}
                   </Text>
                 </div>
               </Tooltip>
@@ -376,37 +382,27 @@ export default function CrewAvailabilityDrawer({
             }}
             format="DD MMM YYYY"
           />
-          <Tag
-            icon={<span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#52c41a", marginRight: 4 }} />}
-            color="green"
-          >
-            Free
-          </Tag>
-          <Tag color="orange">On tour</Tag>
-          <Tag color="volcano">Off</Tag>
-          <Tooltip title="Reload">
-            <span
-              role="button"
-              onClick={() => load(range[0], range[1])}
-              style={{ cursor: "pointer", fontSize: 16, color: "#1677ff" }}
+          <Tooltip title="Available — no tour assigned">
+            <Tag
+              icon={<span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#52c41a", marginRight: 4 }} />}
+              color="green"
             >
-              <ReloadOutlined />
-            </span>
+              Free
+            </Tag>
+          </Tooltip>
+          <Tooltip title="On tour — assigned to a running bus">
+            <Tag color="orange">On tour</Tag>
+          </Tooltip>
+          <Tooltip title="Tour completed">
+            <Tag color="default">Done</Tag>
+          </Tooltip>
+          <Tooltip title="Off — tourguide or driver has day leaves">
+            <Tag color="volcano">Off</Tag>
           </Tooltip>
         </Space>
       }
     >
-      <Flex justify="space-between" align="center" wrap gap={6} style={{ marginBottom: 10 }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          Showing{" "}
-          <Text strong>
-            {role === "guide" ? data?.guides.length ?? 0 : data?.drivers.length ?? 0}{" "}
-            {role === "guide" ? "guides" : "drivers"}
-          </Text>{" "}
-          from {range[0].format("DD MMM YYYY")} to{" "}
-          {range[1].format("DD MMM YYYY")}. Green dot = available day, orange =
-          assigned to a bus, red hatch = on leave (hover for details).
-        </Text>
+      <Flex justify="flex-end" align="center" wrap gap={6} style={{ marginBottom: 10 }}>
         <Segmented
           options={[
             { label: "Tourguide", value: "guide" },

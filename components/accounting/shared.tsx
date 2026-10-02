@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   Col,
+  DatePicker,
   Descriptions,
   Divider,
   Empty,
@@ -20,22 +21,26 @@ import {
   Statistic,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
 import {
   CheckCircleOutlined,
+  CloseCircleOutlined,
+  DeleteOutlined,
   DownloadOutlined,
+  FileTextOutlined,
   HistoryOutlined,
   LockOutlined,
   PlusOutlined,
   SafetyCertificateOutlined,
-  UndoOutlined,
+  SearchOutlined,
   WarningOutlined,
-  CloseCircleOutlined,
-  FileTextOutlined,
 } from "@ant-design/icons";
+import dayjs from "dayjs";
 import { message } from "@/lib/antd-message";
 import { api, getErrorMessage } from "@/lib/api";
+import { useApp } from "@/lib/app-context";
 import TourTemplateModal from "@/components/dispatch-board/TourTemplateModal";
 
 const vnd = (n: number) =>
@@ -135,7 +140,9 @@ export interface QueueItem {
   code?: string | null;
   tourName?: string | null;
   tourType?: string | null;
-  finalizedAt: string | null;
+  submittedAt: string | null;
+  reportStatus?: string | null;
+  moneyVerifiedAt?: string | null;
   guide?: { id: string; name: string } | null;
   driver?: { id: string; name: string } | null;
   suggestedPayableTo?: {
@@ -154,6 +161,9 @@ export interface HistoryRow {
   direction: Direction;
   totalNet: number;
   id: string;
+  voidedAt?: string | null;
+  voidedByName?: string | null;
+  voidReason?: string | null;
   person: { id: string; name: string; role: string | null };
   payeeType?: PayeeType | null;
   fromDate: string;
@@ -188,6 +198,7 @@ export interface Settlement {
   categoryId?: string | null;
   category?: { id: string; name: string; flowType: string; code: string } | null;
   booking?: { bookingRef: string; customerName: string } | null;
+  createdById?: string | null;
   createdByName?: string | null;
   createdAt: string;
   reversedBy?: { id: string } | null;
@@ -585,16 +596,22 @@ export function QueueTab({
   canVerify,
   canReject,
   canSettle,
+  canDelete,
   categories,
 }: {
   canVerify: boolean;
   canReject: boolean;
   canSettle: boolean;
+  canDelete: boolean;
   categories: Category[];
 }) {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<QueueItem | null>(null);
+  const [search, setSearch] = useState("");
+  const [tourTypeFilter, setTourTypeFilter] = useState<string | undefined>();
+  const [dateRange, setDateRange] = useState<[string, string] | null>(null);
+  const [page, setPage] = useState({ current: 1, pageSize: 10 });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -612,47 +629,114 @@ export function QueueTab({
     load();
   }, [load]);
 
+  const filteredItems = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return (items ?? [])
+      .filter((r) => {
+        if (tourTypeFilter && r.tourType !== tourTypeFilter) return false;
+        if (dateRange && r.submittedAt) {
+          const d = r.submittedAt.slice(0, 10);
+          if (d < dateRange[0] || d > dateRange[1]) return false;
+        }
+        if (!s) return true;
+        return (
+          r.code?.toLowerCase().includes(s) ||
+          r.tourName?.toLowerCase().includes(s) ||
+          r.guide?.name?.toLowerCase().includes(s) ||
+          r.driver?.name?.toLowerCase().includes(s)
+        );
+      })
+      .sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
+  }, [items, search, tourTypeFilter, dateRange]);
+
+  const moneyLabel = (r: QueueItem) => {
+    const abs = vnd(Math.abs(r.net));
+    if (r.flow === "COLLECT_MONEY") {
+      return r.net >= 0
+        ? `Tour guide returns to company: ${abs} ₫`
+        : `Company returns to tour guide: ${abs} ₫`;
+    }
+    return r.net >= 0
+      ? `Company pays tour guide: ${abs} ₫`
+      : `Tour guide pays company: ${abs} ₫`;
+  };
+
   return (
-    <Card
-      size="small"
-      title="Waiting for Accounting to verify &amp; lock money"
-      extra={
-        <Button size="small" onClick={load} loading={loading}>
-          Refresh
-        </Button>
-      }
-    >
-      <Alert
-        type="warning"
-        showIcon
-        icon={<LockOutlined />}
-        style={{ marginBottom: 16 }}
-        message="Once locked, the trip's money is immutable — no further edits."
-        description="To correct something, create a reversal entry instead of deleting/editing the old line. Only locked trips can be exported in a period."
-      />
+    <Card size="small">
+      <Row gutter={8} style={{ marginBottom: 12 }}>
+        <Col xs={24} md={8}>
+          <Input
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder="Search trip, tour, guide, driver..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </Col>
+        <Col xs={12} md={4}>
+          <Select
+            allowClear
+            placeholder="Tour type"
+            value={tourTypeFilter}
+            onChange={setTourTypeFilter}
+            style={{ width: "100%" }}
+            options={[
+              { value: "GROUP_TOUR", label: "Group" },
+              { value: "PRIVATE_TOUR", label: "Private" },
+            ]}
+          />
+        </Col>
+        <Col xs={12} md={12}>
+          <DatePicker.RangePicker
+            style={{ width: "100%" }}
+            onChange={(_, ds) => {
+              const [f, t] = ds as unknown as [string, string];
+              setDateRange(f && t ? [f, t] : null);
+            }}
+          />
+        </Col>
+      </Row>
 
       <Table<QueueItem>
         rowKey="assignmentId"
         size="small"
         loading={loading}
-        dataSource={items}
-        pagination={{ pageSize: 10, showSizeChanger: false }}
+        dataSource={filteredItems}
+        pagination={{
+          current: page.current,
+          pageSize: page.pageSize,
+          showSizeChanger: false,
+          onChange: (current, pageSize) => setPage({ current, pageSize }),
+        }}
         locale={{ emptyText: "No trips waiting for verification 🎉" }}
         columns={[
           {
+            title: "#",
+            align: "center",
+            width: 50,
+            render: (_: unknown, __: QueueItem, index: number) =>
+              (page.current - 1) * page.pageSize + index + 1,
+          },
+          {
             title: "Trip",
+            align: "center",
             render: (_: unknown, r: QueueItem) => (
               <>
                 <Typography.Text strong>{r.code ?? "—"}</Typography.Text>
                 <br />
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {r.tourName} · closed at {fmtDate(r.finalizedAt)}
+                  {r.tourName}
+                </Typography.Text>
+                <br />
+                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                  Submitted: {fmtDateTime(r.submittedAt)}
                 </Typography.Text>
               </>
             ),
           },
           {
             title: "Guide / Driver",
+            align: "center",
             render: (_: unknown, r: QueueItem) => (
               <>
                 {r.guide?.name ?? "—"}
@@ -664,22 +748,23 @@ export function QueueTab({
             ),
           },
           {
-            title: "Collect",
-            align: "right",
-            render: (_: unknown, r: QueueItem) => vnd(r.collected),
-          },
-          {
-            title: "Company expense",
-            align: "right",
-            render: (_: unknown, r: QueueItem) => vnd(r.paid),
-          },
-          {
-            title: "Net",
-            align: "right",
+            title: "Final money",
+            align: "center",
+            sorter: (a, b) => Math.abs(a.net) - Math.abs(b.net),
+            defaultSortOrder: "descend",
             render: (_: unknown, r: QueueItem) => (
-              <Typography.Text strong style={{ color: r.net > 0 ? "#D46B08" : r.net < 0 ? "#1677FF" : undefined }}>
-                {vnd(r.net)}
-              </Typography.Text>
+              <>
+                <Typography.Text
+                  strong
+                  style={{ color: r.net > 0 ? "#D46B08" : r.net < 0 ? "#1677FF" : undefined }}
+                >
+                  {vnd(Math.abs(r.net))} ₫
+                </Typography.Text>
+                <br />
+                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                  {moneyLabel(r)}
+                </Typography.Text>
+              </>
             ),
           },
           {
@@ -692,28 +777,28 @@ export function QueueTab({
             ),
           },
           {
-            title: "",
-            align: "right",
-            render: (_: unknown, r: QueueItem) => (
-              <Space>
-                {canSettle && (
-                  <Button size="small" icon={<PlusOutlined />} onClick={() => setEditing(r)}>
-                    Entry
-                  </Button>
-                )}
-                {canVerify && (
-                  <Button
-                    size="small"
-                    type="primary"
-                    icon={<CheckCircleOutlined />}
-                    disabled={r.entryCount === 0}
-                    onClick={() => setEditing(r)}
-                  >
-                    Review &amp; decide
-                  </Button>
-                )}
-              </Space>
-            ),
+            title: "Actions",
+            align: "center",
+            render: (_: unknown, r: QueueItem) => {
+              const verified = !!r.moneyVerifiedAt;
+              if (verified) {
+                return <Tag color="green">Verified</Tag>;
+              }
+              return (
+                <Space wrap>
+                  {canVerify && (
+                    <Button
+                      size="small"
+                      type="primary"
+                      icon={<CheckCircleOutlined />}
+                      onClick={() => setEditing(r)}
+                    >
+                      Review & decide
+                    </Button>
+                  )}
+                </Space>
+              );
+            },
           },
         ]}
       />
@@ -723,6 +808,7 @@ export function QueueTab({
           item={editing}
           categories={categories}
           canSettle={canSettle}
+          canDelete={canDelete}
           canVerify={canVerify}
           canReject={canReject}
           onClose={() => setEditing(null)}
@@ -732,6 +818,7 @@ export function QueueTab({
           }}
         />
       )}
+
     </Card>
   );
 }
@@ -745,6 +832,7 @@ export function TourMoneyDrawer({
   item,
   categories,
   canSettle,
+  canDelete,
   canVerify,
   canReject,
   onClose,
@@ -753,12 +841,14 @@ export function TourMoneyDrawer({
   item: QueueItem;
   categories: Category[];
   canSettle: boolean;
+  canDelete: boolean;
   canVerify: boolean;
   canReject: boolean;
   onClose: () => void;
   onChanged: () => void;
 }) {
   const { modal } = App.useApp();
+  const { user } = useApp();
   const [rows, setRows] = useState<Settlement[]>([]);
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState<number | null>(null);
@@ -810,27 +900,16 @@ export function TourMoneyDrawer({
     }
   };
 
-  const reverse = (r: Settlement) => {
-    let reason = "";
+  const removeEntry = (r: Settlement) => {
     modal.confirm({
-      title: "Reverse this entry?",
-      content: (
-        <Input.TextArea
-          rows={2}
-          placeholder="Reversal reason (required)"
-          onChange={(e) => (reason = e.target.value)}
-        />
-      ),
-      okText: "Reverse",
+      title: "Delete this entry?",
+      content: "This permanently removes the entry before lock. The guide will see the updated total on resubmit.",
+      okText: "Delete",
       okButtonProps: { danger: true },
       cancelText: "Cancel",
       onOk: async () => {
-        if (!reason.trim()) {
-          message.warning("A reversal reason is required");
-          throw new Error("missing reason");
-        }
-        await api.post(`/accounting/settlements/${r.id}/reverse`, { note: reason.trim() });
-        message.success("Reversal entry created");
+        await api.delete(`/accounting/settlements/${r.id}`);
+        message.success("Entry deleted");
         load();
       },
     });
@@ -926,7 +1005,10 @@ return (
         <Flex justify="space-between" gap={8} wrap>
           <Button onClick={onClose}>Close</Button>
           <Space>
-            <Button icon={<FileTextOutlined />} onClick={() => setShowTemplate(!showTemplate)}>
+            <Button
+              icon={<FileTextOutlined />}
+              onClick={() => setShowTemplate((v) => !v)}
+            >
               {showTemplate ? "Hide Template" : "View Template"}
             </Button>
             {canReject && (
@@ -950,7 +1032,10 @@ return (
     >
       {showTemplate && (
         <TourTemplateModal
-          assignment={item as any}
+          // Pass the real assignment id so the modal fetches the FULL trip
+          // (bookings, crew, vehicle, tour report) — the exact same template
+          // the guide submits on the Dispatch Board, not the slim queue row.
+          assignment={{ ...item, id: item.assignmentId } as any}
           open={true}
           onClose={() => setShowTemplate(false)}
         />
@@ -958,7 +1043,7 @@ return (
       <Divider style={{ margin: "16px 0" }} />
       <Descriptions size="small" column={2} bordered style={{ marginBottom: 16 }}>
         <Descriptions.Item label="Tour">{item.tourName ?? "—"}</Descriptions.Item>
-        <Descriptions.Item label="Closed at">{fmtDate(item.finalizedAt)}</Descriptions.Item>
+        <Descriptions.Item label="Submitted at">{fmtDateTime(item.submittedAt)}</Descriptions.Item>
         <Descriptions.Item label="Guide">{item.guide?.name ?? "—"}</Descriptions.Item>
         <Descriptions.Item label="Driver">{item.driver?.name ?? "—"}</Descriptions.Item>
       </Descriptions>
@@ -1025,16 +1110,21 @@ return (
           },
           { title: "Created by", dataIndex: "createdByName", render: (v) => v ?? "—" },
           {
-            title: "",
+            title: "Actions",
             align: "right",
             render: (_: unknown, r: Settlement) =>
               r.reversedBy ? (
                 <Tag>Reversed</Tag>
-              ) : (
-                <Button size="small" icon={<UndoOutlined />} onClick={() => reverse(r)}>
-                  Reverse
+              ) : canDelete && user && (user.role === "ADMIN" || r.createdById === user.id) ? (
+                <Button
+                  size="small"
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={() => removeEntry(r)}
+                >
+                  Delete
                 </Button>
-              ),
+              ) : null,
           },
         ]}
       />
@@ -1071,12 +1161,52 @@ return (
 }
 
 // ── Payment history ─────────────────────────────────────────────────
-export function HistoryTab({ people }: { people: Person[] }) {
+export function HistoryTab({ people, canVoid }: { people: Person[]; canVoid: boolean }) {
+  const { modal } = App.useApp();
   const [payeeId, setPayeeId] = useState<string | undefined>();
   const [payeeType, setPayeeType] = useState<PayeeType | undefined>();
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState<HistoryRow | null>(null);
+
+  const voidPeriod = (r: HistoryRow) => {
+    let reason = "";
+    modal.confirm({
+      title: `Void period for ${r.person.name}?`,
+      content: (
+        <>
+          <p>
+            The period stays visible for audit but is excluded from totals and
+            future watermarks. Its trips become exportable again.
+          </p>
+          <Input.TextArea
+            rows={3}
+            placeholder="Void reason (required, at least 5 characters)"
+            onChange={(e) => {
+              reason = e.target.value;
+            }}
+          />
+        </>
+      ),
+      okText: "Void period",
+      okButtonProps: { danger: true },
+      cancelText: "Cancel",
+      onOk: async () => {
+        if (reason.trim().length < 5) {
+          message.warning("A reason is required (at least 5 characters)");
+          throw new Error("reason required");
+        }
+        try {
+          await api.post(`/accounting/period/${r.id}/void`, { reason: reason.trim() });
+          message.success("Period voided");
+          load();
+        } catch (e) {
+          message.error(getErrorMessage(e, "Could not void period"));
+          throw e;
+        }
+      },
+    });
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1225,9 +1355,24 @@ export function HistoryTab({ people }: { people: Person[] }) {
             title: "",
             align: "right",
             render: (_: unknown, r: HistoryRow) => (
-              <Button size="small" onClick={() => setOpen(r)}>
-                Export copy
-              </Button>
+              <Space>
+                {r.voidedAt ? (
+                  <Tooltip title={`Voided by ${r.voidedByName ?? "—"}: ${r.voidReason ?? ""}`}>
+                    <Tag color="red" style={{ margin: 0 }}>
+                      Voided
+                    </Tag>
+                  </Tooltip>
+                ) : (
+                  canVoid && (
+                    <Button size="small" danger onClick={() => voidPeriod(r)}>
+                      Void
+                    </Button>
+                  )
+                )}
+                <Button size="small" onClick={() => setOpen(r)}>
+                  Export copy
+                </Button>
+              </Space>
             ),
           },
         ]}

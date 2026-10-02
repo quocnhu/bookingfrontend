@@ -148,6 +148,10 @@ export default function DispatchBoard({
       setFilterDate(dayjs().startOf("day"));
       loadBoard();
       api
+        .get("/assignments/board/mode")
+        .then((r) => setAutoAssign(r.data?.mode === "AUTO_ASSIGN"))
+        .catch(() => {});
+      api
         .get("/assignments/board/crew")
         .then((r) => setCrew(r.data ?? { guides: [], drivers: [] }))
         .catch(() => setCrew({ guides: [], drivers: [] }));
@@ -253,7 +257,7 @@ export default function DispatchBoard({
   };
 
   const onRecall = (assignment: BoardItem) => {
-    // Server-enforced: recall is blocked after the 05:00 cutoff on the
+    // Server-enforced: recall is blocked after the 06:30 cutoff on the
     // departure day. Before that we recall immediately.
     recallAssignment(assignment);
   };
@@ -265,10 +269,23 @@ export default function DispatchBoard({
     try {
       const r = await api.post(`/assignments/board/dispatch-all`);
       const dispatched = r.data?.dispatched ?? 0;
+      const skipped = r.data?.skipped ?? 0;
+      const skippedOnLeave = r.data?.skippedOnLeave ?? 0;
+      const skipNotes = [
+        skipped > 0 ? `${skipped} no guide/driver` : "",
+        skippedOnLeave > 0 ? `${skippedOnLeave} crew on leave` : "",
+      ]
+        .filter(Boolean)
+        .join(", ");
       if (dispatched > 0) {
-        message.success(`Dispatched ${dispatched} bus(es)`);
+        message.success(
+          `Dispatched ${dispatched} bus(es)` +
+            (skipNotes ? ` — skipped: ${skipNotes}` : ""),
+        );
         loadBoard(true);
         onChanged?.();
+      } else if (skipNotes) {
+        message.warning(`No bus dispatched — skipped: ${skipNotes}`);
       } else {
         message.info("No buses available to dispatch");
       }
@@ -281,7 +298,9 @@ export default function DispatchBoard({
 
   const setAllOrigin = async (origin: "MANUAL" | "AUTO_ASSIGN") => {
     try {
-      await api.put(`/assignments/board/origin`, { origin });
+      const { data } = await api.put(`/assignments/board/origin`, { origin });
+      // Sync the switch with what the server actually persisted.
+      setAutoAssign((data?.mode ?? origin) === "AUTO_ASSIGN");
       message.success(
         `Switched to ${origin === "AUTO_ASSIGN" ? "Auto-assign" : "Manual"}`,
       );
@@ -289,6 +308,11 @@ export default function DispatchBoard({
       onChanged?.();
     } catch (e) {
       message.error(getErrorMessage(e, "Failed to update assignment origins"));
+      // Revert the switch to the persisted mode on failure.
+      api
+        .get("/assignments/board/mode")
+        .then((r) => setAutoAssign(r.data?.mode === "AUTO_ASSIGN"))
+        .catch(() => {});
     }
   };
 
@@ -541,10 +565,13 @@ export default function DispatchBoard({
                     unCheckedChildren="Manual"
                     checked={autoAssign}
                     onChange={(auto) => {
-                      setAutoAssign(auto);
                       setAllOrigin(auto ? "AUTO_ASSIGN" : "MANUAL");
                     }}
-                    title="Turn on Auto-assign for all trips on the board"
+                    title={
+                      autoAssign
+                        ? "Auto-assign is ON — new bookings are grouped onto buses automatically"
+                        : "Manual mode — new bookings stay pending for hand assignment"
+                    }
                   />
                   <Tag
                     style={{
@@ -666,6 +693,13 @@ export default function DispatchBoard({
                     title="Pending"
                     value={stats.pending}
                     styles={{ content: { fontSize: 18, color: "#faad14" } }}
+                  />
+                </Col>
+                <Col xs={12} sm={4}>
+                  <Statistic
+                    title="Dispatched"
+                    value={stats.dispatched}
+                    styles={{ content: { fontSize: 18, color: "#1677ff" } }}
                   />
                 </Col>
                 <Col xs={12} sm={4}>

@@ -23,6 +23,7 @@ import {
   CarOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
+  DownloadOutlined,
   EnvironmentOutlined,
   FileTextOutlined,
   HomeOutlined,
@@ -30,7 +31,9 @@ import {
   TeamOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { api } from "@/lib/api";
+import Link from "next/link";
+import { message } from "@/lib/antd-message";
+import { api, getErrorMessage } from "@/lib/api";
 import GuideBookingsPanel, {
   type GuideBooking,
 } from "@/components/tour-guide/guide-bookings-panel";
@@ -160,6 +163,61 @@ export default function RoleTripsPage({
     });
   }, [assignments, range]);
 
+  const exportCsv = () => {
+    try {
+      const head = [
+        "Trip code",
+        "Tour",
+        "Start",
+        "End",
+        "Status",
+        "Vehicle",
+        "Customer",
+        "Booking ref",
+        "Pickup / Hotel",
+        "Pax",
+      ];
+      const esc = (v: unknown) => {
+        const s = v === null || v === undefined ? "" : String(v);
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const lines = [head.map(esc).join(",")];
+      for (const a of filtered) {
+        const base = [
+          a.code ?? "",
+          a.tourName ?? "",
+          dayjs(a.startDate).format("DD/MM/YYYY"),
+          dayjs(a.endDate).format("DD/MM/YYYY"),
+          a.status,
+          a.vehicle?.plateNumber ?? "",
+        ];
+        if (a.pickups?.length) {
+          for (const p of a.pickups) {
+            lines.push(
+              [...base, p.customerName ?? "", p.bookingRef ?? "", p.pickup ?? "", p.totalPax ?? 0]
+                .map(esc)
+                .join(","),
+            );
+          }
+        } else {
+          lines.push([...base, "", "", "", ""].map(esc).join(","));
+        }
+      }
+      const blob = new Blob(["\ufeff" + lines.join("\n")], {
+        type: "text/csv;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const el = document.createElement("a");
+      el.href = url;
+      el.download = `my-trips-${dayjs().format("YYYY-MM-DD")}.csv`;
+      el.click();
+      URL.revokeObjectURL(url);
+      message.success(`Exported ${filtered.length} trip(s)`);
+    } catch (e) {
+      message.error(getErrorMessage(e, "Could not export trips"));
+    }
+  };
+
   const today = dayjs();
   const upcoming = filtered.filter(
     (a) => dayjs(a.startDate).isSameOrAfter(today, "day") && a.status !== "CANCELED",
@@ -260,16 +318,30 @@ export default function RoleTripsPage({
               <TeamOutlined /> {a.bookings?.length ?? 0} bookings · {a.totalPax ?? 0} pax
             </Typography.Text>
           </Flex>
-          {route && (
-            <Flex gap={8}>
-              <Button
-                type="primary"
-                ghost
-                icon={<EnvironmentOutlined />}
-                onClick={() => window.open(route, "_blank")}
-              >
-                Where to go
-              </Button>
+          {(route || mode === "guide") && (
+            <Flex gap={8} wrap>
+              {route && (
+                <Button
+                  type="primary"
+                  ghost
+                  icon={<EnvironmentOutlined />}
+                  onClick={() => window.open(route, "_blank")}
+                >
+                  Where to go
+                </Button>
+              )}
+              {mode === "guide" && (
+                <Link href={`/tour-guide/submit-report?assignmentId=${a.id}`}>
+                  <Button
+                    type={a.status === "DISPATCHED" && !a.tourReport ? "primary" : "default"}
+                    icon={<FileTextOutlined />}
+                  >
+                    {a.status === "DISPATCHED" && !a.tourReport
+                      ? "Submit report"
+                      : "View report"}
+                  </Button>
+                </Link>
+              )}
             </Flex>
           )}
         </Flex>
@@ -389,7 +461,7 @@ export default function RoleTripsPage({
                   <GuideBookingsPanel
                     assignmentId={a.id}
                     bookings={a.bookings ?? []}
-                    readOnlyNotes={mode === "driver"}
+                    readOnlyNotes={mode !== "guide"}
                     onBookingsChanged={loadAssignments}
                   />
                 ),
@@ -425,6 +497,11 @@ export default function RoleTripsPage({
           <Button icon={<ReloadOutlined />} onClick={loadAssignments} loading={loading}>
             Refresh
           </Button>
+          {mode === "driver" && (
+            <Button icon={<DownloadOutlined />} onClick={exportCsv}>
+              Export
+            </Button>
+          )}
           <Segmented
             value={view}
             onChange={(v) => setView(v as any)}

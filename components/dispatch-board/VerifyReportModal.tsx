@@ -90,15 +90,31 @@ export default function VerifyReportModal({
       onOk: async () => {
         setSubmitting("VERIFIED");
         try {
-          await api.put(`/assignments/${a.id}/tour-report/verify`, {
+          const { data } = await api.put(`/assignments/${a.id}/tour-report/verify`, {
             status: "VERIFIED",
             verificationNotes: verificationNotes.trim() || undefined,
           });
-          message.success(`Report verified — tour "${a.tourName ?? a.code}" completed`);
+          if (data?.status === "COMPLETED") {
+            message.success(`Report verified — tour "${a.tourName ?? a.code}" completed`);
+          } else {
+            message.success(
+              `Report verified — waiting for Accounting to lock the money`,
+            );
+          }
           onClose();
           onDone();
         } catch (e) {
-          message.error(getErrorMessage(e, "Failed to verify report"));
+          const msg = getErrorMessage(e, "Failed to verify report");
+          // Already verified (e.g. double click or verified from the
+          // Accounting queue): don't leave the confirm stuck spinning —
+          // close it and refresh so both places show the same state.
+          if (/already verified/i.test(msg)) {
+            message.info("Report is already verified — refreshing");
+            onClose();
+            onDone();
+            return;
+          }
+          message.error(msg);
           throw e;
         } finally {
           setSubmitting(null);
@@ -145,7 +161,14 @@ export default function VerifyReportModal({
           onClose();
           onDone();
         } catch (e) {
-          message.error(getErrorMessage(e, "Failed to return report"));
+          const msg = getErrorMessage(e, "Failed to return report");
+          if (/already verified/i.test(msg)) {
+            message.info("Report state already changed elsewhere — refreshing");
+            onClose();
+            onDone();
+            return;
+          }
+          message.error(msg);
           throw e;
         } finally {
           setSubmitting(null);

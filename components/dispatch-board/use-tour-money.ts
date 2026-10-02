@@ -49,7 +49,7 @@ const sumByBooking = (rows: MoneyRow[]): CashByBooking => {
 };
 
 /**
- * A trip's money sheet + the add/reverse entry actions.
+ * A trip's money sheet + the add/delete entry actions.
  *
  * Shared by the Dispatch Board (office) and the guide portal so both always
  * see the same figure. Every entry goes through /assignments/:id/money, so
@@ -115,24 +115,22 @@ export function useTourMoney(assignmentId: string | null | undefined) {
     [assignmentId, load],
   );
 
-  /** Reverse a row (creates a matching negative row). The backend blocks reversing someone else's row. */
-  const reverseMoney = useCallback(
+  /** Delete a row permanently (only while the money is not locked). The backend blocks deleting someone else's row. */
+  const deleteMoney = useCallback(
     async (settlementId: string) => {
       if (!assignmentId) return false;
       try {
-        await api.post(`/assignments/${assignmentId}/money/${settlementId}/reverse`, {
-          note: "Manual reversal",
-        });
-        message.success("Entry reversed");
+        await api.delete(`/assignments/${assignmentId}/money/${settlementId}`);
+        message.success("Entry deleted");
         await load();
         return true;
       } catch (e) {
-        message.error(getErrorMessage(e, "Could not reverse the entry"));
+        message.error(getErrorMessage(e, "Could not delete the entry"));
         return false;
       }
     },
     [assignmentId, load],
   );
 
-  return { money, loading, load, perBooking, addMoney, reverseMoney };
+  return { money, loading, load, perBooking, addMoney, deleteMoney };
 }

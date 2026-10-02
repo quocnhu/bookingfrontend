@@ -15,6 +15,7 @@ export default function AccountingShell({
   title,
   description,
   children,
+  hideHeader,
 }: {
   title: string;
   description: string;
@@ -23,6 +24,7 @@ export default function AccountingShell({
     categories: Category[];
     reloadPeople: () => Promise<void>;
   }) => React.ReactNode;
+  hideHeader?: boolean;
 }) {
   const { hasPermission, user } = useApp();
   const [people, setPeople] = useState<Person[]>([]);
@@ -59,15 +61,17 @@ export default function AccountingShell({
 
   return (
     <div className="accounting-page">
-      <Flex justify="space-between" align="center" wrap gap={12} style={{ marginBottom: 16 }}>
-        <div>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            <SafetyCertificateOutlined /> {title}
-          </Typography.Title>
-          <Typography.Text type="secondary">{description}</Typography.Text>
-        </div>
-        <Tag>Permission: {level}</Tag>
-      </Flex>
+      {!hideHeader && (
+        <Flex justify="space-between" align="center" wrap gap={12} style={{ marginBottom: 16 }}>
+          <div>
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              <SafetyCertificateOutlined /> {title}
+            </Typography.Title>
+            <Typography.Text type="secondary">{description}</Typography.Text>
+          </div>
+          <Tag>Permission: {level}</Tag>
+        </Flex>
+      )}
       {children({ people, categories, reloadPeople })}
     </div>
   );

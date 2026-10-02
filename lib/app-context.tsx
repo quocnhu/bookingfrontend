@@ -19,11 +19,11 @@ export interface SessionUser {
 }
 
 const ROLE_DEFAULT_ROUTES: Record<string, string> = {
-  DRIVER: "/driver/my-trips",
-  TOUR_GUIDE: "/tour-guide/my-trips",
+  DRIVER: "/driver/dashboard",
+  TOUR_GUIDE: "/tour-guide/dashboard",
   ADMIN: "/dashboard",
   OFFICE: "/dashboard",
-  TRANSPORT_PROVIDER: "/transport-provider/my-trips",
+  TRANSPORT_PROVIDER: "/transport-provider/dashboard",
   CUSTOMER: "/",
 };
 

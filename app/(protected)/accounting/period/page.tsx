@@ -2,8 +2,10 @@
 
 import AccountingShell from "@/components/accounting/shell";
 import { PeriodTab } from "@/components/accounting/shared";
+import { useApp } from "@/lib/app-context";
 
 export default function AccountingPeriodPage() {
+  const { hasPermission } = useApp();
   return (
     <AccountingShell
       title="Period check & export"
@@ -12,7 +14,7 @@ export default function AccountingPeriodPage() {
       {({ people, reloadPeople }) => (
         <PeriodTab
           people={people}
-          canExport={true}
+          canExport={hasPermission("accounting.period.export")}
           onExported={reloadPeople}
         />
       )}

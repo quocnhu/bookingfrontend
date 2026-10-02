@@ -70,8 +70,6 @@ export interface BoardItem {
     moneyVerifiedAt?: string | null;
     evidenceImages?: Array<{ name?: string; url: string; uploadedAt?: string; uploadedByName?: string }>;
   } | null;
-  // Accounting Room: exported payment periods that include this trip
-  tripNotes?: string | null;
   paymentLines?: Array<{
     id: string;
     tourDate: string;

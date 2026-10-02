@@ -23,10 +23,10 @@ import {
   ExclamationCircleOutlined,
   FileTextOutlined,
   PlusOutlined,
-  UndoOutlined,
   UploadOutlined,
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
+import { useApp } from "@/lib/app-context";
 import TourTemplateModal from "./TourTemplateModal";
 import type { ColumnsType } from "antd/es/table";
 import type { BoardItem } from "./types";
@@ -38,6 +38,7 @@ interface MoneyRow {
   amount: number;
   note?: string | null;
   createdAt: string;
+  createdById?: string | null;
   createdByName?: string | null;
   reversesId?: string | null;
   category?: { id: string; code: string; name: string; flowType: string } | null;
@@ -123,6 +124,7 @@ export default function ConfirmFinishedModal({
   onDone: () => void;
 }) {
   const { modal } = App.useApp();
+  const { user } = useApp();
   const [submitting, setSubmitting] = useState(false);
   const [evidenceFiles, setEvidenceFiles] = useState<EvidenceRow[]>([]);
   // ── Trip money sheet (preview before submitting) ──
@@ -133,7 +135,6 @@ export default function ConfirmFinishedModal({
   const [feeCategory, setFeeCategory] = useState<string | undefined>();
   const [feeNote, setFeeNote] = useState("");
   const [addingFee, setAddingFee] = useState(false);
-  const [tripNotes, setTripNotes] = useState("");
   const [tourReport, setTourReport] = useState<{ notes?: string; moneyVerifiedAt?: string } | null>(null);
   const nextEvKey = useRef(0);
   const pendingRef = useRef(0);
@@ -178,9 +179,8 @@ export default function ConfirmFinishedModal({
     if (!assignment) return;
     setSubmitting(true);
     try {
-      // Submit tour report with notes and evidence images
+      // Submit tour report with evidence images
       await api.post(`/assignments/${assignment.id}/tour-report`, {
-        notes: tripNotes,
         evidenceImages: evidenceFiles
           .filter((f) => !f.uploading && !f.error && f.url)
           .map((f) => ({
@@ -226,33 +226,21 @@ export default function ConfirmFinishedModal({
     }
   };
 
-  const reverseRow = (r: MoneyRow) => {
-    let reason = "";
+  const deleteRow = (r: MoneyRow) => {
     modal.confirm({
-      title: "Reverse this entry?",
-      okText: "Reverse",
+      title: "Delete this entry?",
+      okText: "Delete",
       okButtonProps: { danger: true },
       cancelText: "Cancel",
-      content: (
-        <Input.TextArea
-          rows={2}
-          placeholder="Reason for reversal"
-          onChange={(e) => {
-            reason = e.target.value;
-          }}
-        />
-      ),
+      content: "The entry will be permanently removed from this trip's money sheet.",
       onOk: async () => {
         try {
           if (!assignment) return;
-          await api.post(
-            `/assignments/${assignment.id}/money/${r.id}/reverse`,
-            { note: reason.trim() || undefined },
-          );
-          message.success("Entry reversed");
+          await api.delete(`/assignments/${assignment.id}/money/${r.id}`);
+          message.success("Entry deleted");
           await loadMoney();
         } catch (e) {
-          message.error(getErrorMessage(e, "Could not reverse the entry"));
+          message.error(getErrorMessage(e, "Could not delete the entry"));
           throw e;
         }
       },
@@ -298,13 +286,13 @@ export default function ConfirmFinishedModal({
       key: "act",
       width: 44,
       render: (_, r) =>
-        r.reversesId ? null : (
+        r.reversesId || !user || (user.role !== "ADMIN" && r.createdById !== user.id) ? null : (
           <Button
             size="small"
             type="text"
             danger
-            icon={<UndoOutlined />}
-            onClick={() => reverseRow(r)}
+            icon={<DeleteOutlined />}
+            onClick={() => deleteRow(r)}
           />
         ),
     },
@@ -363,6 +351,9 @@ export default function ConfirmFinishedModal({
     return false;
   };
 
+  const noEntries =
+    !moneyLoading && !!money && !money.locked && money.entryCount === 0;
+
   return (
     <Modal
       title={`Confirm finished — ${assignment?.tourName ?? assignment?.code ?? ""}`}
@@ -372,6 +363,7 @@ export default function ConfirmFinishedModal({
       okText="Confirm finished"
       cancelText="Cancel"
       confirmLoading={submitting}
+      okButtonProps={{ disabled: noEntries }}
       width={760}
       destroyOnClose
     >
@@ -409,9 +401,13 @@ export default function ConfirmFinishedModal({
               </Flex>
 
               {money.entryCount === 0 ? (
-                <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 8 }}>
-                  No entries yet. Add what you collected or spent on this trip.
-                </Text>
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message="At least one entry is required"
+                  description="Add what you collected or spent on this trip before submitting — Accounting cannot verify an empty money sheet."
+                />
               ) : (
                 <Table
                   size="small"
@@ -485,18 +481,6 @@ export default function ConfirmFinishedModal({
         <Divider style={{ margin: 0 }} />
 
         <Flex vertical gap={8}>
-          <Flex vertical gap={4} style={{ width: "100%" }}>
-            <Text strong>Trip notes (will appear on the manifest)</Text>
-            <Input.TextArea
-              rows={3}
-              placeholder="Enter any notes for this trip (pickup details, special requests, etc.)"
-              value={tripNotes}
-              onChange={(e) => setTripNotes(e.target.value)}
-              style={{ width: "100%" }}
-            />
-          </Flex>
-
-          <Divider style={{ margin: 0 }} />
 
           <Flex justify="space-between" align="center">
             <Text strong>Evidence (pictures, videos, files)</Text>

@@ -3,12 +3,14 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Spin, Flex } from "antd";
-import { TruckOutlined, CalendarOutlined, UserOutlined } from "@ant-design/icons";
+import { TruckOutlined, CalendarOutlined, UserOutlined, DashboardOutlined, TeamOutlined } from "@ant-design/icons";
 import RoleShell from "@/components/role-shell";
 import { useApp, getDefaultRoute } from "@/lib/app-context";
 
 const PROVIDER_MENU = [
+  { key: "/transport-provider/dashboard", icon: <DashboardOutlined />, label: "Dashboard" },
   { key: "/transport-provider/my-trips", icon: <CalendarOutlined />, label: "Fleet Trips" },
+  { key: "/transport-provider/drivers", icon: <TeamOutlined />, label: "Drivers" },
   { key: "/transport-provider/profile", icon: <UserOutlined />, label: "Profile" },
 ];
 

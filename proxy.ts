@@ -9,10 +9,17 @@ const PROTECTED_PREFIXES = [
   "/bookings",
   "/users",
   "/audit",
+  "/auth-activities",
   "/profile",
-  "/settlements",
+  "/company-profile",
+  "/drive",
+  "/leaves",
+  "/notifications",
+  "/accounting",
+  "/service",
   "/driver",
   "/tour-guide",
+  "/transport-provider",
 ];
 
 const AUTH_PATHS = ["/login", "/register"];

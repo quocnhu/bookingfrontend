@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Button,
   Card,
   Descriptions,
@@ -61,6 +62,7 @@ export default function SubmitReportPage() {
   const [submitting, setSubmitting] = useState(false);
   const [detail, setDetail] = useState<any>(null);
   const [evidence, setEvidence] = useState<EvidenceItem[]>([]);
+  const [entryCount, setEntryCount] = useState<number | null>(null);
   const [form] = Form.useForm();
   const nextKey = useRef(0);
 
@@ -70,14 +72,19 @@ export default function SubmitReportPage() {
       const r = await api.get("/assignments/my-assignments");
       const items = r.data ?? [];
       // Show DISPATCHED (needs report) + VERIFYING (submitted/pending/rejected) + COMPLETED (verified).
-      setAssignments(
-        items.filter(
-          (a: any) =>
-            a.status === "DISPATCHED" ||
-            a.status === "VERIFYING" ||
-            a.status === "COMPLETED",
-        ),
+      const list = items.filter(
+        (a: any) =>
+          a.status === "DISPATCHED" ||
+          a.status === "VERIFYING" ||
+          a.status === "COMPLETED",
       );
+      setAssignments(list);
+      // Deep link from My Trips (?assignmentId=...) opens that trip directly.
+      if (typeof window !== "undefined") {
+        const id = new URLSearchParams(window.location.search).get("assignmentId");
+        const match = id && list.find((a: any) => a.id === id);
+        if (match) openDetail(match);
+      }
     } catch {
       // silent
     } finally {
@@ -91,6 +98,13 @@ export default function SubmitReportPage() {
 
   const openDetail = (a: any) => {
     setDetail(a);
+    // Notice: a report needs at least one money entry — load the count so
+    // the guide sees the requirement before submitting.
+    setEntryCount(null);
+    api
+      .get(`/assignments/${a.id}/money`)
+      .then((r) => setEntryCount(r.data?.entryCount ?? r.data?.rows?.length ?? 0))
+      .catch(() => setEntryCount(null));
     if (a.tourReport) {
       form.setFieldsValue({
         actualPax: a.tourReport.actualPax,
@@ -266,6 +280,7 @@ export default function SubmitReportPage() {
                 type="primary"
                 icon={<SendOutlined />}
                 loading={submitting}
+                disabled={entryCount === 0}
                 onClick={() => submit(detail.id)}
               >
                 {reportStatus === "REJECTED" ? "Resubmit Report" : "Submit Report"}
@@ -276,6 +291,15 @@ export default function SubmitReportPage() {
       >
         {detail && (
           <>
+            {canEditReport(detail) && entryCount === 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="At least one money entry is required"
+                description="Record what you collected or spent (Booking & Money on My Trips) before submitting — Accounting cannot verify an empty money sheet."
+              />
+            )}
             <Descriptions column={1} size="small" bordered style={{ marginBottom: 24 }}>
               <Descriptions.Item label="Tour">{detail.tourName ?? "—"}</Descriptions.Item>
               <Descriptions.Item label="Code">{detail.code ?? "—"}</Descriptions.Item>
