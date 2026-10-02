@@ -36,6 +36,7 @@ import {
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
+import { sanitizeHtml } from "@/lib/sanitize";
 import { useApp } from "@/lib/app-context";
 import { useMapSrc } from "@/lib/use-map-src";
 import { discountedPrice, discountFor, isTypePromoActive } from "@/lib/promo";
@@ -142,7 +143,7 @@ export default function PublicTourDetailPage() {
         tourId: tour?.id,
         channel: "WEBSITE",
         source: "website",
-        startingDate: values.startingDate?.toISOString(),
+        startingDate: values.startingDate?.format("YYYY-MM-DD"),
       });
       message.success("Booking submitted. We will contact you to confirm.");
       setBookingOpen(false);
@@ -320,13 +321,13 @@ export default function PublicTourDetailPage() {
                                           {it.location}
                                         </Typography.Text>
                                       )}
-                                      {it.description && (
-                                        <div
-                                          className="prose-content"
-                                          style={{ marginTop: 4 }}
-                                          dangerouslySetInnerHTML={{ __html: it.description }}
-                                        />
-                                      )}
+{it.description && (
+  <div
+    className="prose-content"
+    style={{ marginTop: 4 }}
+    dangerouslySetInnerHTML={{ __html: sanitizeHtml(it.description) }}
+  />
+)}
                                     </Flex>
                                   </Card>
                                 ))}
@@ -352,18 +353,18 @@ export default function PublicTourDetailPage() {
                         </Flex>
                       }
                     >
-                      {tour.highlights && (
-                        <Flex vertical gap={8} style={{ marginBottom: 16 }}>
-                          <Typography.Text strong>
-                            <StarOutlined style={{ color: "#f59e0b", marginRight: 8 }} />
-                            Highlights
-                          </Typography.Text>
-                          <div
-                            className="prose-content"
-                            dangerouslySetInnerHTML={{ __html: tour.highlights }}
-                          />
-                        </Flex>
-                      )}
+{tour.highlights && (
+  <Flex vertical gap={8} style={{ marginBottom: 16 }}>
+    <Typography.Text strong>
+      <StarOutlined style={{ color: "#f59e0b", marginRight: 8 }} />
+      Highlights
+    </Typography.Text>
+    <div
+      className="prose-content"
+      dangerouslySetInnerHTML={{ __html: sanitizeHtml(tour.highlights) }}
+    />
+  </Flex>
+)}
                       <Tabs
                         defaultActiveKey="overview"
                         items={[
@@ -374,12 +375,12 @@ export default function PublicTourDetailPage() {
                                 <CalendarOutlined /> Itinerary
                               </span>
                             ),
-                            children: tour.overview ? (
-                              <div
-                                className="prose-content"
-                                dangerouslySetInnerHTML={{ __html: tour.overview }}
-                              />
-                            ) : (
+children: tour.overview ? (
+  <div
+    className="prose-content"
+    dangerouslySetInnerHTML={{ __html: sanitizeHtml(tour.overview) }}
+  />
+) : (
                               <Typography.Text type="secondary">
                                 No itinerary description yet.
                               </Typography.Text>
@@ -392,12 +393,12 @@ export default function PublicTourDetailPage() {
                                 <ReadOutlined /> Instructions
                               </span>
                             ),
-                            children: tour.regulations ? (
-                              <div
-                                className="prose-content"
-                                dangerouslySetInnerHTML={{ __html: tour.regulations }}
-                              />
-                            ) : (
+children: tour.regulations ? (
+  <div
+    className="prose-content"
+    dangerouslySetInnerHTML={{ __html: sanitizeHtml(tour.regulations) }}
+  />
+) : (
                               <Typography.Text type="secondary">
                                 No instructions yet.
                               </Typography.Text>
@@ -410,12 +411,12 @@ export default function PublicTourDetailPage() {
                                 <SafetyCertificateOutlined /> Insurance
                               </span>
                             ),
-                            children: tour.insurancePolicy ? (
-                              <div
-                                className="prose-content"
-                                dangerouslySetInnerHTML={{ __html: tour.insurancePolicy }}
-                              />
-                            ) : (
+children: tour.insurancePolicy ? (
+  <div
+    className="prose-content"
+    dangerouslySetInnerHTML={{ __html: sanitizeHtml(tour.insurancePolicy) }}
+  />
+) : (
                               <Typography.Text type="secondary">
                                 No insurance policy yet.
                               </Typography.Text>

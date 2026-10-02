@@ -37,6 +37,7 @@ import {
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
+import { sanitizeHtml } from "@/lib/sanitize";
 import { useApp } from "@/lib/app-context";
 import { useMapSrc } from "@/lib/use-map-src";
 import { discountedPrice, discountFor, isTypePromoActive } from "@/lib/promo";
@@ -478,13 +479,13 @@ export default function TourItineraryEditorPage() {
                                         {it.location}
                                       </Typography.Text>
                                     )}
-                                    {it.description ? (
-                                      <div
-                                        className="prose-content"
-                                        style={{ marginTop: 4 }}
-                                        dangerouslySetInnerHTML={{ __html: it.description }}
-                                      />
-                                    ) : null}
+{it.description ? (
+  <div
+    className="prose-content"
+    style={{ marginTop: 4 }}
+    dangerouslySetInnerHTML={{ __html: sanitizeHtml(it.description) }}
+  />
+) : null}
                                   </Flex>
                                 )}
                               </Card>
@@ -563,7 +564,7 @@ export default function TourItineraryEditorPage() {
                   ) : tour.highlights ? (
                     <div
                       className="prose-content"
-                      dangerouslySetInnerHTML={{ __html: tour.highlights }}
+                      dangerouslySetInnerHTML={{ __html: sanitizeHtml(tour.highlights) }}
                     />
                   ) : null}
                 </Flex>
@@ -591,7 +592,7 @@ export default function TourItineraryEditorPage() {
                         <div
                           className="prose-content"
                           dangerouslySetInnerHTML={{
-                            __html: tour[key as keyof TourState] as string,
+                            __html: sanitizeHtml(tour[key as keyof TourState] as string),
                           }}
                         />
                       ) : (

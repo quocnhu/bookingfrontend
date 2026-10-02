@@ -12,22 +12,10 @@ export interface BookingItem {
   latitude?: number | null;
   longitude?: number | null;
   notes?: string | null;
-  collectAmount?: number | null;
-  refundAmount?: number | null;
-  // Bằng chứng nguồn gốc: bus đã bị chuyển ra khỏi (giữ màu đỏ trên board)
+  status?: string; // Booking status: PENDING, ASSIGNED, CANCELED
+  tourType?: string | null; // PRIVATE_TOUR | GROUP_TOUR
+  // Provenance: the bus it was moved out of (keeps the red colour on the board)
   movedFromBus?: { code?: string; vehicle?: { plateNumber?: string } } | null;
-  // Lớp 1 quyết toán: các khoản thu/chi gắn theo booking này
-  settlements?: SettlementItem[];
-}
-
-export interface SettlementItem {
-  id: string;
-  amount: number;
-  note?: string | null;
-  imageUrl?: string | null;
-  category?: { name?: string; flowType?: "COLLECT_MONEY" | "PAY_MONEY" } | null;
-  customCategoryName?: string | null;
-  createdById?: string;
 }
 
 export interface PickupInfoItem {
@@ -59,9 +47,7 @@ export interface BoardItem {
   guide?: { id?: string; name?: string } | null;
   reportVerifier?: { name?: string } | null;
   bookings?: BookingItem[];
-  // Lớp 2 quyết toán: khoản chi theo toàn bộ chuyến
-  settlements?: SettlementItem[];
-  // Báo cáo tour + quyết toán (đi với Dispatch Board / accounting verify)
+  // Tour report (submitted by the guide after the trip ends)
   tourReport?: {
     status?: string;
     verifiedByName?: string | null;
@@ -75,13 +61,23 @@ export interface BoardItem {
     tollParking?: number | null;
     pickupNotes?: string | null;
     notes?: string | null;
-    collectedAmount?: number | null;
-    refundedAmount?: number | null;
-    servicesTotal?: number | null;
+    // Locked when submitted for verification, unlocked when rejected
+    locked?: boolean;
+    // Accounting Room: money locked & already exported in a period
     netAmount?: number | null;
     settlementFlow?: "COLLECT_MONEY" | "PAY_MONEY" | null;
+    moneyVerifiedByName?: string | null;
+    moneyVerifiedAt?: string | null;
     evidenceImages?: Array<{ name?: string; url: string; uploadedAt?: string; uploadedByName?: string }>;
   } | null;
+  // Accounting Room: exported payment periods that include this trip
+  tripNotes?: string | null;
+  paymentLines?: Array<{
+    id: string;
+    tourDate: string;
+    periodId: string;
+    payableTo?: { id?: string; name?: string } | null;
+  }>;
   createdWho?: string;
 }
 
@@ -115,7 +111,7 @@ export interface BoardCrew {
   drivers: CrewMember[];
 }
 
-// Màu riêng cho nhân sự đang nghỉ phép — admin nhìn board dễ phân biệt.
+// Separate colour for crew on leave - easier for admins to spot on the board.
 export const LEAVE_COLOR = "#fa541c";
 
 export const STATUS_COLORS: Record<string, string> = {

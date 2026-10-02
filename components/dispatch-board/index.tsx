@@ -26,6 +26,7 @@ import {
   LoadingOutlined,
   SendOutlined,
   ScheduleOutlined,
+  SyncOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
@@ -43,6 +44,7 @@ import ConfirmFinishedModal from "./ConfirmFinishedModal";
 import CrewAvailabilityDrawer from "./CrewAvailabilityDrawer";
 import TourTemplateModal from "./TourTemplateModal";
 import VerifyReportModal from "./VerifyReportModal";
+import { useSocket } from "@/lib/use-socket";
 
 const { Text } = Typography;
 
@@ -86,6 +88,7 @@ export default function DispatchBoard({
   canUpdateAssignment: boolean;
 }) {
   const { token } = antdTheme.useToken();
+  const { on } = useSocket();
 
   const [boardData, setBoardData] = useState<BoardItem[]>([]);
   const [boardLoading, setBoardLoading] = useState(true);
@@ -96,9 +99,10 @@ export default function DispatchBoard({
   const [finishing, setFinishing] = useState<BoardItem | null>(null);
   const [templateTarget, setTemplateTarget] = useState<BoardItem | null>(null);
   const [verifyTarget, setVerifyTarget] = useState<BoardItem | null>(null);
-  const [filterDate, setFilterDate] = useState<Dayjs>(dayjs().startOf("day"));
+  const [filterDate, setFilterDate] = useState<Dayjs>(() => dayjs().add(7, "hour").startOf("day"));
   const [additionsTarget, setAdditionsTarget] = useState<BoardItem | null>(null);
   const [crewAvailOpen, setCrewAvailOpen] = useState(false);
+  const [autoAssign, setAutoAssign] = useState(false);
 
   const loadBoard = useCallback((background = false) => {
     if (background) setRefreshing(true);
@@ -107,6 +111,20 @@ export default function DispatchBoard({
       .get("/assignments/board")
       .then((r) => {
         const data: BoardItem[] = r.data ?? [];
+        console.log('[DispatchBoard] API returned:', data.map(a => ({
+          id: a.id,
+          code: a.code,
+          tourName: a.tourName,
+          startDate: a.startDate,
+          endDate: a.endDate,
+          status: a.status,
+          tourType: a.tourType,
+          totalPax: a.totalPax,
+          guide: a.guide?.name,
+          driver: a.driver?.name,
+          bookings: a.bookings?.length
+        })));
+        console.log('[DispatchBoard] Filter date:', dayjs().format('YYYY-MM-DD'));
         setBoardData(data);
       })
       .catch((e) => message.error(getErrorMessage(e, "Failed to load board")))
@@ -115,6 +133,15 @@ export default function DispatchBoard({
         setRefreshing(false);
       });
   }, []);
+
+  // Real-time board updates via WebSocket
+  useEffect(() => {
+    const cleanup = on('board:refresh', () => {
+      console.log('[DispatchBoard] Real-time refresh triggered');
+      loadBoard(true);
+    });
+    return cleanup;
+  }, [on, loadBoard]);
 
   useEffect(() => {
     if (open) {
@@ -158,6 +185,33 @@ export default function DispatchBoard({
 
   const openVerify = (assignment: BoardItem) => {
     setVerifyTarget(assignment);
+  };
+
+  const openReject = (assignment: BoardItem) => {
+    // We'll use the same modal but with a different action
+    // For now, we'll just use a simple confirm with message
+    // In a more complete implementation, this would open a modal with a message input
+    // For now, we'll use the browser's prompt for simplicity
+    const message = prompt("Enter rejection reason (required):");
+    if (!message?.trim()) {
+      message?.trim() ? null : message === null || alert("Rejection reason is required");
+      return;
+    }
+    rejectTourReport(assignment.id, message.trim());
+  };
+
+  const rejectTourReport = async (id: string, reason: string) => {
+    try {
+      await api.put(`/assignments/${id}/tour-report/verify`, {
+        status: "REJECTED",
+        verificationNotes: reason,
+      });
+      message.success("Report rejected — guide can resubmit");
+      loadBoard(true);
+      onChanged?.();
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to reject report"));
+    }
   };
 
   const dispatchAssignment = async (assignment: BoardItem) => {
@@ -248,6 +302,7 @@ export default function DispatchBoard({
       a.bookings?.some((b) => b.id === bookingId),
     );
     const target = boardData.find((a) => a.id === toAssignmentId);
+    const booking = source?.bookings?.find((b) => b.id === bookingId);
     // These used to return silently, so a stale/unknown id looked exactly like
     // drag-and-drop being broken. Say what went wrong instead.
     if (!bookingId || !source || !target) {
@@ -262,6 +317,15 @@ export default function DispatchBoard({
       return;
     }
 
+    // Check if booking's tour matches target assignment's tour
+    if (booking?.tourType && target.tourType && booking.tourType !== target.tourType) {
+      message.error(
+        `Cannot move booking to a bus with a different tour. Booking tour: ${booking.tourType}, Target bus tour: ${target.tourType}`,
+      );
+      loadBoard(true);
+      return;
+    }
+
     const sameBus = source.id === toAssignmentId;
     const key = `dd-${bookingId}`;
     message.loading({ content: "Updating bus…", key });
@@ -270,7 +334,7 @@ export default function DispatchBoard({
       const without = order.filter((id) => id !== bookingId);
       if (beforeBookingId) {
         const at = without.indexOf(beforeBookingId);
-        // "after" = chèn ngay dưới mốc; "before" = chèn ngay trên mốc.
+        // "after" = insert directly below the anchor; "before" = directly above it.
         if (at === -1) without.push(bookingId);
         else without.splice(position === "after" ? at + 1 : at, 0, bookingId);
       } else {
@@ -313,14 +377,17 @@ export default function DispatchBoard({
   };
 
   const filtered = useMemo(
-    () =>
-      boardData.filter((a) => {
+    () => {
+      const result = boardData.filter((a) => {
         // Only show tours whose DEPARTURE (start) date matches the selected
         // date. Multi-day tours are shown only on the day they start, so the
         // board for today never lists buses from previous days.
-        const start = dayjs(a.startDate).startOf("day");
+        const start = dayjs(a.startDate).add(7, "hour").startOf("day");
         return start.isSame(filterDate.startOf("day"));
-      }),
+      });
+      console.log('[DispatchBoard] Filtered:', result.map(a => ({ code: a.code, startDate: a.startDate, filterDate: filterDate.format('YYYY-MM-DD') })));
+      return result;
+    },
     [boardData, filterDate],
   );
 
@@ -344,20 +411,16 @@ export default function DispatchBoard({
   const bookingDates = useMemo(() => {
     const dates = new Set<string>();
     for (const a of boardData) {
-      let d = dayjs(a.startDate);
-      const end = dayjs(a.endDate);
-      while (d.isSameOrBefore(end, "day")) {
-        dates.add(d.format("YYYY-MM-DD"));
-        d = d.add(1, "day");
-      }
+      const start = dayjs(a.startDate).add(7, "hour");
+      dates.add(start.format("YYYY-MM-DD"));
     }
     return dates;
   }, [boardData]);
-  const today = dayjs().startOf("day");
+  const today = dayjs().add(7, "hour").startOf("day");
   const isFilterToday = filterDate.startOf("day").isSame(today);
-  // Backend nạp sẵn chuyến từ 30 ngày trước tới 90 ngày sau
-  // (BOARD_LOOKBACK_DAYS trong assignments.service.ts). Chọn ngoài cửa sổ này
-  // sẽ hiện "No tours on this date" dù có chuyến → chặn luôn.
+  // The backend preloads trips from 30 days back to 90 days ahead
+  // (BOARD_LOOKBACK_DAYS in assignments.service.ts). Picking a date outside that
+  // window would show "No tours on this date" even when trips exist → block it.
   const minLoadedDate = today.subtract(30, "day");
   const maxLoadedDate = today.add(90, "day");
   const isOutsideLoadedWindow = (d: Dayjs) =>
@@ -465,6 +528,8 @@ export default function DispatchBoard({
                       placeholder="Select a date"
                       style={{ width: 200 }}
                       cellRender={renderDateCell}
+                      picker="date"
+                      format="YYYY-MM-DD"
                     />
                   </Space>
                 </Space>
@@ -474,11 +539,12 @@ export default function DispatchBoard({
                   <Switch
                     checkedChildren="Auto"
                     unCheckedChildren="Manual"
-                    checked={filtered.every((a) => a.origin === "AUTO_ASSIGN")}
-                    onChange={(auto) =>
-                      setAllOrigin(auto ? "AUTO_ASSIGN" : "MANUAL")
-                    }
-                    title="Bật Auto-assign cho tất cả chuyến trên board"
+                    checked={autoAssign}
+                    onChange={(auto) => {
+                      setAutoAssign(auto);
+                      setAllOrigin(auto ? "AUTO_ASSIGN" : "MANUAL");
+                    }}
+                    title="Turn on Auto-assign for all trips on the board"
                   />
                   <Tag
                     style={{
@@ -526,7 +592,7 @@ export default function DispatchBoard({
             styles={{ body: { padding: 18 } }}
           >
             <Row gutter={[20, 20]}>
-              <BoardColumn
+<BoardColumn
                 meta={TYPE_META.GROUP_TOUR}
                 items={groupItems}
                 today={today}
@@ -540,6 +606,7 @@ export default function DispatchBoard({
                 onMoveBooking={moveBooking}
                 onTemplate={openTemplate}
                 onVerify={openVerify}
+                onReject={openReject}
                 onAdditions={setAdditionsTarget}
                 crew={crew}
                 onCrewChange={canUpdateAssignment ? changeCrew : undefined}
@@ -558,6 +625,7 @@ export default function DispatchBoard({
                 onMoveBooking={moveBooking}
                 onTemplate={openTemplate}
                 onVerify={openVerify}
+                onReject={openReject}
                 onAdditions={setAdditionsTarget}
                 crew={crew}
                 onCrewChange={canUpdateAssignment ? changeCrew : undefined}
@@ -576,6 +644,8 @@ export default function DispatchBoard({
                   onRecall={onRecall}
                   onMoveBooking={moveBooking}
                   onTemplate={openTemplate}
+                  onVerify={openVerify}
+                  onReject={openReject}
                   onAdditions={setAdditionsTarget}
                   crew={crew}
                   onCrewChange={canUpdateAssignment ? changeCrew : undefined}

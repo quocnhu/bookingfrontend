@@ -166,7 +166,7 @@ export default function SubmitReportPage() {
 
       <Typography.Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
         After completing a tour, submit your report and any evidence pictures here for the
-        accounting department to verify.
+        administrator to verify.
       </Typography.Text>
 
       {loading ? (
@@ -349,6 +349,25 @@ export default function SubmitReportPage() {
                     {detail.tourReport.verificationNotes}
                   </Descriptions.Item>
                 )}
+                {detail.tourReport.moneyRejectedAt && (
+                  <Descriptions.Item label="Collected/paid amounts">
+                    <Tag color="red" style={{ fontWeight: 600 }}>
+                      Returned by accounting — needs re-checking
+                    </Tag>
+                  </Descriptions.Item>
+                )}
+                {detail.tourReport.moneyRejectedByName && (
+                  <Descriptions.Item label="Returned by">
+                    {detail.tourReport.moneyRejectedByName}
+                  </Descriptions.Item>
+                )}
+                {detail.tourReport.moneyRejectionReason && (
+                  <Descriptions.Item label="Reason">
+                    <span style={{ color: "#b91c1c" }}>
+                      {detail.tourReport.moneyRejectionReason}
+                    </span>
+                  </Descriptions.Item>
+                )}
               </Descriptions>
             )}
 
@@ -371,7 +390,7 @@ export default function SubmitReportPage() {
                     <Input.TextArea rows={2} placeholder="Any notes about pickup logistics" />
                   </Form.Item>
                   <Form.Item name="notes" label="Additional notes">
-                    <Input.TextArea rows={3} placeholder="Anything else the accounting team should know" />
+                    <Input.TextArea rows={3} placeholder="Anything else the operations team should know" />
                   </Form.Item>
                 </Form>
 
@@ -429,7 +448,7 @@ export default function SubmitReportPage() {
                   )}
                   <Typography.Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 8 }}>
                     Pictures are saved to the tour guide folder (guide name + tour date) and
-                    stay pending until the accounting room verifies this report.
+                    stay pending until an administrator verifies this report.
                   </Typography.Text>
                 </div>
               </>

@@ -93,7 +93,7 @@ export default function CompanyProfilePage() {
         }
         extra={
           <Text type="secondary" style={{ fontSize: 12 }}>
-            Used on the print-ready tour voucher for accounting (year-end stamping)
+            Used on the print-ready tour manifest (year-end stamping)
           </Text>
         }
         loading={loading}

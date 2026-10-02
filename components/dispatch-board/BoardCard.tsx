@@ -22,6 +22,7 @@ import {
   CarOutlined,
   CheckCircleOutlined,
   CheckOutlined,
+  CloseOutlined,
   EnvironmentOutlined,
   FileTextOutlined,
   DownOutlined,
@@ -29,6 +30,7 @@ import {
   PlusOutlined,
   PrinterOutlined,
   SafetyCertificateOutlined,
+  LockOutlined,
   SendOutlined,
   UndoOutlined,
   UpOutlined,
@@ -337,6 +339,7 @@ export default function BoardCard({
   onMoveBooking,
   onTemplate,
   onVerify,
+  onReject,
   onAdditions,
   crew,
   onCrewChange,
@@ -360,6 +363,7 @@ export default function BoardCard({
   ) => void;
   onTemplate: (assignment: BoardItem) => void;
   onVerify?: (assignment: BoardItem) => void;
+  onReject?: (assignment: BoardItem) => void;
   onAdditions?: (assignment: BoardItem) => void;
   crew?: BoardCrew;
   onCrewChange?: (
@@ -370,9 +374,10 @@ export default function BoardCard({
 }) {
   const { token } = antdTheme.useToken();
   const [dragOver, setDragOver] = useState(false);
-  // Vị trí chèn sẽ hiện (trên/dưới row đang hover) - thay cho việc tô sáng cả
-  // row, vốn gây hiểu nhầm là sẽ thay thế booking đó. Gộp rowId + pos vào
-  // một state để không bao giờ lệch nhau.
+  // The insertion position is shown (above/below the hovered row) instead of
+  // highlighting the whole row, which was misleading - it looked like that
+  // booking would be replaced. rowId + pos live in one state so they can
+  // never drift apart.
   const [dropTarget, setDropTarget] = useState<{
     rowId: string;
     pos: "before" | "after";
@@ -398,8 +403,9 @@ export default function BoardCard({
   const isRejected = a.tourReport?.status === "REJECTED";
   const procStatus = isRejected ? "REJECTED" : a.status;
   const procColor = isRejected ? "red" : STATUS_COLORS[a.status];
-  // Chuyến đã kết thúc (endDate < hôm nay) coi như đã xong: không kéo/thả
-  // được, kể cả khi ai đó quên bấm Complete nên status vẫn còn PENDING.
+  // A trip that has already ended (endDate < today) counts as done: it cannot
+  // be dragged/dropped, even if someone forgot to press Complete so the status
+  // is still PENDING.
   const isPastTour = dayjs(a.endDate).endOf("day").isBefore(
     dayjs().startOf("day"),
   );
@@ -451,7 +457,7 @@ export default function BoardCard({
     [interactive, onMoveBooking, a.id, dropTarget],
   );
 
-  /** Nút mũi tên: dời booking lên/xuống một chỗ trong cùng bus. */
+  /** Arrow button: move a booking up/down one slot within the same bus. */
   const nudge = useCallback(
     (bookingId: string, dir: "up" | "down") => {
       if (!interactive) return;
@@ -469,7 +475,7 @@ export default function BoardCard({
     [interactive, onMoveBooking, a.id, a.bookings],
   );
 
-  /** Nửa trên/dưới của row quyết định chèn trước hay sau. */
+  /** The top/bottom half of the row decides whether to insert before or after. */
   const rowDropPos = (e: React.DragEvent): "before" | "after" => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
@@ -490,7 +496,7 @@ export default function BoardCard({
     return map;
   }, [crew]);
 
-  // HDV/tài xế có nghỉ phép trùng khớp ngày chạy của chuyến này → tô màu riêng.
+  // A guide/driver whose leave overlaps this trip's running dates → own colour.
   const onLeaveForDate = useCallback(
     (leaves?: BoardCrew["guides"][number]["leaves"]): string | null => {
       if (!leaves?.length) return null;
@@ -565,6 +571,8 @@ export default function BoardCard({
   const currentDriver = driverMembers.find((d) => d.id === a.driver?.id);
   const guideBoxColor = currentGuide?.color ?? GUIDE_FAILBACK;
   const driverBoxColor = currentDriver?.color ?? DRIVER_FAILBACK;
+
+  const activeBookings = a.bookings?.filter((b) => b.status !== "CANCELED") ?? [];
 
   return (
     <Card
@@ -664,13 +672,66 @@ export default function BoardCard({
             Need to verify again
           </Tag>
         )}
+        {/* Watermark Accounting: money locked = no longer editable.
+            Exported period = already paid, gone from the queue entirely. */}
+        {a.tourReport?.moneyVerifiedAt && (
+          <Tooltip
+            title={
+              a.tourReport.moneyVerifiedByName
+                ? `Money locked by ${a.tourReport.moneyVerifiedByName} — ${new Date(
+                    a.tourReport.moneyVerifiedAt,
+                  ).toLocaleDateString("vi-VN")}. Amounts are now immutable.`
+                : "Money locked by Accounting — amounts are now immutable."
+            }
+          >
+            <Tag
+              icon={<LockOutlined />}
+              color="purple"
+              style={{ margin: 0, fontWeight: 600 }}
+            >
+              Money locked
+            </Tag>
+          </Tooltip>
+        )}
+        {a.tourReport?.moneyVerifiedAt && a.tourReport.netAmount != null && (
+          <Tag
+            color={
+              Number(a.tourReport.netAmount) > 0 ? "orange" : "blue"
+            }
+            style={{ margin: 0, fontSize: 10, fontWeight: 600 }}
+          >
+            {Number(a.tourReport.netAmount) > 0
+              ? "Guide/Driver pays company"
+              : Number(a.tourReport.netAmount) < 0
+                ? "Company pays Guide/Driver"
+                : "Settled"}
+          </Tag>
+        )}
+        {a.paymentLines && a.paymentLines.length > 0 && (
+          <Tooltip
+            title={`Paid in period(s): ${a.paymentLines
+              .map(
+                (l) =>
+                  `${l.payableTo?.name ?? "—"} · ${new Date(l.tourDate).toLocaleDateString("vi-VN")}`,
+              )
+              .join(" · ")}`}
+          >
+            <Tag
+              icon={<CheckCircleOutlined />}
+              color="success"
+              style={{ margin: 0, fontWeight: 600 }}
+            >
+              Paid
+            </Tag>
+          </Tooltip>
+        )}
         <Tag
           color={color === "blue" ? "geekblue" : "magenta"}
           style={{ margin: 0 }}
         >
           {a.totalPax}/{capacity} pax
         </Tag>
-        <Tooltip title="Print tour template for accounting (stamp for year-end audit)">
+        <Tooltip title="Print the tour manifest (stamp for year-end audit)">
           <Button
             type="text"
             size="small"
@@ -740,24 +801,23 @@ export default function BoardCard({
           onChange={(id) => onCrewChange?.(a, "driverId", id)}
         />
       </div>
-
       <Text
         type="secondary"
         style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.4 }}
       >
-        BOOKING LIST ({a.bookings?.length ?? 0})
+        BOOKING LIST ({activeBookings.length})
       </Text>
       <div className="board-booking-table" style={{ marginTop: 6 }}>
-        {a.bookings?.length ? (
+        {activeBookings.length ? (
           <>
 <div
                 className="board-bk-grid"
                 style={{
                   display: "grid",
-                  // Phải khớp với template của các row bên dưới, nếu không
-                  // nhãn cột sẽ lệch khỏi dữ liệu.
+                  // Must match the template of the rows below, otherwise the
+                  // column labels drift away from the data.
                   gridTemplateColumns:
-                    (interactive && (a.bookings?.length ?? 0) > 1
+                    (interactive && activeBookings.length > 1
                       ? "18px "
                       : "") +
                     "20px minmax(0,1.05fr) 70px minmax(0,1.6fr) 64px 36px 24px",
@@ -766,7 +826,7 @@ export default function BoardCard({
                   padding: "2px 8px",
                 }}
               >
-              {interactive && (a.bookings?.length ?? 0) > 1 && <span />}
+              {interactive && activeBookings.length > 1 && <span />}
               <Text
                 type="secondary"
                 style={{
@@ -836,7 +896,7 @@ export default function BoardCard({
             </div>
             <List
               size="small"
-              dataSource={a.bookings}
+              dataSource={a.bookings?.filter((b) => b.status !== "CANCELED") ?? []}
               renderItem={(b, i) => {
               const fromLabel = b.movedFromBus
                 ? b.movedFromBus.code ||
@@ -892,7 +952,7 @@ export default function BoardCard({
                   transition: "background 0.15s ease",
                 }}
               >
-                {/* Đường chèn: cho biết chính xác booking sẽ nằm ở đâu. */}
+                {/* Insertion line: shows exactly where the booking will land. */}
                 {dropTarget?.rowId === b.id && (
                   <div
                     style={{
@@ -915,14 +975,15 @@ export default function BoardCard({
                     flex: 1,
                     minWidth: 0,
                     display: "grid",
-                    // Cột đầu là mũi tên lên/xuống. Các cột "fr" dùng minmax(0)
-                    // để co lại được - trước đây min cứng khiến grid tràn ra ngoài
-                    // và chữ xuống dòng, làm row cao thêm và đẩy các bus phía
-                    // dưới xuống mỗi lần đổi thứ tự.
-                    // Cột đầu chỉ tồn tại khi mũi tên được render, để số cột
-                    // luôn khớp số phần tử con.
+                    // The first column is the up/down arrow. The "fr" columns use minmax(0)
+                    // so they can shrink - hard minimums used to make the grid
+                    // overflow and wrap the text, making rows taller and
+                    // pushing the buses below down on every reorder.
+                    // The first column only exists when the arrows are
+                    // rendered, so the column count always matches the child
+                    // count.
                     gridTemplateColumns:
-                      (interactive && (a.bookings?.length ?? 0) > 1
+                      (interactive && activeBookings.length > 1
                         ? "18px "
                         : "") +
                       "20px minmax(0,1.05fr) 70px minmax(0,1.6fr) 64px 36px 24px",
@@ -947,10 +1008,11 @@ export default function BoardCard({
                       .join("\n")
                   }
                 >
-                  {/* Mũi tên lên/xuống: chỉnh từng chỗ, không cần kéo-thả.
-                      Nằm trong grid (không phải flex sibling) để không đẩy
-                      layout; disable ở hai đầu danh sách. */}
-                  {interactive && (a.bookings?.length ?? 0) > 1 && (
+                  {/* Up/down arrow: fine-tune one slot at a time, no drag and drop
+                      needed. Lives inside the grid (not as a flex sibling) so it
+                      cannot shift the layout; disabled at both ends of the
+                      list. */}
+                  {interactive && activeBookings.length > 1 && (
                     <div
                       style={{
                         display: "flex",
@@ -978,7 +1040,7 @@ export default function BoardCard({
                         size="small"
                         type="text"
                         aria-label="Move booking down"
-                        disabled={i === (a.bookings?.length ?? 0) - 1}
+                        disabled={i === activeBookings.length - 1}
                         onClick={() => nudge(b.id, "down")}
                         style={{
                           height: 13,
@@ -1190,9 +1252,7 @@ export default function BoardCard({
                       width: "100%",
                     }}
                   >
-                    {b.notes ||
-                    (b.collectAmount ?? 0) > 0 ||
-                    (b.refundAmount ?? 0) > 0 ? (
+                    {b.notes ? (
                       <Popover
                         trigger="click"
                         placement="leftTop"
@@ -1203,34 +1263,6 @@ export default function BoardCard({
                               <div style={{ marginBottom: 6 }}>
                                 <Text strong>Note: </Text>
                                 <Text>{b.notes}</Text>
-                              </div>
-                            )}
-                            {(b.collectAmount ?? 0) > 0 && (
-                              <div style={{ marginBottom: 6 }}>
-                                <Text strong style={{ color: "#389e0d" }}>
-                                  Collect:{" "}
-                                </Text>
-                                <Text strong>
-                                  $
-                                  {Number(b.collectAmount).toLocaleString(
-                                    "en-US",
-                                    { maximumFractionDigits: 2 },
-                                  )}
-                                </Text>
-                              </div>
-                            )}
-                            {(b.refundAmount ?? 0) > 0 && (
-                              <div>
-                                <Text strong type="danger">
-                                  Refund:{" "}
-                                </Text>
-                                <Text strong>
-                                  $
-                                  {Number(b.refundAmount).toLocaleString(
-                                    "en-US",
-                                    { maximumFractionDigits: 2 },
-                                  )}
-                                </Text>
                               </div>
                             )}
                           </div>
@@ -1311,8 +1343,8 @@ export default function BoardCard({
           <Flex justify="space-between" align="center" style={{ marginBottom: 6 }}>
             <Text strong style={{ fontSize: 12 }}>
               {a.tourReport?.status === "REJECTED"
-                ? "⚠️ Kế toán từ chối. HDV cần nộp lại."
-                : "⏳ Đang chờ Admin / Kế toán xác minh"}
+                ? "⚠️ Report rejected. The guide must submit again."
+                : "⏳ Waiting for Admin verification"}
             </Text>
             <Tag color={a.tourReport?.status === "REJECTED" ? "red" : "purple"} style={{ margin: 0, fontSize: 10 }}>
               {a.tourReport?.status === "REJECTED" ? "REJECTED" : "VERIFYING"}
@@ -1330,19 +1362,28 @@ export default function BoardCard({
           />
           <Text type="secondary" style={{ fontSize: 11 }}>
             {a.tourReport?.status === "REJECTED"
-              ? "HDV cần gửi lại báo cáo và bằng chứng trên trang Submit Report."
-              : "HDV đã nộp báo cáo. Bộ phận kế toán đang xác minh số liệu quyết toán…"}
+              ? "The guide must resend the report and its evidence on the Submit Report page."
+              : "The guide has submitted the report. Waiting for an administrator to verify it…"}
           </Text>
           {canConfirm && (
-            <Button
-              type="primary"
-              size="small"
-              icon={<CheckOutlined />}
-              style={{ marginTop: 8, borderRadius: 8 }}
-              onClick={() => onVerify?.(a)}
-            >
-              {a.tourReport?.status === "REJECTED" ? "Review resubmitted report" : "Verify report"}
-            </Button>
+            <Space wrap style={{ marginTop: 8 }}>
+              <Button
+                type="primary"
+                size="small"
+                icon={<CheckOutlined />}
+                onClick={() => onVerify?.(a)}
+              >
+                {a.tourReport?.status === "REJECTED" ? "Review resubmitted report" : "Verify report"}
+              </Button>
+              <Button
+                size="small"
+                danger
+                icon={<CloseOutlined />}
+                onClick={() => onReject?.(a)}
+              >
+                Reject report
+              </Button>
+            </Space>
           )}
         </div>
       ) : a.status === "COMPLETED" ? (
@@ -1350,7 +1391,7 @@ export default function BoardCard({
           type="success"
           showIcon
           icon={<CheckCircleOutlined />}
-          message="Completed — settlement prepared"
+          message="Completed"
           style={{ marginTop: 12, borderRadius: 8 }}
         />
       ) : a.status === "DISPATCHED" && canConfirm ? (

@@ -32,11 +32,13 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   BankOutlined,
-  DollarOutlined,
+  AccountBookOutlined,
   EnvironmentOutlined,
   CalendarOutlined,
   BellOutlined,
-  FileDoneOutlined,
+  SafetyCertificateOutlined,
+  DownloadOutlined,
+  LockOutlined,
 } from "@ant-design/icons";
 import { useApp } from "@/lib/app-context";
 import NotificationCenter from "@/components/notification-center";
@@ -48,21 +50,22 @@ const menuItems = [
   { key: "/tours", icon: <CarOutlined />, label: "Tours" },
   { key: "/bookings", icon: <FileTextOutlined />, label: "Bookings" },
   { key: "/drive", icon: <CloudOutlined />, label: "Drive" },
-  {
-    key: "/accounting",
-    icon: <DollarOutlined />,
-    label: "Accounting",
-    children: [
-      { key: "/accounting/verify", icon: <FileDoneOutlined />, label: "Verify Reports" },
-      { key: "/accounting/settlements", icon: <DollarOutlined />, label: "Guide Settlements" },
-    ],
-  },
   { key: "/leaves", icon: <CalendarOutlined />, label: "Day Off Requests" },
   { key: "/users", icon: <TeamOutlined />, label: "Users" },
   { key: "/notifications", icon: <BellOutlined />, label: "Notifications" },
   {
+    key: "/accounting",
+    icon: <SafetyCertificateOutlined />,
+    label: "Accounting Room",
+    children: [
+      { key: "/accounting/period", icon: <DownloadOutlined />, label: "Period check & export" },
+      { key: "/accounting/queue", icon: <LockOutlined />, label: "Verification queue" },
+      { key: "/accounting/history", icon: <HistoryOutlined />, label: "Payment history" },
+    ],
+  },
+  {
     key: "/service",
-    icon: <DollarOutlined />,
+    icon: <AccountBookOutlined />,
     label: "Service",
     children: [
       { key: "/service/transportation", icon: <CarOutlined />, label: "Transportation" },
@@ -84,7 +87,7 @@ const roleColors: Record<string, { tag: string; avatar: string }> = {
   CUSTOMER: { tag: "pink", avatar: "#EC4899" },
 };
 
-const ADMIN_ONLY_KEYS = new Set(["/users", "/notifications", "/audit", "/auth-activities", "/company-profile", "/accounting", "/accounting/verify", "/accounting/settlements"]);
+const ADMIN_ONLY_KEYS = new Set(["/users", "/notifications", "/audit", "/auth-activities", "/company-profile"]);
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading, theme, toggleTheme, logout } = useApp();
@@ -119,6 +122,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const roleColor = roleColors[user.role] ?? { tag: "blue", avatar: "#6366F1" };
 
   const filteredMenuItems = menuItems.filter((item) => {
+    // Accounting Room: only when the accounting.read permission is held (or ADMIN).
+    if (item.key === "/accounting") {
+      return user.role === "ADMIN" || user.permissions?.includes("accounting.read");
+    }
     if (user.role === "ADMIN" || user.role === "OFFICE") return true;
     if (item.children && item.children.length > 0) return false;
     return !ADMIN_ONLY_KEYS.has(item.key);

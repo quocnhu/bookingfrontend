@@ -1,42 +1,104 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Button,
+  Card,
+  Divider,
   Flex,
+  Input,
   InputNumber,
   Modal,
   Select,
   Spin,
+  Table,
   Typography,
   Upload,
+  App,
 } from "antd";
 import { message } from "@/lib/antd-message";
 import {
   DeleteOutlined,
   ExclamationCircleOutlined,
+  FileTextOutlined,
   PlusOutlined,
+  UndoOutlined,
   UploadOutlined,
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
+import TourTemplateModal from "./TourTemplateModal";
+import type { ColumnsType } from "antd/es/table";
 import type { BoardItem } from "./types";
 
 const { Text } = Typography;
 
-interface ServiceRow {
-  key: number;
-  categoryId?: string;
-  name: string;
+interface MoneyRow {
+  id: string;
   amount: number;
+  note?: string | null;
+  createdAt: string;
+  createdByName?: string | null;
+  reversesId?: string | null;
+  category?: { id: string; code: string; name: string; flowType: string } | null;
 }
 
-interface ServiceCategory {
+interface MoneyCategory {
   id: string;
-  name: string;
   code: string;
-  flowType: "COLLECT_MONEY" | "PAY_MONEY";
+  name: string;
+  flowType: string;
 }
+
+interface TourMoney {
+  rows: MoneyRow[];
+  categories: MoneyCategory[];
+  collected: number;
+  paid: number;
+  net: number;
+  flow: string;
+  entryCount: number;
+  locked: boolean;
+  lockedBy: string | null;
+  returnedForRecheck: boolean;
+}
+
+function TagBox({
+  label,
+  value,
+  tone,
+  bold,
+}: {
+  label: string;
+  value: number;
+  tone: string;
+  bold?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 8,
+        padding: "6px 12px",
+        minWidth: 120,
+      }}
+    >
+      <div style={{ fontSize: 11, color: "#6b7280" }}>{label}</div>
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: bold ? 700 : 600,
+          color: tone,
+        }}
+      >
+        {fmtVnd(value)} ₫
+      </div>
+    </div>
+  );
+}
+
+const fmtVnd = (n: number) =>
+  new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(Math.round(n));
 
 interface EvidenceRow {
   key: number;
@@ -49,9 +111,6 @@ interface EvidenceRow {
   uploadedByName?: string;
 }
 
-const fmt = (n: number) =>
-  `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-
 export default function ConfirmFinishedModal({
   assignment,
   open,
@@ -63,130 +122,65 @@ export default function ConfirmFinishedModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [bookingAmounts, setBookingAmounts] = useState<
-    Record<string, { collect: number; refund: number }>
-  >({});
-  const [services, setServices] = useState<ServiceRow[]>([]);
-  const [categories, setCategories] = useState<ServiceCategory[]>([]);
+  const { modal } = App.useApp();
   const [submitting, setSubmitting] = useState(false);
   const [evidenceFiles, setEvidenceFiles] = useState<EvidenceRow[]>([]);
-  const nextKey = useRef(0);
+  // ── Trip money sheet (preview before submitting) ──
+  const [showTemplate, setShowTemplate] = useState(false);
+  const [money, setMoney] = useState<TourMoney | null>(null);
+  const [moneyLoading, setMoneyLoading] = useState(false);
+  const [feeAmount, setFeeAmount] = useState<number | null>(null);
+  const [feeCategory, setFeeCategory] = useState<string | undefined>();
+  const [feeNote, setFeeNote] = useState("");
+  const [addingFee, setAddingFee] = useState(false);
+  const [tripNotes, setTripNotes] = useState("");
+  const [tourReport, setTourReport] = useState<{ notes?: string; moneyVerifiedAt?: string } | null>(null);
   const nextEvKey = useRef(0);
+  const pendingRef = useRef(0);
+  const successRef = useRef(0);
+  const failRef = useRef(0);
 
-  const bookings = assignment?.bookings ?? [];
-
-  useEffect(() => {
-    api
-      .get("/settlements/categories")
-      .then((r) => {
-        const list: ServiceCategory[] = Array.isArray(r.data) ? r.data : [];
-        setCategories(list.filter((c) => c.flowType === "PAY_MONEY"));
-      })
-      .catch(() => setCategories([]));
-  }, []);
+  const loadMoney = useCallback(async () => {
+    if (!assignment) return;
+    setMoneyLoading(true);
+    try {
+      const { data } = await api.get(`/assignments/${assignment.id}/money`);
+      setMoney(data as TourMoney);
+    } catch (e) {
+      message.error(getErrorMessage(e, "Could not load the money sheet"));
+    } finally {
+      setMoneyLoading(false);
+    }
+  }, [assignment]);
 
   useEffect(() => {
     if (open && assignment) {
-      const amounts: Record<string, { collect: number; refund: number }> = {};
-      for (const b of assignment.bookings ?? []) {
-        const plannedCollect = Number(b.collectAmount ?? 0);
-        const plannedRefund = Number(b.refundAmount ?? 0);
-        const settledCollect = (b.settlements ?? [])
-          .filter((s) => s.category?.flowType === "COLLECT_MONEY")
-          .reduce((x, s) => x + Number(s.amount ?? 0), 0);
-        const settledRefund = (b.settlements ?? [])
-          .filter((s) => s.category?.flowType === "PAY_MONEY")
-          .reduce((x, s) => x + Number(s.amount ?? 0), 0);
-        // Prefer the amounts recorded ahead of the tour (Dispatch Board),
-        // fall back to already-settled withdrawal/refund rows on re-finalize.
-        amounts[b.id] = {
-          collect: plannedCollect > 0 ? plannedCollect : settledCollect,
-          refund: plannedRefund > 0 ? plannedRefund : settledRefund,
-        };
-      }
-      setBookingAmounts(amounts);
-      setServices([]);
+      void loadMoney();
       setEvidenceFiles([]);
-      nextKey.current = 0;
       nextEvKey.current = 0;
       pendingRef.current = 0;
       successRef.current = 0;
       failRef.current = 0;
     }
-  }, [open, assignment]);
+  }, [open, assignment, loadMoney]);
 
-  const collected = useMemo(
-    () =>
-      Object.values(bookingAmounts).reduce(
-        (sum, v) => sum + Number(v.collect || 0),
-        0,
-      ),
-    [bookingAmounts],
-  );
-  const refunded = useMemo(
-    () =>
-      Object.values(bookingAmounts).reduce(
-        (sum, v) => sum + Number(v.refund || 0),
-        0,
-      ),
-    [bookingAmounts],
-  );
-  const servicesTotal = useMemo(
-    () => services.reduce((sum, s) => sum + Number(s.amount || 0), 0),
-    [services],
-  );
-  const net = collected - refunded - servicesTotal;
-  const flow = net >= 0 ? "COLLECT_MONEY" : "PAY_MONEY";
-
-  const setBooking = (
-    bookingId: string,
-    patch: Partial<{ collect: number; refund: number }>,
-  ) => {
-    setBookingAmounts((prev) => ({
-      ...prev,
-      [bookingId]: { ...(prev[bookingId] ?? { collect: 0, refund: 0 }), ...patch },
-    }));
-  };
-
-  const addService = () => {
-    setServices((prev) => [
-      ...prev,
-      { key: ++nextKey.current, name: "", amount: 0 },
-    ]);
-  };
-
-  const removeService = (key: number) => {
-    setServices((prev) => prev.filter((s) => s.key !== key));
-  };
-
-  const updateRow = (key: number, patch: Partial<ServiceRow>) => {
-    setServices((prev) =>
-      prev.map((s) => (s.key === key ? { ...s, ...patch } : s)),
-    );
-  };
-
-  const onPickCategory = (key: number, categoryId?: string) => {
-    const cat = categories.find((c) => c.id === categoryId);
-    updateRow(key, { categoryId, name: cat?.name ?? "" });
-  };
+  useEffect(() => {
+    if (showTemplate && assignment) {
+      api.get(`/assignments/${assignment.id}/tour-report`)
+        .then((r) => setTourReport(r.data ?? null))
+        .catch(() => setTourReport(null));
+    } else {
+      setTourReport(null);
+    }
+  }, [showTemplate, assignment]);
 
   const submit = async () => {
     if (!assignment) return;
     setSubmitting(true);
     try {
-      await api.put(`/assignments/${assignment.id}/finalize`, {
-        collectedAmount: collected,
-        refundedAmount: refunded,
-        services: services.map((s) => ({
-          categoryId: s.categoryId || undefined,
-          name: s.name,
-          amount: s.amount,
-        })),
-        bookingSettlements: bookings.map((b) => ({
-          bookingId: b.id,
-          collect: bookingAmounts[b.id]?.collect ?? 0,
-          refund: bookingAmounts[b.id]?.refund ?? 0,
-        })),
+      // Submit tour report with notes and evidence images
+      await api.post(`/assignments/${assignment.id}/tour-report`, {
+        notes: tripNotes,
         evidenceImages: evidenceFiles
           .filter((f) => !f.uploading && !f.error && f.url)
           .map((f) => ({
@@ -195,21 +189,126 @@ export default function ConfirmFinishedModal({
             ext: f.ext,
           })),
       });
-      message.success(
-        `Tour "${assignment.tourName ?? assignment.code}" settled`,
-      );
+      message.success(`Tour report submitted for "${assignment.tourName ?? assignment.code}" — awaiting accounting verification`);
       onClose();
       onDone();
     } catch (e) {
-      message.error(getErrorMessage(e, "Failed to settle tour"));
+      message.error(getErrorMessage(e, "Failed to submit tour report"));
     } finally {
       setSubmitting(false);
     }
   };
 
-  const pendingRef = useRef(0);
-  const successRef = useRef(0);
-  const failRef = useRef(0);
+  const addFee = async () => {
+    if (!assignment) return;
+    if (!feeAmount || feeAmount <= 0) {
+      message.warning("Enter an amount greater than 0");
+      return;
+    }
+    if (!feeCategory) {
+      message.warning("Choose a category");
+      return;
+    }
+    setAddingFee(true);
+    try {
+      await api.post(`/assignments/${assignment.id}/money`, {
+        amount: feeAmount,
+        categoryId: feeCategory,
+        note: feeNote.trim() || undefined,
+      });
+      setFeeAmount(null);
+      setFeeNote("");
+      await loadMoney();
+    } catch (e) {
+      message.error(getErrorMessage(e, "Could not add the entry"));
+    } finally {
+      setAddingFee(false);
+    }
+  };
+
+  const reverseRow = (r: MoneyRow) => {
+    let reason = "";
+    modal.confirm({
+      title: "Reverse this entry?",
+      okText: "Reverse",
+      okButtonProps: { danger: true },
+      cancelText: "Cancel",
+      content: (
+        <Input.TextArea
+          rows={2}
+          placeholder="Reason for reversal"
+          onChange={(e) => {
+            reason = e.target.value;
+          }}
+        />
+      ),
+      onOk: async () => {
+        try {
+          if (!assignment) return;
+          await api.post(
+            `/assignments/${assignment.id}/money/${r.id}/reverse`,
+            { note: reason.trim() || undefined },
+          );
+          message.success("Entry reversed");
+          await loadMoney();
+        } catch (e) {
+          message.error(getErrorMessage(e, "Could not reverse the entry"));
+          throw e;
+        }
+      },
+    });
+  };
+
+  const moneyColumns: ColumnsType<MoneyRow> = [
+    {
+      title: "Category",
+      key: "cat",
+      render: (_, r) => (
+        <Flex vertical gap={0}>
+          <Text style={{ fontSize: 12 }}>{r.category?.name ?? "—"}</Text>
+          {r.note ? (
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {r.note}
+            </Text>
+          ) : null}
+        </Flex>
+      ),
+    },
+    {
+      title: "Amount",
+      dataIndex: "amount",
+      key: "amount",
+      align: "right",
+      width: 130,
+      render: (v: number, r) => (
+        <Text
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            color: r.reversesId ? "#999" : r.category?.flowType === "COLLECT_MONEY" ? "#0f766e" : "#b91c1c",
+            textDecoration: r.reversesId ? "line-through" : undefined,
+          }}
+        >
+          {fmtVnd(v)}
+        </Text>
+      ),
+    },
+    {
+      title: "",
+      key: "act",
+      width: 44,
+      render: (_, r) =>
+        r.reversesId ? null : (
+          <Button
+            size="small"
+            type="text"
+            danger
+            icon={<UndoOutlined />}
+            onClick={() => reverseRow(r)}
+          />
+        ),
+    },
+  ];
 
   const uploadEvidence = (file: File) => {
     if (!assignment) return false;
@@ -227,21 +326,21 @@ export default function ConfirmFinishedModal({
         const { data } = await api.post(
           `/assignments/${assignment.id}/tour-report/images`,
           formData,
-          { headers: { "Content-Type": "multipart/form-data" } }
+          { headers: { "Content-Type": "multipart/form-data" } },
         );
         successRef.current += 1;
         setEvidenceFiles((prev) =>
           prev.map((item) =>
-            item.key === key ? { ...data, key, uploading: false } : item
-          )
+            item.key === key ? { ...data, key, uploading: false } : item,
+          ),
         );
       } catch (e) {
         failRef.current += 1;
         console.error(e);
         setEvidenceFiles((prev) =>
           prev.map((item) =>
-            item.key === key ? { ...item, uploading: false, error: true } : item
-          )
+            item.key === key ? { ...item, uploading: false, error: true } : item,
+          ),
         );
       } finally {
         pendingRef.current -= 1;
@@ -261,7 +360,7 @@ export default function ConfirmFinishedModal({
       }
     })();
 
-    return false; // prevent antd default upload (uploads handled above)
+    return false;
   };
 
   return (
@@ -270,137 +369,135 @@ export default function ConfirmFinishedModal({
       open={open}
       onCancel={onClose}
       onOk={submit}
-      okText="Confirm & settle"
+      okText="Confirm finished"
       cancelText="Cancel"
       confirmLoading={submitting}
-      width={560}
+      width={760}
       destroyOnClose
     >
       <Flex vertical gap={16} style={{ paddingTop: 8 }}>
-        <Flex vertical gap={6}>
-          <Text strong>Collect / refund per booking</Text>
-          {bookings.length === 0 ? (
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              No bookings on this bus.
-            </Text>
+        {/* ── Print template + money sheet: preview before submitting ── */}
+        <Card
+          size="small"
+          title="Trip money sheet"
+          extra={
+            <Button
+              size="small"
+              icon={<FileTextOutlined />}
+              onClick={() => setShowTemplate(true)}
+            >
+              View print template
+            </Button>
+          }
+        >
+          {moneyLoading ? (
+            <Flex justify="center" style={{ padding: 12 }}>
+              <Spin size="small" />
+            </Flex>
+          ) : !money ? null : money.locked ? (
+            <Alert
+              type="success"
+              showIcon
+              message={`Money locked${money.lockedBy ? ` by ${money.lockedBy}` : ""}`}
+            />
           ) : (
-            <Flex vertical gap={6}>
-              <Flex gap={8} align="center" style={{ paddingInline: 4 }}>
-                <Text
-                  type="secondary"
-                  style={{ flex: 1, fontSize: 11 }}
-                >
-                  Booking
-                </Text>
-                <Text type="secondary" style={{ width: 110, fontSize: 11 }}>
-                  Collect $
-                </Text>
-                <Text type="secondary" style={{ width: 110, fontSize: 11 }}>
-                  Refund $
-                </Text>
+            <>
+              <Flex gap={8} wrap style={{ marginBottom: 12 }}>
+                <TagBox label="Collect" value={money.collected} tone="#0f766e" />
+                <TagBox label="Company expense" value={money.paid} tone="#b91c1c" />
+                <TagBox label="Remaining" value={money.net} tone="#2563eb" bold />
               </Flex>
-              {bookings.map((b) => (
-                <Flex
-                  key={b.id}
-                  gap={8}
-                  align="center"
-                  style={{
-                    border: "1px solid #f0f0f0",
-                    borderRadius: 6,
-                    padding: "4px 6px",
-                  }}
-                >
-                  <Flex vertical style={{ flex: 1, minWidth: 0 }}>
-                    <Text ellipsis style={{ fontSize: 12 }}>
-                      {b.customerName || "—"}
-                    </Text>
-                    <Text type="secondary" style={{ fontSize: 10 }}>
-                      {b.bookingRef || "—"} · {b.totalPax ?? 0} pax
-                    </Text>
-                    {b.notes && (
-                      <Text
-                        type="secondary"
-                        style={{
-                          fontSize: 10,
-                          color: "#faad14",
-                          lineHeight: 1.3,
-                          whiteSpace: "pre-wrap",
-                          wordBreak: "break-word",
-                        }}
-                      >
-                        ✎ {b.notes}
-                      </Text>
-                    )}
-                  </Flex>
-                  <InputNumber
-                    min={0}
-                    precision={0}
-                    value={bookingAmounts[b.id]?.collect ?? 0}
-                    onChange={(v) => setBooking(b.id, { collect: Number(v ?? 0) })}
-                    style={{ width: 110 }}
-                    addonBefore="$"
-                  />
-                  <InputNumber
-                    min={0}
-                    precision={0}
-                    value={bookingAmounts[b.id]?.refund ?? 0}
-                    onChange={(v) => setBooking(b.id, { refund: Number(v ?? 0) })}
-                    style={{ width: 110 }}
-                    addonBefore="$"
+
+              {money.entryCount === 0 ? (
+                <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 8 }}>
+                  No entries yet. Add what you collected or spent on this trip.
+                </Text>
+              ) : (
+                <Table
+                  size="small"
+                  rowKey="id"
+                  pagination={false}
+                  columns={moneyColumns}
+                  dataSource={money.rows}
+                  style={{ marginBottom: 12 }}
+                />
+              )}
+
+              {money.net !== 0 ? (
+                <Alert
+                  type={money.net > 0 ? "warning" : "info"}
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message={
+                    money.net > 0
+                      ? `You owe the company ${fmtVnd(money.net)} ₫`
+                      : `The company owes you ${fmtVnd(-money.net)} ₫`
+                  }
+                  description="This entry will be re-checked by Accounting Room when you submit your report."
+                />
+              ) : null}
+
+              <Flex gap={8} wrap align="flex-end">
+                <Flex vertical gap={4}>
+                  <Text type="secondary" style={{ fontSize: 11 }}>Category</Text>
+                  <Select
+                    style={{ width: 190 }}
+                    value={feeCategory}
+                    onChange={setFeeCategory}
+                    placeholder="Choose a category"
+                    options={(money.categories ?? []).map((c) => ({
+                      value: c.id,
+                      label: `${c.name} (${c.flowType === "COLLECT_MONEY" ? "Collect" : "Expense"})`,
+                    }))}
                   />
                 </Flex>
-              ))}
-            </Flex>
-          )}
-        </Flex>
-
-        <Flex vertical gap={8}>
-          <Flex justify="space-between" align="center">
-            <Text strong>Operator services (tour guide paid out)</Text>
-            <Button size="small" icon={<PlusOutlined />} onClick={addService}>
-              Add service
-            </Button>
-          </Flex>
-          {services.length === 0 ? (
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              No operator services deducted.
-            </Text>
-          ) : (
-            services.map((s) => (
-              <Flex key={s.key} gap={8} align="center">
-                <Select
-                  value={s.categoryId}
-                  placeholder="Select service"
-                  options={categories.map((c) => ({
-                    value: c.id,
-                    label: c.name,
-                  }))}
-                  onChange={(v) => onPickCategory(s.key, v)}
-                  style={{ flex: 1 }}
-                />
-                <InputNumber
-                  min={0}
-                  precision={0}
-                  value={s.amount}
-                  placeholder="Amount"
-                  onChange={(v) =>
-                    updateRow(s.key, { amount: Number(v ?? 0) })
-                  }
-                  addonBefore="$"
-                    style={{ width: 160 }}
-                />
+                <Flex vertical gap={4}>
+                  <Text type="secondary" style={{ fontSize: 11 }}>Amount</Text>
+                  <InputNumber
+                    style={{ width: 140 }}
+                    min={0}
+                    value={feeAmount}
+                    onChange={setFeeAmount}
+                    placeholder="₫"
+                  />
+                </Flex>
+                <Flex vertical gap={4} style={{ flex: 1, minWidth: 160 }}>
+                  <Text type="secondary" style={{ fontSize: 11 }}>Note</Text>
+                  <Input
+                    value={feeNote}
+                    onChange={(e) => setFeeNote(e.target.value)}
+                    placeholder="Note"
+                  />
+                </Flex>
                 <Button
-                  type="text"
-                  danger
-                  icon={<DeleteOutlined />}
-                  onClick={() => removeService(s.key)}
-                />
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  loading={addingFee}
+                  onClick={addFee}
+                >
+                  Add
+                </Button>
               </Flex>
-            ))
+            </>
           )}
-        </Flex>
+        </Card>
+
+        <Divider style={{ margin: 0 }} />
 
         <Flex vertical gap={8}>
+          <Flex vertical gap={4} style={{ width: "100%" }}>
+            <Text strong>Trip notes (will appear on the manifest)</Text>
+            <Input.TextArea
+              rows={3}
+              placeholder="Enter any notes for this trip (pickup details, special requests, etc.)"
+              value={tripNotes}
+              onChange={(e) => setTripNotes(e.target.value)}
+              style={{ width: "100%" }}
+            />
+          </Flex>
+
+          <Divider style={{ margin: 0 }} />
+
           <Flex justify="space-between" align="center">
             <Text strong>Evidence (pictures, videos, files)</Text>
             <Upload
@@ -482,7 +579,7 @@ export default function ConfirmFinishedModal({
                     style={{ position: "absolute", top: 0, right: 0 }}
                     onClick={() =>
                       setEvidenceFiles((prev) =>
-                        prev.filter((x) => x.key !== file.key)
+                        prev.filter((x) => x.key !== file.key),
                       )
                     }
                   />
@@ -496,42 +593,17 @@ export default function ConfirmFinishedModal({
           )}
         </Flex>
 
-        <Flex vertical gap={4}>
-          <Flex justify="space-between">
-            <Text type="secondary">Collected</Text>
-            <Text>{fmt(collected)}</Text>
-          </Flex>
-          <Flex justify="space-between">
-            <Text type="secondary">Refunded</Text>
-            <Text type="danger">−{fmt(refunded)}</Text>
-          </Flex>
-          <Flex justify="space-between">
-            <Text type="secondary">Services total</Text>
-            <Text type="danger">−{fmt(servicesTotal)}</Text>
-          </Flex>
-          <Flex justify="space-between">
-            <Text strong>Net</Text>
-            <Text strong>{fmt(net)}</Text>
-          </Flex>
-        </Flex>
-
-        <Alert
-          type={net === 0 ? "info" : flow === "COLLECT_MONEY" ? "warning" : "success"}
-          showIcon
-          message={
-            net === 0
-              ? "Settlement settled — no balance between tour guide and company"
-              : flow === "COLLECT_MONEY"
-                ? `Tour guide pays company ${fmt(Math.abs(net))}`
-                : `Company returns ${fmt(Math.abs(net))} to tour guide`
-          }
-          description={
-            flow === "PAY_MONEY"
-              ? "Collected + refunds + services leave a negative balance — the difference is returned to the tour guide."
-              : "Recorded as a collection from the tour guide."
-          }
-        />
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          This submits the tour report for accounting verification. The trip
+          will be completed after Accounting verifies and locks the money.
+        </Text>
       </Flex>
+
+      <TourTemplateModal
+        assignment={assignment}
+        open={showTemplate}
+        onClose={() => setShowTemplate(false)}
+      />
     </Modal>
   );
 }

@@ -11,18 +11,27 @@ export function useSocket() {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      console.log('[useSocket] No user, skipping connection');
+      return;
+    }
 
     if (!socket) {
-      socket = io(
-        typeof window !== "undefined"
-          ? `${window.location.protocol}//${window.location.hostname}:4000/ws`
-          : "http://localhost:4000/ws",
-        { auth: { userId: user.id }, transports: ["websocket", "polling"] },
-      );
+      const wsUrl = `${window.location.protocol}//${window.location.hostname}:4000/ws`;
+      console.log('[useSocket] Connecting to:', wsUrl);
+      socket = io(wsUrl, { auth: { userId: user.id }, transports: ["websocket", "polling"] });
 
-      socket.on("connect", () => setConnected(true));
-      socket.on("disconnect", () => setConnected(false));
+      socket.on("connect", () => {
+        console.log('[useSocket] Connected:', socket?.id);
+        setConnected(true);
+      });
+      socket.on("disconnect", (reason) => {
+        console.log('[useSocket] Disconnected:', reason);
+        setConnected(false);
+      });
+      socket.on("connect_error", (err) => {
+        console.error('[useSocket] Connection error:', err);
+      });
       socket.on("pong", () => {});
     }
 

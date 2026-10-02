@@ -105,7 +105,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       await api.post('/auth/logout');
     } catch {
-      // Cookie đã hết hạn — vẫn đăng xuất ở client.
+      // Cookie has already expired — still log out on the client.
     }
     setUser(null);
     router.push('/login');

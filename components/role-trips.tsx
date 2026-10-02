@@ -31,6 +31,9 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
+import GuideBookingsPanel, {
+  type GuideBooking,
+} from "@/components/tour-guide/guide-bookings-panel";
 import dayjs from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
 import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
@@ -75,7 +78,7 @@ interface Trip {
   vehicle?: { plateNumber: string; capacity?: number | null } | null;
   driver?: { id: string; name: string; email?: string } | null;
   guide?: { id: string; name: string; email?: string } | null;
-  bookings: any[];
+  bookings: GuideBooking[];
   itinerary?: any[];
   totalPax?: number;
   pickups?: Array<{
@@ -198,6 +201,9 @@ export default function RoleTripsPage({
 
   const renderTripCard = (a: Trip) => {
     const route = directionsUrl(a.pickups ?? []);
+    /** The booking's note, looked up by bookingRef — pickups is the shortened version. */
+    const noteOf = (ref?: string) =>
+      a.bookings?.find((b) => b.bookingRef === ref)?.notes?.trim() || null;
     return (
       <Card
         key={a.id}
@@ -355,9 +361,38 @@ export default function RoleTripsPage({
                           Ref: {p.bookingRef}
                         </Typography.Text>
                       )}
+                      {noteOf(p.bookingRef) && (
+                        <Typography.Text
+                          style={{ fontSize: 11, color: "#faad14", fontWeight: 500 }}
+                        >
+                          <FileTextOutlined style={{ marginRight: 4 }} />
+                          {noteOf(p.bookingRef)}
+                        </Typography.Text>
+                      )}
                     </Flex>
                   </div>
                 )),
+              },
+            ]}
+          />
+        )}
+
+        {(mode === "guide" || mode === "driver") && (a.bookings?.length ?? 0) > 0 && (
+          <Collapse
+            size="small"
+            style={{ marginTop: 8 }}
+            items={[
+              {
+                key: "bookings",
+                label: `Booking & Money (${a.bookings?.length ?? 0})`,
+                children: (
+                  <GuideBookingsPanel
+                    assignmentId={a.id}
+                    bookings={a.bookings ?? []}
+                    readOnlyNotes={mode === "driver"}
+                    onBookingsChanged={loadAssignments}
+                  />
+                ),
               },
             ]}
           />

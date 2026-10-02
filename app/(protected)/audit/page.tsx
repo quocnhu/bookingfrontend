@@ -20,7 +20,7 @@ interface AuditLog {
   createdAt: string;
 }
 
-const ENTITY_TYPES = ["Booking", "Assignment", "Settlement", "Tour", "User", "Role"];
+const ENTITY_TYPES = ["Booking", "Assignment", "Tour", "User", "Role"];
 
 export default function AuditPage() {
   const { hasPermission } = useApp();

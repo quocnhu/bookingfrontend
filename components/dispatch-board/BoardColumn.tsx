@@ -19,6 +19,7 @@ export default function BoardColumn({
   onMoveBooking,
   onTemplate,
   onVerify,
+  onReject,
   onAdditions,
   crew,
   onCrewChange,
@@ -40,6 +41,7 @@ export default function BoardColumn({
   ) => void;
   onTemplate: (assignment: BoardItem) => void;
   onVerify?: (assignment: BoardItem) => void;
+  onReject?: (assignment: BoardItem) => void;
   onAdditions?: (assignment: BoardItem) => void;
   crew?: BoardCrew;
   onCrewChange?: (
@@ -84,7 +86,7 @@ export default function BoardColumn({
       </div>
       {items.length ? (
         items.map((a, idx) => (
-          <BoardCard
+<BoardCard
             key={a.id}
             assignment={a}
             index={idx}
@@ -97,9 +99,10 @@ export default function BoardColumn({
             onConfirm={onConfirm}
             onDispatch={onDispatch}
             onRecall={onRecall}
-onMoveBooking={onMoveBooking}
-              onTemplate={onTemplate}
-              onVerify={onVerify}
+            onMoveBooking={onMoveBooking}
+            onTemplate={onTemplate}
+            onVerify={onVerify}
+            onReject={onReject}
               onAdditions={onAdditions}
               crew={crew}
               onCrewChange={onCrewChange}

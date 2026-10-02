@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import {
+  Alert,
+  App,
   Button,
   Descriptions,
   Flex,
@@ -18,10 +20,12 @@ import {
   CloseCircleOutlined,
   FileDoneOutlined,
   PictureOutlined,
+  WarningOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";
 import type { BoardItem } from "./types";
+import TourTemplateModal from "./TourTemplateModal";
 
 const { Text } = Typography;
 
@@ -36,44 +40,118 @@ export default function VerifyReportModal({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const { modal } = App.useApp();
   const [verificationNotes, setVerificationNotes] = useState("");
   const [submitting, setSubmitting] = useState<"VERIFIED" | "REJECTED" | null>(
     null,
   );
+  const [showTemplate, setShowTemplate] = useState(false);
+  const [tourReport, setTourReport] = useState<{ notes?: string; moneyVerifiedAt?: string } | null>(null);
 
   useEffect(() => {
     if (open) {
       setVerificationNotes(a?.tourReport?.verificationNotes ?? "");
+      setShowTemplate(false);
     }
   }, [open, a]);
+
+  useEffect(() => {
+    if (showTemplate && a) {
+      api.get(`/assignments/${a.id}/tour-report`)
+        .then((r) => setTourReport(r.data ?? null))
+        .catch(() => setTourReport(null));
+    } else {
+      setTourReport(null);
+    }
+  }, [showTemplate, a]);
 
   if (!a) return null;
 
   const report = a.tourReport;
   const images = report?.evidenceImages ?? [];
 
-  const submit = async (status: "VERIFIED" | "REJECTED") => {
-    setSubmitting(status);
-    try {
-      await api.put(`/assignments/${a.id}/tour-report/verify`, {
-        status,
-        verificationNotes:
-          status === "REJECTED" && !verificationNotes.trim()
-            ? "Please add a note explaining the rejection"
-            : verificationNotes,
-      });
-      message.success(
-        status === "VERIFIED"
-          ? `Report verified — tour "${a.tourName ?? a.code}" completed`
-          : `Report rejected — tour guide can resubmit`,
-      );
-      onClose();
-      onDone();
-    } catch (e) {
-      message.error(getErrorMessage(e, "Failed to verify report"));
-    } finally {
-      setSubmitting(null);
-    }
+  const verify = () => {
+    modal.confirm({
+      title: "Verify tour report?",
+      icon: <WarningOutlined />,
+      content: (
+        <>
+          <p>This will mark the tour report as <b>VERIFIED</b>.</p>
+          <Input.TextArea
+            rows={3}
+            placeholder="Verification note (optional)"
+            onChange={(e) => setVerificationNotes(e.target.value)}
+          />
+        </>
+      ),
+      okText: "Verify",
+      okType: "primary",
+      cancelText: "Cancel",
+      onOk: async () => {
+        setSubmitting("VERIFIED");
+        try {
+          await api.put(`/assignments/${a.id}/tour-report/verify`, {
+            status: "VERIFIED",
+            verificationNotes: verificationNotes.trim() || undefined,
+          });
+          message.success(`Report verified — tour "${a.tourName ?? a.code}" completed`);
+          onClose();
+          onDone();
+        } catch (e) {
+          message.error(getErrorMessage(e, "Failed to verify report"));
+          throw e;
+        } finally {
+          setSubmitting(null);
+        }
+      },
+    });
+  };
+
+  const reject = () => {
+    let reason = "";
+    modal.confirm({
+      title: "Return tour report?",
+      icon: <CloseCircleOutlined />,
+      okText: "Return",
+      okButtonProps: { danger: true },
+      cancelText: "Cancel",
+      content: (
+        <>
+          <p>
+            The tour report will be returned to the tour guide for re-checking.
+            The guide will be notified and can resubmit after making corrections.
+          </p>
+          <Input.TextArea
+            rows={3}
+            placeholder="Return reason (required) — the guide will see this"
+            onChange={(e) => {
+              reason = e.target.value;
+            }}
+          />
+        </>
+      ),
+      onOk: async () => {
+        if (!reason.trim()) {
+          message.warning("A return reason is required");
+          throw new Error("reason required");
+        }
+        setSubmitting("REJECTED");
+        try {
+          await api.put(`/assignments/${a.id}/tour-report/verify`, {
+            status: "REJECTED",
+            verificationNotes: reason.trim(),
+          });
+          message.success("Returned — the guide has been notified to resubmit");
+          onClose();
+          onDone();
+        } catch (e) {
+          message.error(getErrorMessage(e, "Failed to return report"));
+          throw e;
+        } finally {
+          setSubmitting(null);
+        }
+      },
+    });
   };
 
   return (
@@ -99,18 +177,18 @@ export default function VerifyReportModal({
               danger
               icon={<CloseCircleOutlined />}
               loading={submitting === "REJECTED"}
-              onClick={() => submit("REJECTED")}
+              onClick={reject}
             >
-              Reject
+              Return with message
             </Button>
             <Button
               type="primary"
               icon={<CheckCircleOutlined />}
               loading={submitting === "VERIFIED"}
               style={{ background: "#52c41a" }}
-              onClick={() => submit("VERIFIED")}
+              onClick={verify}
             >
-              Approve
+              Verify
             </Button>
           </Space>
         </Flex>
@@ -160,67 +238,56 @@ export default function VerifyReportModal({
         </Descriptions>
 
         {report && (
-          <Descriptions column={1} size="small" bordered>
-            <Text strong style={{ display: "block", marginBottom: 8 }}>
-              Report numbers
-            </Text>
-            <Descriptions.Item label="Actual pax">
-              {report.actualPax ?? "—"}
-            </Descriptions.Item>
-            <Descriptions.Item label="Distance (km)">
-              {report.distanceKm ?? "—"}
-            </Descriptions.Item>
-            <Descriptions.Item label="Fuel cost">
-              {report.fuelCost ?? "—"}
-            </Descriptions.Item>
-            <Descriptions.Item label="Toll & parking">
-              {report.tollParking ?? "—"}
-            </Descriptions.Item>
+          <Flex vertical gap={12}>
+            <Flex justify="space-between" align="center">
+              <Text strong>Tour Manifest (Print Template)</Text>
+              <Button size="small" icon={<PictureOutlined />} onClick={() => setShowTemplate(!showTemplate)}>
+                {showTemplate ? "Hide Template" : "Show Template"}
+              </Button>
+            </Flex>
+            {showTemplate && (
+              <TourTemplateModal
+                assignment={a}
+                open={true}
+                onClose={() => setShowTemplate(false)}
+              />
+            )}
             {report.pickupNotes && (
-              <Descriptions.Item label="Pickup notes">
-                {report.pickupNotes}
-              </Descriptions.Item>
+              <Descriptions column={1} size="small" bordered>
+                <Descriptions.Item label="Pickup notes">
+                  {report.pickupNotes}
+                </Descriptions.Item>
+              </Descriptions>
             )}
-            {report.notes && (
-              <Descriptions.Item label="Notes">
-                {report.notes}
-              </Descriptions.Item>
+            {images.length === 0 ? (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                No evidence pictures uploaded.
+              </Text>
+            ) : (
+              <div>
+                <Text
+                  strong
+                  style={{ fontSize: 12, display: "block", marginBottom: 8 }}
+                >
+                  <PictureOutlined /> Evidence pictures ({images.length})
+                </Text>
+                <Image.PreviewGroup>
+                  <Flex gap={8} wrap>
+                    {images.map((img, i) => (
+                      <Image
+                        key={i}
+                        src={img.url}
+                        alt={img.name ?? "evidence"}
+                        width={96}
+                        height={96}
+                        style={{ objectFit: "cover", borderRadius: 8 }}
+                      />
+                    ))}
+                  </Flex>
+                </Image.PreviewGroup>
+              </div>
             )}
-            {report.verifiedByName && (
-              <Descriptions.Item label="Verified by">
-                {report.verifiedByName}
-              </Descriptions.Item>
-            )}
-          </Descriptions>
-        )}
-
-        {images.length === 0 ? (
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            No evidence pictures uploaded.
-          </Text>
-        ) : (
-          <div>
-            <Text
-              strong
-              style={{ fontSize: 12, display: "block", marginBottom: 8 }}
-            >
-              <PictureOutlined /> Evidence pictures ({images.length})
-            </Text>
-            <Image.PreviewGroup>
-              <Flex gap={8} wrap>
-                {images.map((img, i) => (
-                  <Image
-                    key={i}
-                    src={img.url}
-                    alt={img.name ?? "evidence"}
-                    width={96}
-                    height={96}
-                    style={{ objectFit: "cover", borderRadius: 8 }}
-                  />
-                ))}
-              </Flex>
-            </Image.PreviewGroup>
-          </div>
+          </Flex>
         )}
 
         <Flex vertical gap={4}>

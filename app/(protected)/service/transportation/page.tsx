@@ -734,8 +734,8 @@ export default function TransportationPage() {
       await api.post("/assignments", {
         code: `${combo.tourName} · ${start.format("DD MMM")}`,
         tourName: combo.tourName,
-        startDate: start.toISOString(),
-        endDate: end.toISOString(),
+        startDate: start.format("YYYY-MM-DD"),
+        endDate: end.format("YYYY-MM-DD"),
         vehicleId: combo.vehicleId,
         providerId: combo.providerId,
         driverId: atDriver,

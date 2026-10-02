@@ -19,7 +19,6 @@ import {
 import {
   CalendarOutlined,
   CarOutlined,
-  DollarOutlined,
   FileTextOutlined,
   LockOutlined,
   LoginOutlined,
@@ -29,10 +28,6 @@ import {
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { centerColumns, indexColumn } from "@/lib/table";
-
-function formatUSD(value: number | undefined | null) {
-  return `$${new Intl.NumberFormat("en-US").format(Number(value ?? 0))}`;
-}
 
 export default function DashboardPage() {
   const { hasPermission } = useApp();
@@ -127,14 +122,6 @@ export default function DashboardPage() {
       ],
     },
     {
-      title: "Financial",
-      color: token.colorWarning,
-      icon: <DollarOutlined />,
-      items: [
-        { title: "Pending Settlements", value: stats?.pendingSettlements ?? 0, icon: <DollarOutlined /> },
-      ],
-    },
-    {
       title: "Auth / In-Out",
       color: token.colorError,
       icon: <LoginOutlined />,
@@ -145,7 +132,6 @@ export default function DashboardPage() {
     },
   ];
 
-  const revenueData = charts?.revenueByBucket ?? [];
   const bookingsData = charts?.bookingsByBucket ?? [];
   const loginsData = charts?.loginsByBucket ?? [];
 
@@ -209,13 +195,8 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <Card title="Revenue & Payments" variant="borderless" style={{ marginTop: 16 }}>
-        <Flex align="flex-end" justify="space-between" wrap gap={16} style={{ marginBottom: 16 }}>
-          <Flex wrap gap={32}>
-            <Statistic title="Revenue Today" value={formatUSD(stats?.revenueToday)} />
-            <Statistic title="Revenue This Week" value={formatUSD(stats?.revenueWeek)} />
-            <Statistic title="Revenue This Month" value={formatUSD(stats?.revenueMonth)} />
-          </Flex>
+      <Card title="Activity" variant="borderless" style={{ marginTop: 16 }}>
+        <Flex align="flex-end" justify="flex-end" wrap gap={16} style={{ marginBottom: 16 }}>
           <Segmented
             value={range}
             onChange={(v) => setRange(v as any)}
@@ -227,19 +208,6 @@ export default function DashboardPage() {
           />
         </Flex>
         <Row gutter={[16, 16]}>
-          <Col xs={24} lg={14}>
-            <Typography.Text strong>Revenue by Time</Typography.Text>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={revenueData}>
-                <XAxis dataKey="label" stroke={token.colorTextSecondary} tick={{ fill: token.colorTextSecondary }} />
-                <YAxis stroke={token.colorTextSecondary} tick={{ fill: token.colorTextSecondary }} />
-                <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: token.colorText }} itemStyle={{ color: token.colorText }} />
-                <Legend />
-                <Bar dataKey="revenue" name="Revenue" fill={token.colorPrimary} radius={[6, 6, 0, 0]} />
-                <Bar dataKey="collected" name="Collected" fill={token.colorInfo} radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </Col>
           <Col xs={24} lg={10}>
             <Row gutter={[16, 16]}>
               <Col xs={24} sm={12} lg={12}>
