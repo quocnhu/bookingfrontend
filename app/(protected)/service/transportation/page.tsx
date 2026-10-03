@@ -1036,7 +1036,7 @@ export default function TransportationPage() {
       onFilter: (v: any, r: VehicleManageRow) => (r.vehicle.brand ?? "").toLowerCase().includes(String(v).toLowerCase()),
     },
     {
-      title: "",
+      title: centerTitle("Actions"),
       key: "actions",
       width: 110,
       align: "center" as const,
@@ -1135,15 +1135,41 @@ export default function TransportationPage() {
       width: 200,
       render: (_: any, r: DriverRelationRow) => {
         const tours = driverTours[r.driver.id] ?? [];
-        const onLeave = todayLeaves[r.driver.id];
+        const leaves = driverLeaves[r.driver.id] ?? [];
+        const today = dayjs().startOf("day");
+        const overlaps = (ls: string, le: string, ts: string, te: string) =>
+          dayjs(ls).startOf("day").valueOf() <= dayjs(te).startOf("day").valueOf() &&
+          dayjs(le).startOf("day").valueOf() >= dayjs(ts).startOf("day").valueOf();
+        // Red Off when the leave covers today OR clashes with an upcoming tour.
+        const conflict = leaves.find(
+          (l) =>
+            today.valueOf() >= dayjs(l.startDate).startOf("day").valueOf() &&
+            today.valueOf() <= dayjs(l.endDate).startOf("day").valueOf() ||
+            tours.some((t) => overlaps(l.startDate, l.endDate, t.startDate, t.endDate)),
+        );
+        const upcomingCount = conflict ? 0 : leaves.length;
         return (
           <Space size={6} wrap>
-            {onLeave && (
+            {conflict && (
               <Tooltip
-                title={`On leave: ${dayjs(onLeave.startDate).format("DD MMM")} → ${dayjs(onLeave.endDate).format("DD MMM")} (${onLeave.status})`}
+                title={`Off (${conflict.status}): ${dayjs(conflict.startDate).format("DD MMM")} → ${dayjs(conflict.endDate).format("DD MMM")} — clashes with assigned tour/duty`}
               >
-                <Tag color="volcano" style={{ marginInlineEnd: 0 }}>
+                <Tag color="red" style={{ marginInlineEnd: 0 }}>
                   Off
+                </Tag>
+              </Tooltip>
+            )}
+            {!conflict && upcomingCount > 0 && (
+              <Tooltip
+                title={leaves
+                  .map(
+                    (l) =>
+                      `${dayjs(l.startDate).format("DD MMM")} → ${dayjs(l.endDate).format("DD MMM")} (${l.status})`,
+                  )
+                  .join("; ")}
+              >
+                <Tag style={{ marginInlineEnd: 0 }}>
+                  Off ×{upcomingCount}
                 </Tag>
               </Tooltip>
             )}
@@ -1195,7 +1221,7 @@ export default function TransportationPage() {
     ...(canDriverUpdate || canUnassignDriver
       ? [
           {
-            title: "",
+            title: centerTitle("Actions"),
             key: "actions",
             width: 110,
             align: "center" as const,
@@ -1248,7 +1274,7 @@ export default function TransportationPage() {
     ...(canVehicleUpdate || canVehicleDelete
       ? [
           {
-            title: "",
+            title: centerTitle("Actions"),
             key: "actions",
             width: 110,
             align: "center" as const,
@@ -1307,7 +1333,7 @@ export default function TransportationPage() {
     ...(canUnassignDriver
       ? [
           {
-            title: "",
+            title: centerTitle("Actions"),
             key: "actions",
             width: 90,
             align: "center" as const,
@@ -1672,7 +1698,7 @@ export default function TransportationPage() {
     ...(canDelete
       ? [
           {
-            title: "",
+            title: centerTitle("Actions"),
             key: "del",
             width: 56,
             align: "center" as const,

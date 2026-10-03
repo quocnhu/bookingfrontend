@@ -53,6 +53,7 @@ interface AvailAssignment {
   status?: string;
   startDate: string;
   endDate: string;
+  plateNumber?: string | null;
 }
 
 interface AvailGuide {
@@ -222,29 +223,49 @@ export default function CrewAvailabilityDrawer({
         key: "name",
         fixed: "left",
         width: 240,
-        render: (_, row) => (
-          <Flex gap={8} align="center">
-            <span
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: row.color,
-                flex: "none",
-              }}
-            />
-            <Flex vertical gap={0}>
-              <Text strong style={{ fontSize: 13 }}>
-                {row.name}
-              </Text>
-              <Text type="secondary" style={{ fontSize: 11 }}>
-                {row.kind === "guide" ? "Guide" : "Driver"}
-                {row.attr ? ` · ${row.attr}` : ""}
-                {row.rating != null ? ` · ★ ${row.rating}` : ""}
-              </Text>
+        render: (_, row) => {
+          // Red "Off" tag next to the crew name when they have a day-off
+          // covering any visible day (in addition to the per-day Off cells).
+          const offLeave = row.member.leaves?.find(
+            (l) =>
+              l.status !== "REJECTED" &&
+              days.some((d) => coversLeave(d, l)),
+          );
+          return (
+            <Flex gap={8} align="center">
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: row.color,
+                  flex: "none",
+                }}
+              />
+              <Flex vertical gap={0}>
+                <Flex gap={4} align="center" wrap>
+                  <Text strong style={{ fontSize: 13 }}>
+                    {row.name}
+                  </Text>
+                  {offLeave && (
+                    <Tooltip
+                      title={`Off (${offLeave.status}) · ${dayjs(offLeave.startDate).format("DD MMM YYYY")} → ${dayjs(offLeave.endDate).format("DD MMM YYYY")}`}
+                    >
+                      <Tag color="red" style={{ margin: 0, fontSize: 10 }}>
+                        Off
+                      </Tag>
+                    </Tooltip>
+                  )}
+                </Flex>
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  {row.kind === "guide" ? "Guide" : "Driver"}
+                  {row.attr ? ` · ${row.attr}` : ""}
+                  {row.rating != null ? ` · ★ ${row.rating}` : ""}
+                </Text>
+              </Flex>
             </Flex>
-          </Flex>
-        ),
+          );
+        },
       },
       ...days.map((d) => ({
         title: (
@@ -298,9 +319,11 @@ export default function CrewAvailabilityDrawer({
             // Completed tours read grey — only running buses stay orange,
             // so free-to-assign days are obvious at a glance.
             const done = busy.status === "COMPLETED";
+            // Assigned driver/guide carries the bus number plate.
+            const plate = busy.plateNumber ? ` · ${busy.plateNumber}` : "";
             return (
               <Tooltip
-                title={`${busy.code ?? "Bus"} · ${busy.tourName ?? "Tour"} · ${busy.status ?? ""}`}
+                title={`${busy.code ?? "Bus"}${plate} · ${busy.tourName ?? "Tour"} · ${busy.status ?? ""}`}
               >
                 <div
                   style={{
@@ -329,7 +352,9 @@ export default function CrewAvailabilityDrawer({
                       textOverflow: "ellipsis",
                     }}
                   >
-                    {done ? `✓ ${busy.code ?? "Done"}` : (busy.code ?? "Busy")}
+                    {done
+                      ? `✓ ${busy.code ?? "Done"}${busy.plateNumber ? ` · ${busy.plateNumber}` : ""}`
+                      : `${busy.code ?? "Busy"}${busy.plateNumber ? ` · ${busy.plateNumber}` : ""}`}
                   </Text>
                 </div>
               </Tooltip>

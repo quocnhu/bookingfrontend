@@ -31,7 +31,6 @@ import {
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
-import { useFillHeight } from "@/lib/use-fill-height";
 import DispatchBoard from "@/components/dispatch-board";
 
 const BOOKING_STATUS = ["PENDING", "ASSIGNED", "CANCELED"];
@@ -39,6 +38,15 @@ const ASSIGNMENT_STATUS = ["PENDING", "DISPATCHED", "COMPLETED", "CANCELED"];
 const BOOKING_CHANNELS = ["TRIPADVISOR", "GETYOURGUIDE", "WEBSITE", "MANUAL", "AIRBNB", "BOOKING_COM"];
 const PAYMENT_STATUS = ["PENDING", "PAID", "REFUNDED"];
 const TOUR_TYPES = ["PRIVATE_TOUR", "GROUP_TOUR"];
+
+/**
+ * Fixed table body height so every page reserves a full page of rows:
+ * 2 items → same height as 10 items, leftover is empty space, pagination
+ * stays at the same line. No mid-row cut: y is an exact multiple of the
+ * small-row height, so a full page fits without cropping.
+ */
+const ROW_H = 41;
+const bodyY = (pageSize: number) => pageSize * ROW_H;
 
 const endDate = (start: any, days?: number | null): Date | null => {
   if (!start) return null;
@@ -95,12 +103,30 @@ export default function BookingsPage() {
   const [rawDataLoading, setRawDataLoading] = useState(false);
   const [rawDetail, setRawDetail] = useState<any>(null);
 
-  const [activeTab, setActiveTab] = useState("bookings");
-  const tableHeight = useFillHeight({
-    rootSelector: ".bookings-page",
-    activeTab,
-    deps: [bookings.length, assignments.length, rawData.length],
+  const [activeTab, setActiveTab] = useState(() => {
+    // Keep the tab position across refreshes: reload on Assignments must
+    // land back on Assignments, not kick to Bookings. URL param wins (shareable),
+    // then localStorage (last position), else default.
+    if (typeof window !== "undefined") {
+      const urlTab = new URLSearchParams(window.location.search).get("tab");
+      if (urlTab && ["rawdata", "bookings", "assignments"].includes(urlTab)) return urlTab;
+      const saved = window.localStorage.getItem("bookings-tab");
+      if (saved && ["rawdata", "bookings", "assignments"].includes(saved)) return saved;
+    }
+    return "bookings";
   });
+
+  const changeTab = (key: string) => {
+    setActiveTab(key);
+    try {
+      window.localStorage.setItem("bookings-tab", key);
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", key);
+      window.history.replaceState(null, "", url.toString());
+    } catch {
+      /* storage/URL sync is best-effort */
+    }
+  };
 
   const loadRawData = () => {
     setRawDataLoading(true);
@@ -822,14 +848,24 @@ export default function BookingsPage() {
   const canReadAssignments = hasPermission("assignment.read");
 
   return (
-    <div className="bookings-page">
+    <div
+      className="bookings-page"
+      style={{
+        minHeight: "calc(100vh - 96px)",
+      }}
+    >
+      <style>{`
+        .bookings-page .ant-tabs-tabpane .ant-card-body { padding-bottom: 8px; }
+        .bookings-page .ant-table-pagination { margin-bottom: 0; padding: 8px 0 4px; }
+        .bookings-page .ant-empty { margin: 48px 0; }
+      `}</style>
       {!canReadBookings && !canReadAssignments && !canManageMailbox && (
         <Typography.Text type="secondary">You have no access to bookings.</Typography.Text>
       )}
       {(canReadBookings || canReadAssignments || canManageMailbox) && (
       <Tabs
         activeKey={activeTab}
-        onChange={setActiveTab}
+        onChange={changeTab}
         items={[
           ...(canManageMailbox
             ? [
@@ -857,7 +893,7 @@ export default function BookingsPage() {
                         columns={rawDataColumns}
                         dataSource={rawData}
                         loading={rawDataLoading}
-                        scroll={{ x: 1000, y: tableHeight }}
+                        scroll={{ x: 1000, y: bodyY(rawDataPageSize) }}
                         pagination={{
                           current: rawDataPage,
                           pageSize: rawDataPageSize,
@@ -899,7 +935,7 @@ export default function BookingsPage() {
                   columns={bookingColumns}
                   dataSource={bookings}
                   loading={bookingsLoading}
-                  scroll={{ x: 1660, y: tableHeight }}
+                  scroll={{ x: 1660, y: bodyY(bookingsPageSize) }}
                   onRow={(record) => ({
                     style: { cursor: "pointer" },
                     onClick: () => setBookingDetail(record),
@@ -938,7 +974,7 @@ extra={
                   columns={assignmentColumns}
                   dataSource={assignmentRows}
                   loading={assignmentsLoading}
-                  scroll={{ x: 1500, y: tableHeight }}
+                  scroll={{ x: 1500, y: bodyY(assignmentsPageSize) }}
                   pagination={{
                     current: assignmentsPage,
                     pageSize: assignmentsPageSize,

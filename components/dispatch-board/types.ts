@@ -128,5 +128,12 @@ export const TYPE_META: Record<string, TourMeta> = {
   OTHER: { label: "Other", color: "purple", accent: "#8c8c8c" },
 };
 
-export const sortByDate = (a: BoardItem, b: BoardItem) =>
-  dayjs(a.startDate).valueOf() - dayjs(b.startDate).valueOf();
+export const sortByDate = (a: BoardItem, b: BoardItem) => {
+  const d = dayjs(a.startDate).valueOf() - dayjs(b.startDate).valueOf();
+  if (d !== 0) return d;
+  // Tie-breakers for same-day buses: keep position stable across edits.
+  // startDate-only sort reshuffled top/under on every update/submit.
+  const code = (a.code ?? '').localeCompare(b.code ?? '');
+  if (code !== 0) return code;
+  return (a.id ?? '').localeCompare(b.id ?? '');
+};
