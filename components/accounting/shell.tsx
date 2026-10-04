@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Flex, Tag, Typography } from "antd";
+import { Flex, Typography } from "antd";
 import { SafetyCertificateOutlined } from "@ant-design/icons";
 import { api } from "@/lib/api";
-import { useApp } from "@/lib/app-context";
 import type { Category, Person } from "./shared";
 
 /**
@@ -26,7 +25,6 @@ export default function AccountingShell({
   }) => React.ReactNode;
   hideHeader?: boolean;
 }) {
-  const { hasPermission, user } = useApp();
   const [people, setPeople] = useState<Person[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
 
@@ -51,14 +49,6 @@ export default function AccountingShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const level = user?.role === "ADMIN"
-    ? "Full access"
-    : hasPermission("accounting.period.export")
-      ? "Accounting"
-      : hasPermission("accounting.money.verify")
-        ? "Verification"
-        : "View only";
-
   return (
     <div className="accounting-page">
       {!hideHeader && (
@@ -71,7 +61,6 @@ export default function AccountingShell({
               <Typography.Text type="secondary">{description}</Typography.Text>
             ) : null}
           </div>
-          <Tag>Permission: {level}</Tag>
         </Flex>
       )}
       {children({ people, categories, reloadPeople })}
