@@ -219,8 +219,13 @@ export interface HistoryRow {
   createdAt: string;
   lines: Array<{
     assignmentId: string;
+    code?: string | null;
     tourName?: string | null;
     tourDate: string;
+    plateNumber?: string | null;
+    vehicleCapacity?: number | null;
+    providerName?: string | null;
+    payableToName?: string | null;
     netAmount: number;
     flow: "COLLECT_MONEY" | "PAY_MONEY";
     note?: string | null;
@@ -1472,6 +1477,7 @@ export function HistoryTab({ people, canVoid }: { people: Person[]; canVoid: boo
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState<HistoryRow | null>(null);
+  const [voucherRow, setVoucherRow] = useState<HistoryRow | null>(null);
 
   const voidPeriod = (r: HistoryRow) => {
     let reason = "";
@@ -1648,7 +1654,7 @@ export function HistoryTab({ people, canVoid }: { people: Person[]; canVoid: boo
             ),
           },
           {
-            title: "",
+            title: "Actions",
             align: "right",
             render: (_: unknown, r: HistoryRow) => (
               <Space>
@@ -1667,6 +1673,13 @@ export function HistoryTab({ people, canVoid }: { people: Person[]; canVoid: boo
                 )}
                 <Button size="small" onClick={() => setOpen(r)}>
                   Export copy
+                </Button>
+                <Button
+                  size="small"
+                  icon={<PrinterOutlined />}
+                  onClick={() => setVoucherRow(r)}
+                >
+                  Template
                 </Button>
               </Space>
             ),
@@ -1721,6 +1734,55 @@ export function HistoryTab({ people, canVoid }: { people: Person[]; canVoid: boo
             ]}
           />
         </Modal>
+      )}
+      {voucherRow && (
+        <StatementVoucherModal
+          open
+          onClose={() => setVoucherRow(null)}
+          payee={{
+            name: voucherRow.person.name,
+            role: voucherRow.person.role,
+            groupLabel: voucherRow.payeeType
+              ? PAYEE_GROUP_LABELS[voucherRow.payeeType]
+              : null,
+            providerName:
+              voucherRow.payeeType === "TRANSPORT_PROVIDER"
+                ? voucherRow.person.name
+                : null,
+          }}
+          fromDate={voucherRow.fromDate.slice(0, 10)}
+          toDate={voucherRow.toDate.slice(0, 10)}
+          mode={voucherRow.payeeType === "TRANSPORT_PROVIDER" ? "ROUTE_PRICE" : "SETTLEMENT"}
+          rows={voucherRow.lines.map((l) => ({
+            assignmentId: l.assignmentId,
+            code: l.code ?? null,
+            tourName: l.tourName ?? null,
+            tourDate: l.tourDate,
+            endDate: null,
+            status: null,
+            plateNumber: l.plateNumber ?? null,
+            vehicleCapacity: l.vehicleCapacity ?? null,
+            providerName: l.providerName ?? null,
+            guideName: null,
+            driverName: l.payableToName ?? null,
+            myRole:
+              voucherRow.payeeType === "TRANSPORT_PROVIDER"
+                ? "PROVIDER"
+                : voucherRow.person.role === "DRIVER"
+                  ? "DRIVER"
+                  : "GUIDE",
+            netAmount: l.netAmount,
+            flow: l.flow,
+            locked: true,
+            paid: !voucherRow.voidedAt,
+            paidToName: voucherRow.person.name,
+            periodToDate: voucherRow.toDate,
+            exportable: false,
+            settlesWith: null,
+            amount: l.netAmount,
+          }))}
+          note={voucherRow.note ?? undefined}
+        />
       )}
     </Card>
   );
