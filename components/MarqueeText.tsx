@@ -11,24 +11,30 @@ import type { CSSProperties, ReactNode } from "react";
  * reacts to layout changes. Pass `tip` to also show the full text on
  * hover — every truncated name in the app should use this.
  */
-export function useElementMetrics<T extends HTMLElement>() {
+export function useElementMetrics<T extends HTMLElement>(deps: unknown[] = []) {
   const ref = useRef<T>(null);
   const [metrics, setMetrics] = useState({ over: false, shift: 0 });
 
+  const check = () => {
+    const el = ref.current;
+    if (!el) return { over: false, shift: 0 };
+    const over = el.scrollWidth > el.clientWidth + 1;
+    const next = { over, shift: over ? el.scrollWidth - el.clientWidth : 0 };
+    setMetrics(next);
+    return next;
+  };
+
   useEffect(() => {
+    check();
     const el = ref.current;
     if (!el) return;
-    const check = () => {
-      const over = el.scrollWidth > el.clientWidth + 1;
-      setMetrics({ over, shift: over ? el.scrollWidth - el.clientWidth : 0 });
-    };
-    check();
     const ro = new ResizeObserver(check);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
 
-  return { ref, ...metrics };
+  return { ref, recheck: check, ...metrics };
 }
 
 export default function MarqueeText({
@@ -51,7 +57,7 @@ export default function MarqueeText({
    */
   hoverOnly?: boolean;
 }) {
-  const { ref, over, shift } = useElementMetrics<HTMLSpanElement>();
+  const { ref, recheck, over, shift } = useElementMetrics<HTMLSpanElement>([children]);
   const dur = Math.max(5, shift / 30);
   const base: CSSProperties = {
     fontWeight: strong ? 600 : undefined,
@@ -78,7 +84,12 @@ export default function MarqueeText({
       : {}),
   };
   const body = (
-    <span ref={ref} style={base} className={hoverOnly && over ? "mq-hover" : undefined}>
+    <span
+      ref={ref}
+      style={base}
+      className={hoverOnly && over ? "mq-hover" : undefined}
+      onMouseEnter={recheck}
+    >
       {hoverOnly && over && (
         <style>{`.mq-hover:hover > span { animation: board-marquee-x ${dur}s linear infinite; }`}</style>
       )}
