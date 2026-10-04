@@ -189,8 +189,8 @@ const tourBg = (providerIndex: number, isDark: boolean): string => {
   return providerIndex % 2 === 0 ? "#e6f4ff" : "#f5f5f5";
 };
 
-const usd = (n: string | number) =>
-  `$${Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+const vnd = (n: string | number) =>
+  `${Number(n || 0).toLocaleString("vi-VN", { maximumFractionDigits: 0 })} ₫`;
 
 export default function TransportationPage() {
   const { hasPermission, theme, user } = useApp();
@@ -850,7 +850,7 @@ export default function TransportationPage() {
       key: "price",
       width: 100,
       align: "right" as const,
-      render: (p: number | undefined) => (p != null ? <Text strong>{usd(p)}</Text> : <Text type="secondary">—</Text>),
+      render: (p: number | undefined) => (p != null ? <Text strong>{vnd(p)}</Text> : <Text type="secondary">—</Text>),
     },
     {
       title: centerTitle("Vehicle"),
@@ -1693,7 +1693,7 @@ export default function TransportationPage() {
       key: "price",
       width: 140,
       align: "right" as const,
-      render: (v: string | number) => <Text strong>{usd(v)}</Text>,
+      render: (v: string | number) => <Text strong>{vnd(v)}</Text>,
     },
     ...(canDelete
       ? [
@@ -2034,7 +2034,7 @@ export default function TransportationPage() {
                     </Space>
                     <Space size={6}>
                       <Typography.Text type="secondary">Price:</Typography.Text>
-                      <Text strong>{usd(atSelected.price)}</Text>
+                      <Text strong>{vnd(atSelected.price)}</Text>
                     </Space>
                     <Space size={6}>
                       <Typography.Text type="secondary">Vehicle:</Typography.Text>

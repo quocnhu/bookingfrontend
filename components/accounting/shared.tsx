@@ -296,6 +296,104 @@ export function PeriodTab({
   const [exporting, setExporting] = useState(false);
   const [voucherOpen, setVoucherOpen] = useState(false);
 
+  /**
+   * Machine-readable statement export: raw VND numbers (no currency
+   * symbols, no thousand separators), ISO dates, TRUE/FALSE flags, UTF-8
+   * with BOM so Excel opens it correctly and Python/pandas can sum and
+   * group without any cleaning.
+   */
+  const exportStatementCsv = () => {
+    if (!person || !preview || (preview.statement?.length ?? 0) === 0) return;
+    try {
+      const iso = (d?: string | null) => (d ? dayjs(d).format("YYYY-MM-DD") : "");
+      const head = [
+        "payee_name",
+        "payee_role",
+        "payee_group",
+        "payee_provider",
+        "period_from",
+        "period_to",
+        "trip_code",
+        "tour_name",
+        "work_start",
+        "work_end",
+        "trip_status",
+        "crew_role",
+        "plate",
+        "trip_provider",
+        "guide",
+        "driver",
+        "net_vnd",
+        "direction",
+        "locked",
+        "paid",
+        "paid_to",
+        "period_through",
+        "settles_with",
+      ];
+      const esc = (v: unknown) => {
+        const s = v === null || v === undefined ? "" : String(v);
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const lines = [head.map(esc).join(",")];
+      for (const r of preview.statement) {
+        const v = r.amount ?? r.netAmount;
+        const direction =
+          preview.mode === "ROUTE_PRICE"
+            ? "COMPANY_TO_PROVIDER"
+            : v == null
+              ? "UNLOCKED"
+              : v > 0 && r.flow !== "PAY_MONEY"
+                ? "PERSON_TO_COMPANY"
+                : v < 0 || r.flow === "PAY_MONEY"
+                  ? "COMPANY_TO_PERSON"
+                  : "SETTLED";
+        lines.push(
+          [
+            person.name,
+            person.role,
+            PAYEE_GROUP_LABELS[person.payeeType] ?? person.payeeType,
+            person.providerName ?? "",
+            from,
+            to,
+            r.code ?? "",
+            r.tourName ?? "",
+            iso(r.tourDate),
+            iso(r.endDate ?? r.tourDate),
+            r.status ?? "",
+            r.myRole,
+            r.plateNumber ?? "",
+            r.providerName ?? "",
+            r.guideName ?? "",
+            r.driverName ?? "",
+            v ?? "",
+            direction,
+            r.locked ? "TRUE" : "FALSE",
+            r.paid ? "TRUE" : "FALSE",
+            r.paidToName ?? "",
+            iso(r.periodToDate),
+            r.settlesWith ?? "",
+          ]
+            .map(esc)
+            .join(","),
+        );
+      }
+      const blob = new Blob(["\ufeff" + lines.join("\n")], {
+        type: "text/csv;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const el = document.createElement("a");
+      el.href = url;
+      const slug = person.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      el.download = `statement-${slug}-${from}-${to}.csv`;
+      el.click();
+      URL.revokeObjectURL(url);
+      message.success(`Exported ${preview.statement.length} row(s) for analysis`);
+    } catch (e) {
+      message.error(getErrorMessage(e, "Could not export CSV"));
+    }
+  };
+
   const person = people.find((p) => p.id === payeeId);
   const PAYEE_GROUPS = useMemo(
     () =>
@@ -471,6 +569,18 @@ export function PeriodTab({
             >
               Print statement (A4)
             </Button>
+            <Button
+              icon={<FileTextOutlined />}
+              block
+              disabled={!payeeId || (preview?.statement?.length ?? 0) === 0}
+              onClick={exportStatementCsv}
+              style={{ marginTop: 8 }}
+            >
+              Export CSV (Excel / Python)
+            </Button>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              CSV uses raw numbers (no ₫, no separators) and ISO dates — ready for Excel formulas and Python/pandas.
+            </Typography.Text>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               Export freezes the details and moves “Paid through” to the end of the period.
             </Typography.Text>

@@ -41,8 +41,8 @@ const TYPE_COLOR: Record<string, string> = {
   GROUP_TOUR: "cyan",
 };
 
-const usd = (value: string | number | null | undefined) =>
-  `$${Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const vnd = (value: string | number | null | undefined) =>
+  `${Number(value ?? 0).toLocaleString("vi-VN", { maximumFractionDigits: 0 })} ₫`;
 
 export default function HomePage() {
   const router = useRouter();
@@ -138,8 +138,8 @@ export default function HomePage() {
               const fromType = cheapest ? cheapest.type : tour.type;
               const pct = discountFor(tour, fromType);
               const promo = isTypePromoActive(tour, fromType);
-              const price = usd(Number.isFinite(fromPrice) && fromPrice > 0 ? fromPrice : tour.adultPrice);
-              const discounted = usd(discountedPrice(Number.isFinite(fromPrice) && fromPrice > 0 ? fromPrice : tour.adultPrice, pct));
+              const price = vnd(Number.isFinite(fromPrice) && fromPrice > 0 ? fromPrice : tour.adultPrice);
+              const discounted = vnd(discountedPrice(Number.isFinite(fromPrice) && fromPrice > 0 ? fromPrice : tour.adultPrice, pct));
               const typeLabel = bothTypes
                 ? "Private · Group"
                 : (tour.type ?? "").replace("_", " ");
