@@ -118,7 +118,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const selectedKey = "/" + (pathname.split("/")[1] ?? "");
+  const selectedKey = (() => {
+    // Match the deepest menu key (including Accounting Room sub-items like
+    // /accounting/period) so the active sub-item highlights; fall back to
+    // the top-level segment for dynamic routes (e.g. /tours/[id] → /tours).
+    const clean = pathname.replace(/\/+$/, "") || "/";
+    const allKeys = menuItems.flatMap((i) => [
+      i.key,
+      ...((i.children ?? []).map((c) => c.key) as string[]),
+    ]);
+    if (allKeys.includes(clean)) return clean;
+    return "/" + (clean.split("/")[1] ?? "");
+  })();
   const roleColor = roleColors[user.role] ?? { tag: "blue", avatar: "#6366F1" };
 
   const filteredMenuItems = menuItems.filter((item) => {
