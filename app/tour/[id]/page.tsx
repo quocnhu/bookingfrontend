@@ -86,8 +86,8 @@ interface PublicTour {
   itineraries: PublicItinerary[];
 }
 
-const usd = (value: string | number | null | undefined) =>
-  `$${Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+const vnd = (value: string | number | null | undefined) =>
+  `${Number(value ?? 0).toLocaleString("vi-VN", { maximumFractionDigits: 0 })} ₫`;
 
 export default function PublicTourDetailPage() {
   const params = useParams<{ id: string }>();
@@ -504,13 +504,10 @@ children: tour.insurancePolicy ? (
                           delete
                           style={{ fontSize: 15, lineHeight: 1 }}
                         >
-                          {usd(priceOf(selectedType))} {tour.currency}
+                          {vnd(priceOf(selectedType))}
                         </Typography.Text>
                         <Typography.Title level={3} style={{ margin: 0, color: "#dc2626" }}>
-{usd(discountedPrice(priceOf(selectedType), discountFor(tour ?? {}, selectedType)))}{" "}
-                          <Typography.Text type="secondary" style={{ fontSize: 14 }}>
-                            {tour.currency}
-                          </Typography.Text>
+{vnd(discountedPrice(priceOf(selectedType), discountFor(tour ?? {}, selectedType)))}
                         </Typography.Title>
                         <Tag color="red" style={{ alignSelf: "flex-start" }}>
                           Save {discountFor(tour, selectedType)}%
@@ -518,10 +515,7 @@ children: tour.insurancePolicy ? (
                       </>
                     ) : (
                       <Typography.Title level={3} style={{ margin: 0 }}>
-                        {usd(priceOf(selectedType))}{" "}
-                        <Typography.Text type="secondary" style={{ fontSize: 14 }}>
-                          {tour.currency}
-                        </Typography.Text>
+                        {vnd(priceOf(selectedType))}
                       </Typography.Title>
                     )}
                     <PromoCountdown tour={tour} />
@@ -592,9 +586,9 @@ children: tour.insurancePolicy ? (
           </Form.Item>
           <Form.Item label="Price" style={{ marginBottom: 8 }}>
             <Typography.Text strong>
-              {usd(discountedPrice(priceOf(selectedType), discountFor(tour ?? {}, selectedType)))}{" "}
+              {vnd(discountedPrice(priceOf(selectedType), discountFor(tour ?? {}, selectedType)))}{" "}
               <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-                {tour?.currency} / person
+                / person
               </Typography.Text>
             </Typography.Text>
           </Form.Item>
