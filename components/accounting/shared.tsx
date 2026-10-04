@@ -1415,6 +1415,19 @@ return (
         />
       )}
       <Divider style={{ margin: "16px 0" }} />
+      {(rows.length === 0 || !item.guide) && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="Before verifying: add at least one Collect/Expense entry below as needed — a trip with no money entries cannot be locked."
+          description={
+            !item.guide
+              ? "This trip also has no guide assigned yet. The payee is the guide, so assign one on the dispatch board first."
+              : undefined
+          }
+        />
+      )}
       <Descriptions size="small" column={2} bordered style={{ marginBottom: 16 }}>
         <Descriptions.Item label="Tour">{item.tourName ?? "—"}</Descriptions.Item>
         <Descriptions.Item label="Submitted at">{fmtDateTime(item.submittedAt)}</Descriptions.Item>
