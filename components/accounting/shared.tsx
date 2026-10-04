@@ -45,6 +45,7 @@ import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import TourTemplateModal from "@/components/dispatch-board/TourTemplateModal";
 import StatementVoucherModal from "./StatementVoucherModal";
+import MarqueeText from "@/components/MarqueeText";
 
 const vnd = (n: number) =>
   new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(n ?? 0);
@@ -541,6 +542,11 @@ export function PeriodTab({
                 }}
                 showSearch
                 optionFilterProp="label"
+                labelRender={(props) => (
+                  <MarqueeText tip={String(props.label ?? "")}>
+                    {String(props.label ?? "")}
+                  </MarqueeText>
+                )}
                 options={PAYEE_GROUPS.map((g) => ({
                   label: g.label,
                   options: g.payees.map((p) => ({
@@ -554,29 +560,34 @@ export function PeriodTab({
                 }))}
                 optionRender={(option: any) => (
                   <Flex justify="space-between" align="center" gap={8}>
-                    <span
-                      style={
-                        option.data?.unpaid > 0
-                          ? { color: "#cf1322", fontWeight: 600 }
-                          : undefined
-                      }
+                    <MarqueeText
+                      style={{ flex: 1, minWidth: 0 }}
+                      tip={String(option.label ?? "")}
                     >
-                      {option.data?.unpaid > 0 && (
-                        <span
-                          style={{
-                            display: "inline-block",
-                            width: 7,
-                            height: 7,
-                            borderRadius: "50%",
-                            background: "#cf1322",
-                            marginRight: 6,
-                          }}
-                        />
-                      )}
-                      {option.label}
-                    </span>
+                      <span
+                        style={
+                          option.data?.unpaid > 0
+                            ? { color: "#cf1322", fontWeight: 600 }
+                            : undefined
+                        }
+                      >
+                        {option.data?.unpaid > 0 && (
+                          <span
+                            style={{
+                              display: "inline-block",
+                              width: 7,
+                              height: 7,
+                              borderRadius: "50%",
+                              background: "#cf1322",
+                              marginRight: 6,
+                            }}
+                          />
+                        )}
+                        {option.label}
+                      </span>
+                    </MarqueeText>
                     {option.data?.unpaid > 0 && (
-                      <Tag color="red" style={{ margin: 0, fontSize: 11 }}>
+                      <Tag color="red" style={{ margin: 0, fontSize: 11, flex: "none" }}>
                         {option.data.unpaid} unpaid
                       </Tag>
                     )}

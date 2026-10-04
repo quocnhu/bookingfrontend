@@ -39,6 +39,7 @@ import {
 import type { ReactNode } from "react";
 import dayjs, { Dayjs } from "dayjs";
 import type { BoardCrew, BoardItem, BookingItem, TourMeta } from "./types";
+import MarqueeText from "@/components/MarqueeText";
 import StatementVoucherModal from "@/components/accounting/StatementVoucherModal";
 import { api } from "@/lib/api";
 import { STATUS_COLORS, LEAVE_COLOR } from "./types";
@@ -140,65 +141,6 @@ function optionLabel(option: {
   );
 }
 
-function useElementMetrics<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
-  const [metrics, setMetrics] = useState({ over: false, shift: 0 });
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const check = () => {
-      const over = el.scrollWidth > el.clientWidth + 1;
-      setMetrics({ over, shift: over ? el.scrollWidth - el.clientWidth : 0 });
-    };
-    check();
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  return { ref, ...metrics };
-}
-
-function Marquee({
-  children,
-  strong = false,
-  fill = false,
-}: {
-  children: ReactNode;
-  strong?: boolean;
-  fill?: boolean;
-}) {
-  const { ref, over, shift } = useElementMetrics<HTMLSpanElement>();
-  const base: React.CSSProperties = {
-    fontWeight: strong ? 600 : undefined,
-    display: "inline-block",
-    maxWidth: "100%",
-    minWidth: 0,
-    overflow: "hidden",
-    whiteSpace: "nowrap",
-    ...(fill ? { flex: 1 } : {}),
-  };
-  return (
-    <span ref={ref} style={base}>
-      <span
-        className="board-marquee"
-        style={{
-          display: "inline-block",
-          whiteSpace: "nowrap",
-          willChange: "transform",
-          animation: over
-            ? `board-marquee-x ${Math.max(5, shift / 30)}s linear infinite`
-            : undefined,
-          ["--shift" as string]: `-${shift}px`,
-        }}
-      >
-        {children}
-      </span>
-    </span>
-  );
-}
-
 function PersonSelect({
   label,
   icon,
@@ -286,21 +228,21 @@ function PersonSelect({
             const picked = visible.find((o) => o.id === props.value);
             if (!picked) return props.label;
             return (
-              <Marquee>
+              <MarqueeText>
                 {optionLabel({
                   name: picked.name,
                   attr: picked.attr,
                   color: picked.onLeave ? LEAVE_COLOR : picked.color,
                 })}
-              </Marquee>
+              </MarqueeText>
             );
           }}
           options={selectOptions}
         />
       ) : (
-        <Marquee strong fill>
+        <MarqueeText strong fill>
           {currentName ?? "Unassigned"}
-        </Marquee>
+        </MarqueeText>
       )}
       {(() => {
         const current = visible.find((o) => o.id === currentId);
@@ -1496,38 +1438,30 @@ export default function BoardCard({
                           fontSize: 11,
                         }}
                       />
-                      <span
-                        style={{
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          fontWeight: 600,
-                          color: token.colorText,
-                          minWidth: 0,
-                        }}
+                      <MarqueeText
+                        strong
+                        style={{ color: token.colorText }}
+                        tip={b.hotelName || undefined}
                       >
                         {b.hotelName || "No pickup"}
-                      </span>
+                      </MarqueeText>
                     </span>
-                    {b.address &&
-                      (!b.hotelName || b.address !== b.hotelName) && (
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 5,
-                            minWidth: 0,
-                            color: token.colorTextSecondary,
-                            fontSize: 11,
-                            paddingLeft: 16,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {b.address}
-                        </span>
-                      )}
+                      {b.address &&
+                        (!b.hotelName || b.address !== b.hotelName) && (
+                          <MarqueeText
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              color: token.colorTextSecondary,
+                              fontSize: 11,
+                              paddingLeft: 16,
+                              minWidth: 0,
+                            }}
+                            tip={b.address}
+                          >
+                            {b.address}
+                          </MarqueeText>
+                        )}
                     {b.phone && (
                       <span
                         style={{
