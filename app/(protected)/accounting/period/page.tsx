@@ -10,6 +10,7 @@ export default function AccountingPeriodPage() {
     <AccountingShell
       title="Period check & export"
       description="Choose a guide or driver and a date range, preview the total amounts and who pays whom, then issue the period."
+      hideHeader
     >
       {({ people, reloadPeople }) => (
         <PeriodTab
