@@ -1613,14 +1613,6 @@ export function HistoryTab({ people, canVoid }: { people: Person[]; canVoid: boo
     load();
   }, [load]);
 
-  const totalByPerson = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const r of rows) {
-      m.set(r.person.name, (m.get(r.person.name) ?? 0) + r.totalNet);
-    }
-    return m;
-  }, [rows]);
-
   return (
     <Card
       size="small"
@@ -1763,22 +1755,6 @@ export function HistoryTab({ people, canVoid }: { people: Person[]; canVoid: boo
             ),
           },
         ]}
-        summary={() =>
-          payeeId ? null : (
-            <Table.Summary fixed>
-              <Table.Summary.Row>
-                <Table.Summary.Cell index={0}>
-                  <Typography.Text strong>Total (unfiltered)</Typography.Text>
-                </Table.Summary.Cell>
-                <Table.Summary.Cell index={1} colSpan={6}>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {[...totalByPerson.entries()].map(([n, v]) => `${n}: ${vnd(v)}`).join(" · ") || "—"}
-                  </Typography.Text>
-                </Table.Summary.Cell>
-              </Table.Summary.Row>
-            </Table.Summary>
-          )
-        }
       />
 
       {open && (

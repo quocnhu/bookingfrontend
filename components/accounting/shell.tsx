@@ -67,7 +67,9 @@ export default function AccountingShell({
             <Typography.Title level={4} style={{ margin: 0 }}>
               <SafetyCertificateOutlined /> {title}
             </Typography.Title>
-            <Typography.Text type="secondary">{description}</Typography.Text>
+            {description ? (
+              <Typography.Text type="secondary">{description}</Typography.Text>
+            ) : null}
           </div>
           <Tag>Permission: {level}</Tag>
         </Flex>
