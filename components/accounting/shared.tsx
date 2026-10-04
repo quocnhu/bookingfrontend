@@ -150,6 +150,7 @@ export interface StatementLine {
   endDate?: string | null;
   status?: string | null;
   plateNumber?: string | null;
+  vehicleCapacity?: number | null;
   /** Transport provider of the trip (whose vehicle ran it). */
   providerName?: string | null;
   guideName?: string | null;

@@ -401,7 +401,6 @@ function TripTable({
           <th style={th}>Bus</th>
           <th style={{ ...th, textAlign: "left" }}>Tour (where)</th>
           {mode === "SETTLEMENT" && <th style={th}>Crew</th>}
-          <th style={th}>Plate</th>
           <th style={th}>Provider</th>
           <th style={th}>Net</th>
           <th style={th}>Status</th>
@@ -410,11 +409,18 @@ function TripTable({
       <tbody>
         {rows.map((r, i) => {
           const n = netText(mode, r);
+          const bus = [
+            r.code ?? "—",
+            r.plateNumber ?? null,
+            r.vehicleCapacity ? `${r.vehicleCapacity} seats` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ");
           return (
             <tr key={r.assignmentId}>
               <td style={{ ...td, textAlign: "center" }}>{i + 1}</td>
               <td style={{ ...td, textAlign: "center", whiteSpace: "nowrap" }}>{tripDates(r)}</td>
-              <td style={{ ...td, textAlign: "center" }}>{r.code ?? "—"}</td>
+              <td style={{ ...td, textAlign: "center", whiteSpace: "nowrap" }}>{bus}</td>
               <td style={td}>{r.tourName ?? "—"}</td>
               {mode === "SETTLEMENT" && (
                 <td style={{ ...td, fontSize: 11 }}>
@@ -423,7 +429,6 @@ function TripTable({
                     .join(" · ")}
                 </td>
               )}
-              <td style={{ ...td, textAlign: "center" }}>{r.plateNumber ?? "—"}</td>
               <td style={{ ...td, textAlign: "center" }}>{r.providerName ?? "—"}</td>
               <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{n.text}</td>
               <td style={{ ...td, textAlign: "center", fontSize: 11 }}>{statusText(r)}</td>
