@@ -6,6 +6,7 @@ import { message } from "@/lib/antd-message";
 import { PrinterOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";
+import { useApp } from "@/lib/app-context";
 import { calcStatementTotals, type StatementLine } from "./shared";
 
 const NAVY = "#1f3a5f";
@@ -87,6 +88,7 @@ export default function StatementVoucherModal({
     taxId?: string;
   } | null>(null);
   const [loading, setLoading] = useState(false);
+  const { user } = useApp();
 
   useEffect(() => {
     if (!open) return;
@@ -353,16 +355,22 @@ export default function StatementVoucherModal({
             </div>
           </div>
 
-          {/* ── Signatures ── */}
+          {/* ── Signature: the guide already confirmed the tour, so this
+              sheet only records who in Accounting prepared/exported it.
+              The export itself is stored in Payment history for other
+              accounting members to re-check. */}
           <div style={{ padding: "26px 24px 10px", display: "flex", gap: 24 }}>
-            {["Prepared by (Accounting)", "Payee confirmation"].map((t) => (
-              <div key={t} style={{ flex: 1, textAlign: "center", fontSize: 12 }}>
-                <div style={{ fontWeight: 700 }}>{t}</div>
-                <div style={{ marginTop: 56, borderTop: "1px solid #999", paddingTop: 4 }}>
-                  (sign &amp; full name)
-                </div>
+            <div style={{ flex: 1, textAlign: "center", fontSize: 12 }}>
+              <div style={{ fontWeight: 700 }}>Prepared by (Accounting)</div>
+              <div style={{ marginTop: 6 }}>{user?.name ?? "—"}</div>
+              <div style={{ marginTop: 44, borderTop: "1px solid #999", paddingTop: 4 }}>
+                (sign &amp; full name)
               </div>
-            ))}
+            </div>
+            <div style={{ flex: 1, fontSize: 12 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>Export record</div>
+              <div>Paid rows above were exported into payment periods — see Payment history for the period, exporter and timestamp.</div>
+            </div>
           </div>
           <div style={{ padding: "0 24px 16px", fontSize: 11, textAlign: "right" }}>
             Printed {dayjs().format("DD/MM/YYYY HH:mm")}
