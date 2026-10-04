@@ -59,6 +59,7 @@ const menuItems = [
     label: "Accounting Room",
     children: [
       { key: "/accounting/period", icon: <DownloadOutlined />, label: "Period check & export" },
+      { key: "/accounting/queue", icon: <LockOutlined />, label: "Verification queue" },
       { key: "/accounting/history", icon: <HistoryOutlined />, label: "Payment history" },
     ],
   },
