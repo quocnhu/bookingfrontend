@@ -130,6 +130,36 @@ export interface PeriodPreview {
   totalNet?: number;
   personReturnsToCompany?: number;
   companyReturnsToPerson?: number;
+  /**
+   * Read-only statement: every verified trip in the range involving the
+   * payee (as guide/driver), with its paid status. Drivers settle nothing
+   * themselves (one trip = one net, settled with the guide) — this list is
+   * how Accounting checks per crew member per range whether each trip is
+   * paid or not. Never exported from here.
+   */
+  statement: StatementLine[];
+}
+
+export interface StatementLine {
+  assignmentId: string;
+  code?: string | null;
+  tourName?: string | null;
+  tourDate: string | null;
+  plateNumber?: string | null;
+  /** How the payee took part: GUIDE, DRIVER, GUIDE+DRIVER, or PROVIDER. */
+  myRole: string;
+  netAmount?: number | null;
+  flow?: "COLLECT_MONEY" | "PAY_MONEY" | null;
+  paid: boolean;
+  paidToName?: string | null;
+  periodToDate?: string | null;
+  /** True only for the money payee's own not-yet-exported trips. */
+  exportable: boolean;
+  /** Person the trip money settles with (always the guide). */
+  settlesWith?: string | null;
+  /** Provider mode: route-price amount for this trip. */
+  amount?: number | null;
+  priceMissing?: boolean;
 }
 
 export interface QueueItem {
@@ -424,7 +454,7 @@ export function PeriodTab({
         >
           {!payeeId ? (
             <Empty description="Select a payee to view the period" />
-          ) : !preview || preview.tourCount === 0 ? (
+          ) : !preview || (preview.tourCount === 0 && (preview.statement?.length ?? 0) === 0) ? (
             <Empty
               description={
                 preview?.mode === "ROUTE_PRICE"
@@ -434,6 +464,14 @@ export function PeriodTab({
             />
           ) : (
             <>
+              {preview.person?.role === "DRIVER" && (
+                <Alert
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                  message="Trip money is settled with the guide — only the payee can export. This statement shows the driver's trips in the range and whether each one is paid."
+                />
+              )}
               {preview.mode === "ROUTE_PRICE" ? (
                 <>
                   <Row gutter={12} style={{ marginBottom: 16 }}>
@@ -578,6 +616,62 @@ export function PeriodTab({
                         dataIndex: "amount",
                         align: "right",
                         render: (v: number) => <Typography.Text strong>{vnd(v)}</Typography.Text>,
+                      },
+                    ]}
+                  />
+                </>
+              )}
+              {(preview.statement?.length ?? 0) > 0 && (
+                <>
+                  <Divider style={{ margin: "16px 0 12px" }}>
+                    Paid status in this range
+                  </Divider>
+                  <Table<StatementLine>
+                    rowKey="assignmentId"
+                    size="small"
+                    dataSource={preview.statement}
+                    pagination={false}
+                    columns={[
+                      {
+                        title: "Trip",
+                        render: (_: unknown, r: StatementLine) => (
+                          <>
+                            <Typography.Text strong>{r.code ?? "—"}</Typography.Text>
+                            <br />
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                              {r.tourName} · {fmtDate(r.tourDate)}
+                              {r.plateNumber ? ` · ${r.plateNumber}` : ""}
+                              {r.myRole ? ` · ${r.myRole}` : ""}
+                            </Typography.Text>
+                          </>
+                        ),
+                      },
+                      {
+                        title: "Status",
+                        render: (_: unknown, r: StatementLine) =>
+                          r.paid ? (
+                            <Tooltip
+                              title={`Exported — paid to ${r.paidToName ?? "—"}${r.periodToDate ? ` · period through ${fmtDate(r.periodToDate)}` : ""}`}
+                            >
+                              <Tag icon={<CheckCircleOutlined />} color="success">
+                                Paid
+                              </Tag>
+                            </Tooltip>
+                          ) : r.exportable ? (
+                            <Tag color="warning">Unpaid — ready to export</Tag>
+                          ) : (
+                            <Tooltip
+                              title={
+                                r.settlesWith
+                                  ? `Money locked — settles with ${r.settlesWith}, not with this person`
+                                  : "Money locked — not exported yet"
+                              }
+                            >
+                              <Tag color="default">
+                                {r.settlesWith ? `Unpaid — settles with ${r.settlesWith}` : "Unpaid"}
+                              </Tag>
+                            </Tooltip>
+                          ),
                       },
                     ]}
                   />
