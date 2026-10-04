@@ -251,6 +251,27 @@ const DirectionTag = ({ direction }: { direction: string }) => {
 };
 
 // ── Period check & export ───────────────────────────────────────────
+function calcStatementTotals(mode: string, rows: StatementLine[]) {
+  let toCompany = 0;
+  let toCrew = 0;
+  let lockedCount = 0;
+  for (const r of rows) {
+    if (mode === "ROUTE_PRICE") {
+      const v = r.amount ?? 0;
+      if (r.paid || !r.priceMissing) {
+        toCrew += v;
+        lockedCount += 1;
+      }
+    } else {
+      if (r.netAmount == null) continue;
+      lockedCount += 1;
+      if (r.flow === "PAY_MONEY") toCrew += Math.abs(r.netAmount);
+      else toCompany += r.netAmount;
+    }
+  }
+  return { toCompany, toCrew, lockedCount, finalNet: toCompany - toCrew };
+}
+
 export function PeriodTab({
   people,
   canExport,
@@ -664,6 +685,35 @@ export function PeriodTab({
                         ),
                       },
                       {
+                        title: "Net",
+                        align: "right" as const,
+                        render: (_: unknown, r: StatementLine) => {
+                          const v = r.amount ?? r.netAmount;
+                          if (v == null)
+                            return <Typography.Text type="secondary">—</Typography.Text>;
+                          const crewGetsPaid =
+                            preview.mode === "ROUTE_PRICE" || r.flow === "PAY_MONEY";
+                          return (
+                            <Tooltip
+                              title={
+                                preview.mode === "ROUTE_PRICE"
+                                  ? "Company pays transport provider"
+                                  : crewGetsPaid
+                                    ? "Company returns to trip creator"
+                                    : "Trip creator returns to company"
+                              }
+                            >
+                              <Typography.Text
+                                strong
+                                style={{ color: crewGetsPaid ? "#1677FF" : "#D46B08" }}
+                              >
+                                {vnd(v)} ₫
+                              </Typography.Text>
+                            </Tooltip>
+                          );
+                        },
+                      },
+                      {
                         title: "Status",
                         render: (_: unknown, r: StatementLine) =>
                           r.paid ? (
@@ -696,6 +746,71 @@ export function PeriodTab({
                       },
                     ]}
                   />
+                  {(() => {
+                    const t = calcStatementTotals(preview.mode, preview.statement ?? []);
+                    return (
+                      <>
+                        <Row gutter={12} style={{ marginTop: 16, marginBottom: 12 }}>
+                          <Col xs={8}>
+                            <Statistic
+                              title="Work days (trips)"
+                              value={(preview.statement ?? []).length}
+                            />
+                          </Col>
+                          {preview.mode === "ROUTE_PRICE" ? (
+                            <Col xs={16}>
+                              <Statistic
+                                title="Company owes provider"
+                                value={t.toCrew}
+                                suffix="₫"
+                                valueStyle={{ color: "#1677FF" }}
+                              />
+                            </Col>
+                          ) : (
+                            <>
+                              <Col xs={8}>
+                                <Statistic
+                                  title="Crew returns to company"
+                                  value={t.toCompany}
+                                  suffix="₫"
+                                  valueStyle={{ color: "#D46B08" }}
+                                />
+                              </Col>
+                              <Col xs={8}>
+                                <Statistic
+                                  title="Company returns to crew"
+                                  value={t.toCrew}
+                                  suffix="₫"
+                                  valueStyle={{ color: "#1677FF" }}
+                                />
+                              </Col>
+                            </>
+                          )}
+                        </Row>
+                        {preview.mode !== "ROUTE_PRICE" && (
+                          <Alert
+                            type={t.finalNet > 0 ? "warning" : t.finalNet < 0 ? "info" : "success"}
+                            showIcon
+                            message={
+                              <b>
+                                {t.finalNet > 0
+                                  ? `Final result: the trip creators must return ${vnd(t.finalNet)} ₫ to the company`
+                                  : t.finalNet < 0
+                                    ? `Final result: the company must return ${vnd(Math.abs(t.finalNet))} ₫ to the trip creators`
+                                    : "Final result: balanced across these work days, no money due"}
+                              </b>
+                            }
+                            description={
+                              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                Totals count locked trips only ({t.lockedCount} of{" "}
+                                {(preview.statement ?? []).length} have locked money).
+                              </Typography.Text>
+                            }
+                          />
+                        )}
+                      </>
+                    );
+                  })()}
                 </>
               )}
             </>
