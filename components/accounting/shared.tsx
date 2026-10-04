@@ -26,6 +26,7 @@ import {
 } from "antd";
 import {
   CheckCircleOutlined,
+  CalendarOutlined,
   CloseCircleOutlined,
   DeleteOutlined,
   DownloadOutlined,
@@ -572,6 +573,22 @@ export function PeriodTab({
                 onChange={(e) => setTo(e.target.value)}
                 style={{ flex: 1 }}
               />
+              <Tooltip title="Auto-fill the unpaid range (day after Paid through → today)">
+                <Button
+                  icon={<CalendarOutlined />}
+                  disabled={!payeeId}
+                  onClick={() => {
+                    if (person?.paidThrough) {
+                      const d = new Date(person.paidThrough);
+                      d.setDate(d.getDate() + 1);
+                      setFrom(d.toISOString().slice(0, 10));
+                    } else {
+                      setFrom(addDaysIso(-30));
+                    }
+                    setTo(todayIso());
+                  }}
+                />
+              </Tooltip>
             </Flex>
 
             {canExport && (
