@@ -507,16 +507,112 @@ export default function DispatchBoard({
       size="100%"
       destroyOnClose
     >
-      {boardLoading && filtered.length === 0 ? (
-        <BoardLoadingOverlay text="Loading schedule…" />
-      ) : (
-        <>
-          {refreshing && <BoardLoadingOverlay text="Refreshing…" />}
+      {(boardLoading || refreshing) && (
+        <BoardLoadingOverlay
+          text={boardLoading ? "Loading schedule…" : "Refreshing…"}
+        />
+      )}
+      <>
+        <div style={{ padding: "0 4px", position: "relative", minHeight: 120 }}>
           {filtered.length === 0 ? (
-            <Empty
-              description="No tours on this date"
-              style={{ padding: 48 }}
-            />
+            <>
+            <Card
+              size="small"
+              style={{ marginBottom: 16, borderRadius: 14 }}
+              styles={{ body: { padding: "14px 18px" } }}
+            >
+              <Row gutter={[16, 16]} align="middle">
+                <Col xs={24} md={14}>
+                  <Space direction="vertical" size={6}>
+                    <Space wrap>
+                      {isFilterToday && (
+                        <Tag color="green" style={{ fontSize: 12 }}>
+                          Today
+                        </Tag>
+                      )}
+                      <Text strong style={{ fontSize: 17 }}>
+                        {filterDate.format("dddd, MMMM D, YYYY")}
+                      </Text>
+                    </Space>
+                    <Space wrap>
+                      <CalendarOutlined style={{ color: token.colorPrimary }} />
+                      <Text type="secondary">Filter by date:</Text>
+                      <DatePicker
+                        value={filterDate}
+                        onChange={(d) => {
+                          if (d) setFilterDate(d);
+                        }}
+                        allowClear={false}
+                        disabledDate={isOutsideLoadedWindow}
+                        placeholder="Select a date"
+                        style={{ width: 200 }}
+                        cellRender={renderDateCell}
+                        picker="date"
+                        format="YYYY-MM-DD"
+                      />
+                      <Button
+                        size="small"
+                        onClick={() =>
+                          setFilterDate((d) => d.subtract(1, "day"))
+                        }
+                        disabled={isOutsideLoadedWindow(
+                          filterDate.subtract(1, "day"),
+                        )}
+                      >
+                        ← Prev
+                      </Button>
+                      <Button size="small" onClick={() => setFilterDate(today)}>
+                        Today
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => setFilterDate((d) => d.add(1, "day"))}
+                        disabled={isOutsideLoadedWindow(
+                          filterDate.add(1, "day"),
+                        )}
+                      >
+                        Next →
+                      </Button>
+                    </Space>
+                  </Space>
+                </Col>
+              </Row>
+            </Card>
+            <Card size="small" style={{ borderRadius: 14 }}>
+              <Empty
+                description={`No tours on ${filterDate.format("DD MMM YYYY")} — check past or future buses via the calendar above`}
+                style={{ padding: 32 }}
+              >
+                <Space wrap style={{ marginTop: 8 }}>
+                  <Button
+                    onClick={() =>
+                      setFilterDate((d) => d.subtract(1, "day"))
+                    }
+                    disabled={isOutsideLoadedWindow(
+                      filterDate.subtract(1, "day"),
+                    )}
+                  >
+                    ← Previous day
+                  </Button>
+                  <Button onClick={() => setFilterDate(today)}>Today</Button>
+                  <Button
+                    onClick={() => setFilterDate((d) => d.add(1, "day"))}
+                    disabled={isOutsideLoadedWindow(
+                      filterDate.add(1, "day"),
+                    )}
+                  >
+                    Next day →
+                  </Button>
+                </Space>
+              </Empty>
+              <Flex justify="center" style={{ paddingBottom: 12 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Tip: dots on the calendar mark dates with buses (past 30
+                  days to next 90 days).
+                </Text>
+              </Flex>
+            </Card>
+            </>
           ) : (
             <div
               style={{ padding: "0 4px", position: "relative", minHeight: 120 }}
@@ -555,6 +651,27 @@ export default function DispatchBoard({
                       picker="date"
                       format="YYYY-MM-DD"
                     />
+                    <Button
+                      size="small"
+                      onClick={() => setFilterDate((d) => d.subtract(1, "day"))}
+                      disabled={isOutsideLoadedWindow(
+                        filterDate.subtract(1, "day"),
+                      )}
+                    >
+                      ← Prev
+                    </Button>
+                    <Button size="small" onClick={() => setFilterDate(today)}>
+                      Today
+                    </Button>
+                    <Button
+                      size="small"
+                      onClick={() => setFilterDate((d) => d.add(1, "day"))}
+                      disabled={isOutsideLoadedWindow(
+                        filterDate.add(1, "day"),
+                      )}
+                    >
+                      Next →
+                    </Button>
                   </Space>
                 </Space>
               </Col>
@@ -741,10 +858,10 @@ export default function DispatchBoard({
             }
             style={{ borderRadius: 12, marginTop: 16 }}
           />
+            </div>
+          )}
         </div>
-      )}
-        </>
-      )}
+      </>
 
       <ConfirmFinishedModal
         assignment={finishing}

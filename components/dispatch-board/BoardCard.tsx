@@ -39,6 +39,7 @@ import {
 import type { ReactNode } from "react";
 import dayjs, { Dayjs } from "dayjs";
 import type { BoardCrew, BoardItem, BookingItem, TourMeta } from "./types";
+import StatementVoucherModal from "@/components/accounting/StatementVoucherModal";
 import { api } from "@/lib/api";
 import { STATUS_COLORS, LEAVE_COLOR } from "./types";
 
@@ -549,6 +550,7 @@ export default function BoardCard({
 }) {
   const { token } = antdTheme.useToken();
   const [dragOver, setDragOver] = useState(false);
+  const [voucherOpen, setVoucherOpen] = useState(false);
   // The insertion position is shown (above/below the hovered row) instead of
   // highlighting the whole row, which was misleading - it looked like that
   // booking would be replaced. rowId + pos live in one state so they can
@@ -810,39 +812,74 @@ export default function BoardCard({
         position: "relative",
       }}
     >
-      {/* Promo-style corner seal: sits flush in the top-right curve of the
-          card (matches its 12px radius). Separate from the COMPLETED status
-          pill — marks the trip immutable. */}
-      {a.status === "COMPLETED" && (
-        <Tooltip title="Sealed — trip completed and money locked. No further changes allowed.">
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              right: 0,
-              zIndex: 3,
-            }}
-          >
-            <Tag
-              icon={<LockOutlined />}
-              style={{
-                margin: 0,
-                color: "#fff",
-                fontWeight: 800,
-                fontSize: 11,
-                letterSpacing: 1.5,
-                padding: "4px 12px",
-                border: "none",
-                borderRadius: "0 12px 0 8px",
-                background:
-                  "linear-gradient(135deg, #f5222d 0%, #a8071a 100%)",
-                boxShadow: "0 2px 6px rgba(168, 7, 26, 0.45)",
-              }}
+      {/* Corner seals, flush in the top-right curve of the card (matches
+          its 12px radius). SEALED = trip immutable; PAID = Accounting
+          exported this bus in a payment period for the crew date range. */}
+      {(a.status === "COMPLETED" ||
+        (a.paymentLines && a.paymentLines.length > 0)) && (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            right: 0,
+            zIndex: 3,
+            display: "flex",
+            alignItems: "flex-start",
+          }}
+        >
+          {a.paymentLines && a.paymentLines.length > 0 && (
+            <Tooltip
+              title={`Paid in period(s): ${a.paymentLines
+                .map(
+                  (l) =>
+                    `${l.payableTo?.name ?? "—"} · ${new Date(l.tourDate).toLocaleDateString("vi-VN")}`,
+                )
+                .join(" · ")}`}
             >
-              SEALED
-            </Tag>
-          </div>
-        </Tooltip>
+              <Tag
+                icon={<CheckCircleOutlined />}
+                style={{
+                  margin: 0,
+                  color: "#fff",
+                  fontWeight: 800,
+                  fontSize: 11,
+                  letterSpacing: 1.5,
+                  padding: "4px 12px",
+                  border: "none",
+                  borderRadius:
+                    a.status === "COMPLETED" ? "0 0 0 8px" : "0 12px 0 8px",
+                  background:
+                    "linear-gradient(135deg, #52c41a 0%, #135200 100%)",
+                  boxShadow: "0 2px 6px rgba(19, 82, 0, 0.45)",
+                }}
+              >
+                PAID
+              </Tag>
+            </Tooltip>
+          )}
+          {a.status === "COMPLETED" && (
+            <Tooltip title="Sealed — trip completed and money locked. No further changes allowed.">
+              <Tag
+                icon={<LockOutlined />}
+                style={{
+                  margin: 0,
+                  color: "#fff",
+                  fontWeight: 800,
+                  fontSize: 11,
+                  letterSpacing: 1.5,
+                  padding: "4px 12px",
+                  border: "none",
+                  borderRadius: "0 12px 0 8px",
+                  background:
+                    "linear-gradient(135deg, #f5222d 0%, #a8071a 100%)",
+                  boxShadow: "0 2px 6px rgba(168, 7, 26, 0.45)",
+                }}
+              >
+                SEALED
+              </Tag>
+            </Tooltip>
+          )}
+        </div>
       )}
 
       <div
@@ -993,7 +1030,76 @@ export default function BoardCard({
               </Tag>
             </Tooltip>
           )}
+          {(a.tourReport?.moneyVerifiedAt || (a.paymentLines && a.paymentLines.length > 0)) && (
+            <Tooltip title="Open the payment statement for this trip (A4, totals + signatures)">
+              <Button
+                size="small"
+                icon={<PrinterOutlined />}
+                onClick={() => setVoucherOpen(true)}
+                style={{ margin: 0, height: 24, fontSize: 11 }}
+              >
+                Statement
+              </Button>
+            </Tooltip>
+          )}
         </div>
+      )}
+      {voucherOpen && (
+        <StatementVoucherModal
+          open
+          onClose={() => setVoucherOpen(false)}
+          payee={{
+            name:
+              a.paymentLines?.[0]?.payableTo?.name ??
+              a.guide?.name ??
+              a.driver?.name ??
+              "—",
+            role:
+              a.paymentLines?.[0]?.payableTo?.id && a.guide?.id
+                ? a.paymentLines[0].payableTo?.id === a.guide.id
+                  ? "GUIDE"
+                  : "DRIVER"
+                : a.guide
+                  ? "GUIDE"
+                  : "DRIVER",
+            groupLabel: null,
+            providerName: a.provider?.name ?? null,
+          }}
+          fromDate={dayjs(a.startDate).format("YYYY-MM-DD")}
+          toDate={dayjs(a.endDate).format("YYYY-MM-DD")}
+          mode="SETTLEMENT"
+          rows={[
+            {
+              assignmentId: a.id,
+              code: a.code,
+              tourName: a.tourName,
+              tourDate: a.startDate,
+              endDate: a.endDate,
+              status: a.status,
+              plateNumber: a.vehicle?.plateNumber ?? null,
+              providerName: a.provider?.name ?? null,
+              guideName: a.guide?.name ?? null,
+              driverName: a.driver?.name ?? null,
+              myRole:
+                a.paymentLines?.[0]?.payableTo?.id && a.guide?.id
+                  ? a.paymentLines[0].payableTo?.id === a.guide.id
+                    ? "GUIDE"
+                    : "DRIVER"
+                  : "GUIDE",
+              netAmount:
+                a.tourReport?.netAmount != null
+                  ? Number(a.tourReport.netAmount)
+                  : null,
+              flow: a.tourReport?.settlementFlow ?? null,
+              locked: !!a.tourReport?.moneyVerifiedAt,
+              paid: (a.paymentLines?.length ?? 0) > 0,
+              paidToName: a.paymentLines?.[0]?.payableTo?.name ?? null,
+              periodToDate: null,
+              exportable: false,
+              settlesWith: null,
+            },
+          ]}
+        />
       )}
 
       <Flex wrap gap={6} align="center" style={{ marginBottom: 10 }}>
