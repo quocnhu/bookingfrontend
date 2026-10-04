@@ -1478,6 +1478,7 @@ export function HistoryTab({ people, canVoid }: { people: Person[]; canVoid: boo
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState<HistoryRow | null>(null);
   const [voucherRow, setVoucherRow] = useState<HistoryRow | null>(null);
+  const [page, setPage] = useState({ current: 1, pageSize: 10 });
 
   const voidPeriod = (r: HistoryRow) => {
     let reason = "";
@@ -1565,16 +1566,30 @@ export function HistoryTab({ people, canVoid }: { people: Person[]; canVoid: boo
         size="small"
         loading={loading}
         dataSource={rows}
-        pagination={{ pageSize: 10, showSizeChanger: false }}
+        pagination={{
+          current: page.current,
+          pageSize: page.pageSize,
+          total: rows.length,
+          showSizeChanger: false,
+          onChange: (current, pageSize) => setPage({ current, pageSize }),
+        }}
         locale={{ emptyText: "No periods exported yet" }}
         expandable={{
-          expandedRowRender: (r) => (
+          expandedRowRender: (r, index) => {
+            const parentNo = (page.current - 1) * page.pageSize + index + 1;
+            return (
             <Table
               rowKey="assignmentId"
               size="small"
               pagination={false}
               dataSource={r.lines}
               columns={[
+                {
+                  title: "#",
+                  width: 64,
+                  align: "center",
+                  render: (_: unknown, __: unknown, i: number) => `${parentNo}.${i + 1}`,
+                },
                 { title: "Trip", dataIndex: "tourName", render: (v) => v ?? "—" },
                 { title: "Date", dataIndex: "tourDate", render: (v) => fmtDate(v) },
                 {
@@ -1594,9 +1609,17 @@ export function HistoryTab({ people, canVoid }: { people: Person[]; canVoid: boo
                 },
               ]}
             />
-          ),
+            );
+          },
         }}
         columns={[
+          {
+            title: "#",
+            width: 56,
+            align: "center",
+            render: (_: unknown, __: HistoryRow, index: number) =>
+              (page.current - 1) * page.pageSize + index + 1,
+          },
           {
             title: "Person",
             render: (_: unknown, r: HistoryRow) => (
