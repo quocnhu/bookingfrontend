@@ -16,6 +16,7 @@ export default function AccountingQueuePage() {
     <AccountingShell
       title="Verification queue"
       description="Review the money sheet, then decide: Verify to lock the money, or Return it so the submitter can check it again."
+      hideHeader
     >
       {({ categories }) => (
         <>
