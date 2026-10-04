@@ -54,6 +54,11 @@ interface AvailAssignment {
   startDate: string;
   endDate: string;
   plateNumber?: string | null;
+  // Paid = exported in a non-voided payment period (Accounting clicked
+  // Accept/Export after checking the total). Verified-but-not-exported stays unpaid.
+  paid?: boolean;
+  moneyVerifiedAt?: string | null;
+  paidToName?: string | null;
 }
 
 interface AvailGuide {
@@ -231,6 +236,30 @@ export default function CrewAvailabilityDrawer({
               l.status !== "REJECTED" &&
               days.some((d) => coversLeave(d, l)),
           );
+          // Paid summary for the searched range: derived from the exported
+          // payment periods (Accounting preview → Accept/Export → Paid).
+          const tours = row.member.assignments ?? [];
+          const paidCount = tours.filter((a) => a.paid).length;
+          const paidTag =
+            tours.length === 0 ? null : paidCount === tours.length ? (
+              <Tooltip title={`${paidCount}/${tours.length} tours in this range already exported (paid)`}>
+                <Tag icon={<span>✓</span>} color="success" style={{ margin: 0, fontSize: 10 }}>
+                  Paid
+                </Tag>
+              </Tooltip>
+            ) : paidCount > 0 ? (
+              <Tooltip title={`${paidCount}/${tours.length} tours paid — rest still unpaid`}>
+                <Tag color="warning" style={{ margin: 0, fontSize: 10 }}>
+                  {paidCount}/{tours.length} paid
+                </Tag>
+              </Tooltip>
+            ) : (
+              <Tooltip title={`${tours.length} tour(s) in this range — none exported yet (unpaid)`}>
+                <Tag color="default" style={{ margin: 0, fontSize: 10 }}>
+                  Unpaid
+                </Tag>
+              </Tooltip>
+            );
           return (
             <Flex gap={8} align="center">
               <span
@@ -242,7 +271,7 @@ export default function CrewAvailabilityDrawer({
                   flex: "none",
                 }}
               />
-              <Flex vertical gap={0}>
+              <Flex vertical gap={2}>
                 <Flex gap={4} align="center" wrap>
                   <Text strong style={{ fontSize: 13 }}>
                     {row.name}
@@ -256,6 +285,7 @@ export default function CrewAvailabilityDrawer({
                       </Tag>
                     </Tooltip>
                   )}
+                  {paidTag}
                 </Flex>
                 <Text type="secondary" style={{ fontSize: 11 }}>
                   {row.kind === "guide" ? "Guide" : "Driver"}
@@ -321,20 +351,29 @@ export default function CrewAvailabilityDrawer({
             const done = busy.status === "COMPLETED";
             // Assigned driver/guide carries the bus number plate.
             const plate = busy.plateNumber ? ` · ${busy.plateNumber}` : "";
+            const paidMark = busy.paid
+              ? ` · ✓ Paid${busy.paidToName ? ` to ${busy.paidToName}` : ""}`
+              : busy.moneyVerifiedAt
+                ? " · Unpaid (money locked, not exported)"
+                : " · Unpaid (not exported)";
             return (
               <Tooltip
-                title={`${busy.code ?? "Bus"}${plate} · ${busy.tourName ?? "Tour"} · ${busy.status ?? ""}`}
+                title={`${busy.code ?? "Bus"}${plate} · ${busy.tourName ?? "Tour"} · ${busy.status ?? ""}${paidMark}`}
               >
                 <div
                   style={{
                     height: 40,
                     borderRadius: 10,
-                    background: done
-                      ? "rgba(0, 0, 0, 0.04)"
-                      : "rgba(250, 140, 22, 0.16)",
-                    border: done
-                      ? "1px solid #d9d9d9"
-                      : "1px solid rgba(250, 140, 22, 0.35)",
+                    background: busy.paid
+                      ? "rgba(82, 196, 26, 0.14)"
+                      : done
+                        ? "rgba(0, 0, 0, 0.04)"
+                        : "rgba(250, 140, 22, 0.16)",
+                    border: busy.paid
+                      ? "1px solid rgba(82, 196, 26, 0.55)"
+                      : done
+                        ? "1px solid #d9d9d9"
+                        : "1px solid rgba(250, 140, 22, 0.35)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -346,15 +385,17 @@ export default function CrewAvailabilityDrawer({
                     strong
                     style={{
                       fontSize: 11,
-                      color: done ? "#8c8c8c" : "#d46b08",
+                      color: busy.paid ? "#389e0d" : done ? "#8c8c8c" : "#d46b08",
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                     }}
                   >
-                    {done
-                      ? `✓ ${busy.code ?? "Done"}${busy.plateNumber ? ` · ${busy.plateNumber}` : ""}`
-                      : `${busy.code ?? "Busy"}${busy.plateNumber ? ` · ${busy.plateNumber}` : ""}`}
+                    {busy.paid
+                      ? `✓ ${busy.code ?? "Paid"}${busy.plateNumber ? ` · ${busy.plateNumber}` : ""}`
+                      : done
+                        ? `✓ ${busy.code ?? "Done"}${busy.plateNumber ? ` · ${busy.plateNumber}` : ""} · Unpaid`
+                        : `${busy.code ?? "Busy"}${busy.plateNumber ? ` · ${busy.plateNumber}` : ""} · Unpaid`}
                   </Text>
                 </div>
               </Tooltip>
@@ -420,6 +461,12 @@ export default function CrewAvailabilityDrawer({
           </Tooltip>
           <Tooltip title="Tour completed">
             <Tag color="default">Done</Tag>
+          </Tooltip>
+          <Tooltip title="Exported payment period — Accounting checked the total and clicked Accept/Export">
+            <Tag color="success">✓ Paid</Tag>
+          </Tooltip>
+          <Tooltip title="Money not exported yet — still unpaid">
+            <Tag color="default">Unpaid</Tag>
           </Tooltip>
           <Tooltip title="Off — tourguide or driver has day leaves">
             <Tag color="volcano">Off</Tag>
