@@ -42,41 +42,51 @@ import {
 } from "@ant-design/icons";
 import { useApp } from "@/lib/app-context";
 import NotificationCenter from "@/components/notification-center";
+import MarqueeText from "@/components/MarqueeText";
 
 const { Header, Sider, Content } = Layout;
 
 const menuItems = [
-  { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard" },
-  { key: "/tours", icon: <CarOutlined />, label: "Tours" },
-  { key: "/bookings", icon: <FileTextOutlined />, label: "Bookings" },
-  { key: "/drive", icon: <CloudOutlined />, label: "Drive" },
-  { key: "/leaves", icon: <CalendarOutlined />, label: "Day Off Requests" },
-  { key: "/users", icon: <TeamOutlined />, label: "Users" },
-  { key: "/notifications", icon: <BellOutlined />, label: "Notifications" },
+  { key: "/dashboard", icon: <DashboardOutlined />, label: <MenuLabel text="Dashboard" /> },
+  { key: "/tours", icon: <CarOutlined />, label: <MenuLabel text="Tours" /> },
+  { key: "/bookings", icon: <FileTextOutlined />, label: <MenuLabel text="Bookings" /> },
+  { key: "/drive", icon: <CloudOutlined />, label: <MenuLabel text="Drive" /> },
+  { key: "/leaves", icon: <CalendarOutlined />, label: <MenuLabel text="Day Off Requests" /> },
+  { key: "/users", icon: <TeamOutlined />, label: <MenuLabel text="Users" /> },
+  { key: "/notifications", icon: <BellOutlined />, label: <MenuLabel text="Notifications" /> },
   {
     key: "/accounting",
     icon: <SafetyCertificateOutlined />,
-    label: "Accounting Room",
+    label: <MenuLabel text="Accounting Room" />,
     children: [
-      { key: "/accounting/period", icon: <DownloadOutlined />, label: "Period check & export" },
-      { key: "/accounting/queue", icon: <LockOutlined />, label: "Verification queue" },
-      { key: "/accounting/history", icon: <HistoryOutlined />, label: "Payment history" },
+      { key: "/accounting/period", icon: <DownloadOutlined />, label: <MenuLabel text="Period check & export" /> },
+      { key: "/accounting/queue", icon: <LockOutlined />, label: <MenuLabel text="Verification queue" /> },
+      { key: "/accounting/history", icon: <HistoryOutlined />, label: <MenuLabel text="Payment history" /> },
     ],
   },
   {
     key: "/service",
     icon: <AccountBookOutlined />,
-    label: "Service",
+    label: <MenuLabel text="Service" />,
     children: [
-      { key: "/service/transportation", icon: <CarOutlined />, label: "Transportation" },
-      { key: "/service/coordinate", icon: <EnvironmentOutlined />, label: "Coordinate & Hotel" },
+      { key: "/service/transportation", icon: <CarOutlined />, label: <MenuLabel text="Transportation" /> },
+      { key: "/service/coordinate", icon: <EnvironmentOutlined />, label: <MenuLabel text="Coordinate & Hotel" /> },
     ],
   },
-  { key: "/audit", icon: <HistoryOutlined />, label: "Audit" },
-  { key: "/auth-activities", icon: <LoginOutlined />, label: "Auth Activity" },
-  { key: "/profile", icon: <UserOutlined />, label: "Profile" },
-  { key: "/company-profile", icon: <BankOutlined />, label: "Company Profile" },
+  { key: "/audit", icon: <HistoryOutlined />, label: <MenuLabel text="Audit" /> },
+  { key: "/auth-activities", icon: <LoginOutlined />, label: <MenuLabel text="Auth Activity" /> },
+  { key: "/profile", icon: <UserOutlined />, label: <MenuLabel text="Profile" /> },
+  { key: "/company-profile", icon: <BankOutlined />, label: <MenuLabel text="Company Profile" /> },
 ];
+
+/** Sidebar labels scroll on hover when truncated (e.g. "Period check & ex…"). */
+function MenuLabel({ text }: { text: string }) {
+  return (
+    <MarqueeText hoverOnly tip={text} style={{ width: "100%" }}>
+      {text}
+    </MarqueeText>
+  );
+}
 
 const roleColors: Record<string, { tag: string; avatar: string }> = {
   ADMIN: { tag: "gold", avatar: "#F59E0B" },

@@ -37,14 +37,22 @@ export default function MarqueeText({
   fill = false,
   style,
   tip,
+  hoverOnly = false,
 }: {
   children: ReactNode;
   strong?: boolean;
   fill?: boolean;
   style?: CSSProperties;
   tip?: string;
+  /**
+   * hoverOnly: no motion until the pointer is over the text (sidebar
+   * menu labels). Default false = scroll whenever overflowing (board,
+   * dropdowns). Detection is identical — ResizeObserver + shift.
+   */
+  hoverOnly?: boolean;
 }) {
   const { ref, over, shift } = useElementMetrics<HTMLSpanElement>();
+  const dur = Math.max(5, shift / 30);
   const base: CSSProperties = {
     fontWeight: strong ? 600 : undefined,
     display: "inline-block",
@@ -55,21 +63,26 @@ export default function MarqueeText({
     ...(fill ? { flex: 1 } : {}),
     ...style,
   };
-  const body = (
-    <span ref={ref} style={base}>
-      <span
-        style={{
-          display: "inline-block",
-          whiteSpace: "nowrap",
-          willChange: "transform",
-          animation: over
-            ? `board-marquee-x ${Math.max(5, shift / 30)}s linear infinite`
-            : undefined,
+  const inner: CSSProperties = {
+    display: "inline-block",
+    whiteSpace: "nowrap",
+    willChange: "transform",
+    ...(!hoverOnly && over
+      ? {
+          animation: `board-marquee-x ${dur}s linear infinite`,
           ["--shift" as string]: `-${shift}px`,
-        }}
-      >
-        {children}
-      </span>
+        }
+      : {}),
+    ...(hoverOnly
+      ? { ["--shift" as string]: `-${shift}px` }
+      : {}),
+  };
+  const body = (
+    <span ref={ref} style={base} className={hoverOnly && over ? "mq-hover" : undefined}>
+      {hoverOnly && over && (
+        <style>{`.mq-hover:hover > span { animation: board-marquee-x ${dur}s linear infinite; }`}</style>
+      )}
+      <span style={inner}>{children}</span>
     </span>
   );
   if (tip && over) return <Tooltip title={tip}>{body}</Tooltip>;
