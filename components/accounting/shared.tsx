@@ -145,15 +145,20 @@ export interface StatementLine {
   code?: string | null;
   tourName?: string | null;
   tourDate: string | null;
+  endDate?: string | null;
+  status?: string | null;
   plateNumber?: string | null;
+  /** Transport provider of the trip (whose vehicle ran it). */
+  providerName?: string | null;
   /** How the payee took part: GUIDE, DRIVER, GUIDE+DRIVER, or PROVIDER. */
   myRole: string;
   netAmount?: number | null;
   flow?: "COLLECT_MONEY" | "PAY_MONEY" | null;
+  locked?: boolean;
   paid: boolean;
   paidToName?: string | null;
   periodToDate?: string | null;
-  /** True only for the money payee's own not-yet-exported trips. */
+  /** True only for trips that are actually in the export list. */
   exportable: boolean;
   /** Person the trip money settles with (always the guide). */
   settlesWith?: string | null;
@@ -640,9 +645,21 @@ export function PeriodTab({
                             <br />
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                               {r.tourName} · {fmtDate(r.tourDate)}
+                              {r.endDate && fmtDate(r.endDate) !== fmtDate(r.tourDate)
+                                ? ` → ${fmtDate(r.endDate)}`
+                                : ""}
                               {r.plateNumber ? ` · ${r.plateNumber}` : ""}
                               {r.myRole ? ` · ${r.myRole}` : ""}
+                              {r.status ? ` · ${r.status}` : ""}
                             </Typography.Text>
+                            {r.providerName && (
+                              <>
+                                <br />
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                  Provider: {r.providerName}
+                                </Typography.Text>
+                              </>
+                            )}
                           </>
                         ),
                       },
@@ -659,6 +676,10 @@ export function PeriodTab({
                             </Tooltip>
                           ) : r.exportable ? (
                             <Tag color="warning">Unpaid — ready to export</Tag>
+                          ) : !r.locked ? (
+                            <Tooltip title="Tour money not locked by Accounting yet — nothing to pay out">
+                              <Tag color="default">Not locked yet</Tag>
+                            </Tooltip>
                           ) : (
                             <Tooltip
                               title={
