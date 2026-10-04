@@ -79,10 +79,16 @@ const menuItems = [
   { key: "/company-profile", icon: <BankOutlined />, label: <MenuLabel text="Company Profile" /> },
 ];
 
-/** Sidebar labels scroll on hover when truncated (e.g. "Period check & ex…"). */
+/** Sidebar labels scroll on hover when truncated (e.g. "Period check & ex…").
+ *  display:block + flex:1 + minWidth:0 fills exactly the space after the icon
+ *  and clips hard — sliding text can never paint over the icons. */
 function MenuLabel({ text }: { text: string }) {
   return (
-    <MarqueeText hoverOnly tip={text} style={{ width: "100%" }}>
+    <MarqueeText
+      hoverOnly
+      tip={text}
+      style={{ display: "block", flex: 1, minWidth: 0 }}
+    >
       {text}
     </MarqueeText>
   );
