@@ -466,6 +466,38 @@ export function PeriodTab({
       }
     };
 
+    // Final confirmation: show exactly what is about to be frozen and
+    // who gets notified, then export. Nothing is exported silently.
+    const askFinalConfirm = () => {
+      const totalLine =
+        preview.mode === "ROUTE_PRICE"
+          ? `Company pays provider ${vnd(preview.totalPrice ?? 0)} ₫`
+          : (preview.totalNet ?? 0) > 0
+            ? `${person.name} returns ${vnd(preview.totalNet ?? 0)} ₫ to the company`
+            : (preview.totalNet ?? 0) < 0
+              ? `Company returns ${vnd(Math.abs(preview.totalNet ?? 0))} ₫ to ${person.name}`
+              : "Balanced — no money due";
+      modal.confirm({
+        title: "Confirm this export?",
+        content: (
+          <div style={{ display: "grid", gap: 4, marginTop: 8 }}>
+            <div><b>Payee:</b> {person.name} · {PAYEE_GROUP_LABELS[person.payeeType] ?? person.payeeType}</div>
+            <div><b>Range:</b> {fmtDate(from)} → {fmtDate(to)}</div>
+            <div><b>Trips:</b> {preview.tourCount}</div>
+            <div><b>Total:</b> {totalLine}</div>
+            {note && <div><b>Note:</b> {note}</div>}
+            <div style={{ marginTop: 8 }}>
+              Export freezes these details, moves “Paid through” to {fmtDate(to)}, marks every
+              bus Paid, and notifies the receivers to confirm their money.
+            </div>
+          </div>
+        ),
+        okText: "Confirm export",
+        cancelText: "Review again",
+        onOk: go,
+      });
+    };
+
     // Default #4: allow override, but warn about a double payment.
     const watermark = preview.paidThrough;
     const risky = watermark && new Date(from) <= new Date(watermark);
@@ -476,11 +508,11 @@ export function PeriodTab({
         okText: "Export anyway",
         okButtonProps: { danger: true },
         cancelText: "Pick another date",
-        onOk: go,
+        onOk: askFinalConfirm,
       });
       return;
     }
-    go();
+    askFinalConfirm();
   };
 
   return (
