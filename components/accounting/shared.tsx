@@ -33,6 +33,7 @@ import {
   HistoryOutlined,
   LockOutlined,
   PlusOutlined,
+  PrinterOutlined,
   SafetyCertificateOutlined,
   SearchOutlined,
   WarningOutlined,
@@ -42,6 +43,7 @@ import { message } from "@/lib/antd-message";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import TourTemplateModal from "@/components/dispatch-board/TourTemplateModal";
+import StatementVoucherModal from "./StatementVoucherModal";
 
 const vnd = (n: number) =>
   new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(n ?? 0);
@@ -150,6 +152,8 @@ export interface StatementLine {
   plateNumber?: string | null;
   /** Transport provider of the trip (whose vehicle ran it). */
   providerName?: string | null;
+  guideName?: string | null;
+  driverName?: string | null;
   /** How the payee took part: GUIDE, DRIVER, GUIDE+DRIVER, or PROVIDER. */
   myRole: string;
   netAmount?: number | null;
@@ -251,7 +255,7 @@ const DirectionTag = ({ direction }: { direction: string }) => {
 };
 
 // ── Period check & export ───────────────────────────────────────────
-function calcStatementTotals(mode: string, rows: StatementLine[]) {
+export function calcStatementTotals(mode: string, rows: StatementLine[]) {
   let toCompany = 0;
   let toCrew = 0;
   let lockedCount = 0;
@@ -290,6 +294,7 @@ export function PeriodTab({
   const [preview, setPreview] = useState<PeriodPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [voucherOpen, setVoucherOpen] = useState(false);
 
   const person = people.find((p) => p.id === payeeId);
   const PAYEE_GROUPS = useMemo(
@@ -380,6 +385,7 @@ export function PeriodTab({
   };
 
   return (
+    <>
     <Row gutter={[16, 16]}>
       <Col xs={24} lg={7}>
         <Card title="Filters" size="small">
@@ -455,6 +461,15 @@ export function PeriodTab({
               onClick={doExport}
             >
               Export payment period
+            </Button>
+            <Button
+              icon={<PrinterOutlined />}
+              block
+              disabled={!payeeId || ((preview?.tourCount ?? 0) === 0 && (preview?.statement?.length ?? 0) === 0)}
+              onClick={() => setVoucherOpen(true)}
+              style={{ marginTop: 8 }}
+            >
+              Print statement (A4)
             </Button>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               Export freezes the details and moves “Paid through” to the end of the period.
@@ -818,6 +833,25 @@ export function PeriodTab({
         </Card>
       </Col>
     </Row>
+    {voucherOpen && preview && person && (
+      <StatementVoucherModal
+        open
+        onClose={() => setVoucherOpen(false)}
+        payee={{
+          name: person.name,
+          role: person.role,
+          groupLabel: PAYEE_GROUP_LABELS[person.payeeType],
+          providerName: person.providerName,
+        }}
+        fromDate={from}
+        toDate={to}
+        mode={preview.mode}
+        rows={preview.statement ?? []}
+        paidThrough={preview.paidThrough}
+        note={note || undefined}
+      />
+    )}
+    </>
   );
 }
 
