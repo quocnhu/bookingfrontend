@@ -781,8 +781,26 @@ export function PeriodTab({
                     rowKey="assignmentId"
                     size="small"
                     dataSource={preview.statement}
-                    pagination={false}
+                    pagination={
+                      preview.statement.length > 10
+                        ? { pageSize: 10, showSizeChanger: false }
+                        : false
+                    }
                     columns={[
+                      {
+                        title: "Date",
+                        render: (_: unknown, r: StatementLine) => (
+                          <Typography.Text style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                            {fmtDate(r.tourDate)}
+                            {r.endDate && fmtDate(r.endDate) !== fmtDate(r.tourDate)
+                              ? ` → ${fmtDate(r.endDate)}`
+                              : ""}
+                          </Typography.Text>
+                        ),
+                        sorter: (a: StatementLine, b: StatementLine) =>
+                          dayjs(a.tourDate).valueOf() - dayjs(b.tourDate).valueOf(),
+                        defaultSortOrder: "ascend" as const,
+                      },
                       {
                         title: "Trip",
                         render: (_: unknown, r: StatementLine) => (
@@ -790,10 +808,7 @@ export function PeriodTab({
                             <Typography.Text strong>{r.code ?? "—"}</Typography.Text>
                             <br />
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              {r.tourName} · {fmtDate(r.tourDate)}
-                              {r.endDate && fmtDate(r.endDate) !== fmtDate(r.tourDate)
-                                ? ` → ${fmtDate(r.endDate)}`
-                                : ""}
+                              {r.tourName}
                               {r.plateNumber ? ` · ${r.plateNumber}` : ""}
                               {r.myRole ? ` · ${r.myRole}` : ""}
                               {r.status ? ` · ${r.status}` : ""}
@@ -812,6 +827,8 @@ export function PeriodTab({
                       {
                         title: "Net",
                         align: "right" as const,
+                        sorter: (a: StatementLine, b: StatementLine) =>
+                          (a.amount ?? a.netAmount ?? 0) - (b.amount ?? b.netAmount ?? 0),
                         render: (_: unknown, r: StatementLine) => {
                           const v = r.amount ?? r.netAmount;
                           if (v == null)
@@ -840,6 +857,13 @@ export function PeriodTab({
                       },
                       {
                         title: "Status",
+                        filters: [
+                          { text: "Paid", value: true },
+                          { text: "Unpaid", value: false },
+                        ],
+                        onFilter: (v: boolean | React.Key, r: StatementLine) => r.paid === v,
+                        sorter: (a: StatementLine, b: StatementLine) =>
+                          Number(a.paid) - Number(b.paid),
                         render: (_: unknown, r: StatementLine) =>
                           r.paid ? (
                             <Tooltip
@@ -887,7 +911,7 @@ export function PeriodTab({
                               <Statistic
                                 title="Company owes provider"
                                 value={t.toCrew}
-                                suffix="₫"
+                                formatter={(v) => `${Number(v).toLocaleString("vi-VN")} ₫`}
                                 valueStyle={{ color: "#1677FF" }}
                               />
                             </Col>
@@ -897,7 +921,7 @@ export function PeriodTab({
                                 <Statistic
                                   title="Crew returns to company"
                                   value={t.toCompany}
-                                  suffix="₫"
+                                  formatter={(v) => `${Number(v).toLocaleString("vi-VN")} ₫`}
                                   valueStyle={{ color: "#D46B08" }}
                                 />
                               </Col>
@@ -905,7 +929,7 @@ export function PeriodTab({
                                 <Statistic
                                   title="Company returns to crew"
                                   value={t.toCrew}
-                                  suffix="₫"
+                                  formatter={(v) => `${Number(v).toLocaleString("vi-VN")} ₫`}
                                   valueStyle={{ color: "#1677FF" }}
                                 />
                               </Col>
