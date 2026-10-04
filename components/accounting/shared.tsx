@@ -90,6 +90,8 @@ export interface Person {
   providerIsCompany?: boolean | null;
   payeeType: PayeeType;
   paidThrough?: string | null;
+  /** Locked/closed trips with no export for this payee (all time). */
+  unpaidCount?: number;
 }
 
 export interface PayeeGroup {
@@ -542,8 +544,39 @@ export function PeriodTab({
                       p.kind === "PROVIDER"
                         ? `${p.name} · external transport provider`
                         : `${p.name} · ${p.role === "DRIVER" ? "driver" : "guide"}`,
+                    unpaid: p.unpaidCount ?? 0,
                   })),
                 }))}
+                optionRender={(option: any) => (
+                  <Flex justify="space-between" align="center" gap={8}>
+                    <span
+                      style={
+                        option.data?.unpaid > 0
+                          ? { color: "#cf1322", fontWeight: 600 }
+                          : undefined
+                      }
+                    >
+                      {option.data?.unpaid > 0 && (
+                        <span
+                          style={{
+                            display: "inline-block",
+                            width: 7,
+                            height: 7,
+                            borderRadius: "50%",
+                            background: "#cf1322",
+                            marginRight: 6,
+                          }}
+                        />
+                      )}
+                      {option.label}
+                    </span>
+                    {option.data?.unpaid > 0 && (
+                      <Tag color="red" style={{ margin: 0, fontSize: 11 }}>
+                        {option.data.unpaid} unpaid
+                      </Tag>
+                    )}
+                  </Flex>
+                )}
               />
             </div>
 
