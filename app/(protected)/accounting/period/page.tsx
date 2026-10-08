@@ -9,7 +9,7 @@ export default function AccountingPeriodPage() {
   return (
     <AccountingShell
       title="Period check & export"
-      description="Choose a guide or driver and a date range, preview the total amounts and who pays whom, then issue the period."
+      description="Choose a transport provider, guide or driver and a work-date range (trip start/end), preview the total amounts and who pays whom, then issue the period."
       hideHeader
     >
       {({ people, reloadPeople }) => (

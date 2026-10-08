@@ -491,13 +491,14 @@ export function PeriodTab({
         content: (
           <div style={{ display: "grid", gap: 4, marginTop: 8 }}>
             <div><b>Payee:</b> {person.name} · {PAYEE_GROUP_LABELS[person.payeeType] ?? person.payeeType}</div>
-            <div><b>Range:</b> {fmtDate(from)} → {fmtDate(to)}</div>
+            <div><b>Work dates:</b> {fmtDate(from)} → {fmtDate(to)}</div>
             <div><b>Trips:</b> {preview.tourCount}</div>
             <div><b>Total:</b> {totalLine}</div>
             {note && <div><b>Note:</b> {note}</div>}
             <div style={{ marginTop: 8 }}>
-              Export freezes these details, moves “Paid through” to {fmtDate(to)}, marks every
-              bus Paid, and notifies the receivers to confirm their money.
+              Range matches trip work dates (booking start/end). Only closed/locked,
+              not-yet-exported trips are frozen. Export moves “Paid through” to {fmtDate(to)},
+              marks every bus Paid, and notifies the receivers to confirm their money.
             </div>
           </div>
         ),
@@ -507,13 +508,14 @@ export function PeriodTab({
       });
     };
 
-    // Default #4: allow override, but warn about a double payment.
+    // Overlap is allowed to catch late-closed trips: already-exported trips are
+    // skipped, so re-using an old range only exports what is still new.
     const watermark = preview.paidThrough;
     const risky = watermark && new Date(from) <= new Date(watermark);
     if (risky) {
       modal.confirm({
         title: "Does this range overlap an already paid period?",
-        content: `This person has been paid up to ${fmtDate(watermark)}. Starting from ${fmtDate(from)} may double-pay. Export anyway?`,
+        content: `This payee has been paid up to ${fmtDate(watermark)}. Already-exported trips will be skipped — only new trips in ${fmtDate(from)} → ${fmtDate(to)} will export. Export anyway?`,
         okText: "Export anyway",
         okButtonProps: { danger: true },
         cancelText: "Pick another date",
@@ -556,9 +558,15 @@ export function PeriodTab({
                         ? `${p.name} · external transport provider`
                         : `${p.name} · ${p.role === "DRIVER" ? "driver" : "guide"}`,
                     unpaid: p.unpaidCount ?? 0,
+                    kind: p.kind,
+                    paidThrough: p.paidThrough ?? null,
                   })),
                 }))}
-                optionRender={(option: any) => (
+                optionRender={(option: any) => {
+                  const isProvider = option.data?.kind === "PROVIDER";
+                  const showUnpaid =
+                    !isProvider && (option.data?.unpaid ?? 0) > 0;
+                  return (
                   <Flex justify="space-between" align="center" gap={8}>
                     <MarqueeText
                       style={{ flex: 1, minWidth: 0 }}
@@ -566,12 +574,12 @@ export function PeriodTab({
                     >
                       <span
                         style={
-                          option.data?.unpaid > 0
+                          showUnpaid
                             ? { color: "#cf1322", fontWeight: 600 }
                             : undefined
                         }
                       >
-                        {option.data?.unpaid > 0 && (
+                        {showUnpaid && (
                           <span
                             style={{
                               display: "inline-block",
@@ -586,13 +594,24 @@ export function PeriodTab({
                         {option.label}
                       </span>
                     </MarqueeText>
-                    {option.data?.unpaid > 0 && (
+                    {showUnpaid && (
                       <Tag color="red" style={{ margin: 0, fontSize: 11, flex: "none" }}>
                         {option.data.unpaid} unpaid
                       </Tag>
                     )}
+                    {isProvider &&
+                      (option.data?.paidThrough ? (
+                        <Tag color="blue" style={{ margin: 0, fontSize: 11, flex: "none" }}>
+                          Paid {fmtDate(option.data.paidThrough)}
+                        </Tag>
+                      ) : (
+                        <Tag style={{ margin: 0, fontSize: 11, flex: "none" }}>
+                          Never paid
+                        </Tag>
+                      ))}
                   </Flex>
-                )}
+                  );
+                }}
               />
             </div>
 
@@ -622,7 +641,7 @@ export function PeriodTab({
                 onChange={(e) => setTo(e.target.value)}
                 style={{ flex: 1 }}
               />
-              <Tooltip title="Auto-fill the unpaid range (day after Paid through → today)">
+              <Tooltip title="Auto-fill the work-date range (day after Paid through → today)">
                 <Button
                   icon={<CalendarOutlined />}
                   disabled={!payeeId}
@@ -681,7 +700,7 @@ export function PeriodTab({
               CSV uses raw numbers (no ₫, no separators) and ISO dates — ready for Excel formulas and Python/pandas.
             </Typography.Text>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              Export freezes the details and moves “Paid through” to the end of the period.
+              Range matches trip work dates (booking start/end). Only closed/locked, not-yet-exported trips export — overlapping a paid range only catches late trips, never double-pays. Export moves “Paid through” to the end of the period.
             </Typography.Text>
           </Space>
         </Card>
@@ -708,8 +727,8 @@ export function PeriodTab({
             <Empty
               description={
                 preview?.mode === "ROUTE_PRICE"
-                  ? "No transport provider trips in this range"
-                  : "No trips with locked, unpaid money in this range"
+                  ? "No closed provider trips with work dates in this range"
+                  : "No locked, unpaid trips with work dates in this range"
               }
             />
           ) : (

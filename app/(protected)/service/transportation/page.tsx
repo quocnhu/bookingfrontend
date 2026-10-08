@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -37,7 +37,7 @@ import dayjs from "dayjs";
 import CrewAvailabilityDrawer from "@/components/dispatch-board/CrewAvailabilityDrawer";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
-import { indexColumn } from "@/lib/table";
+import { indexColumn, centerColumns } from "@/lib/table";
 import { useFillHeight } from "@/lib/use-fill-height";
 
 const { Text } = Typography;
@@ -158,6 +158,8 @@ interface AssignStatementRow {
   code?: string;
   tourName?: string;
   vehicleLabel?: string;
+  providerId?: string;
+  vehicleId?: string;
   providerName?: string;
   driverName?: string;
   startDate: string;
@@ -184,17 +186,11 @@ const centerTitle = (text: string) => (
   <div style={{ textAlign: "center", width: "100%" }}>{text}</div>
 );
 
-const tourBg = (providerIndex: number, isDark: boolean): string => {
-  if (isDark) return providerIndex % 2 === 0 ? "rgba(38, 84, 212, 0.28)" : "rgba(255, 255, 255, 0.055)";
-  return providerIndex % 2 === 0 ? "#e6f4ff" : "#f5f5f5";
-};
-
 const vnd = (n: string | number) =>
   `${Number(n || 0).toLocaleString("vi-VN", { maximumFractionDigits: 0 })} ₫`;
 
 export default function TransportationPage() {
-  const { hasPermission, theme, user } = useApp();
-  const isDark = theme === "dark";
+  const { hasPermission, user } = useApp();
   const isProviderRole = user?.role === "TRANSPORT_PROVIDER";
   const myProviderId = isProviderRole ? (user?.providerId ?? undefined) : undefined;
   const canCreate = hasPermission("route-price.create");
@@ -238,6 +234,7 @@ export default function TransportationPage() {
   const [assigning, setAssigning] = useState(false);
 
   const [crewCalendarOpen, setCrewCalendarOpen] = useState(false);
+  const [allDriversOpen, setAllDriversOpen] = useState(false);
   const [driverTours, setDriverTours] = useState<Record<string, CrewAvailAssignment[]>>({});
   const [todayLeaves, setTodayLeaves] = useState<Record<string, CrewAvailLeave>>({});
   const [driverLeaves, setDriverLeaves] = useState<Record<string, CrewAvailLeave[]>>({});
@@ -372,13 +369,17 @@ export default function TransportationPage() {
             ? `${it.vehicle.capacity != null ? `${it.vehicle.capacity}-seat` : ""}${it.vehicle.brand ? ` (${it.vehicle.brand})` : ""} — ${it.vehicle.plateNumber ?? ""}`
             : "",
           driverName: it.driver?.name ?? it.driver?.email ?? "",
+          providerId: it.providerId,
+          vehicleId: it.vehicleId,
           price:
             it.priceOverride ??
+            // Assignment has no tourId (only bookings do) — match the declared
+            // price by provider + vehicle + tour name (names are unique).
             assignables.find(
               (a) =>
                 a.providerId === it.providerId &&
                 a.vehicleId === it.vehicleId &&
-                a.tourId === it.tourId,
+                (a.tourId === it.tourId || a.tourName === it.tourName),
             )?.price,
         }));
         setAssignRows(rows);
@@ -439,15 +440,57 @@ export default function TransportationPage() {
     }
   };
 
+  const pricedKeys = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of routePrices as Array<Record<string, any>>) {
+      const pid = r.providerId ?? r.provider?.id;
+      const tid = r.tourId ?? r.tour?.id;
+      const vid = r.vehicleId ?? r.vehicle?.id;
+      if (pid && tid && vid) s.add(`${pid}|${tid}|${vid}`);
+    }
+    return s;
+  }, [routePrices]);
+
   const seatOptions = useMemo(() => {
     const provider = optionData.providers.find((p) => p.id === selProvider);
-    return provider?.vehicles ?? [];
-  }, [optionData.providers, selProvider]);
+    const all = provider?.vehicles ?? [];
+    // Once a tour is picked, hide vehicles already priced for this provider+tour.
+    if (!selProvider || !selTour) return all;
+    return all.filter((v) => !pricedKeys.has(`${selProvider}|${selTour}|${v.id}`));
+  }, [optionData.providers, selProvider, selTour, pricedKeys]);
+
+  const tourOptions = useMemo(() => {
+    if (!selProvider) return optionData.tours;
+    const provider = optionData.providers.find((p) => p.id === selProvider);
+    const vehicles = provider?.vehicles ?? [];
+    if (vehicles.length === 0) return optionData.tours;
+    // Hide tours where every vehicle of this provider already has a price.
+    return optionData.tours.filter((t) =>
+      vehicles.some((v) => !pricedKeys.has(`${selProvider}|${t.id}|${v.id}`)),
+    );
+  }, [optionData.tours, optionData.providers, selProvider, pricedKeys]);
 
   const unassignedDrivers = useMemo(
     () => driversAll.filter((d) => !d.providerId),
     [driversAll],
   );
+
+  // If the current Tour/Seats pick becomes fully priced (hidden), clear it so a
+  // stale value can't stay selected — e.g. delete nothing, all 5 seats priced
+  // → tour vanishes; remove one price → tour + that seat reappear.
+  useEffect(() => {
+    if (selTour && !tourOptions.some((t) => t.id === selTour)) {
+      setSelTour(undefined);
+      setSelSeat(undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tourOptions]);
+  useEffect(() => {
+    if (selSeat && !seatOptions.some((v) => v.id === selSeat)) {
+      setSelSeat(undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seatOptions]);
 
   const create = async () => {
     if (!selProvider || !selTour || !selSeat || price == null) {
@@ -704,17 +747,60 @@ export default function TransportationPage() {
     () => atVehicleCombos.find((a) => a.tourId === atTour),
     [atVehicleCombos, atTour],
   );
-  const atDrivers = useMemo(
-    () =>
-      driversAll
-        .filter((d) => d.providerId === atProvider)
-        .map((d) => ({
-          value: d.id,
-          label: `${d.name ?? d.email}${d.isActive ? "" : " (inactive)"}`,
-          disabled: !d.isActive,
-        })),
-    [driversAll, atProvider],
-  );
+  const atDrivers = useMemo(() => {
+    const start = atDate?.startOf("day") ?? null;
+    const dur = Math.max(1, atSelected?.durationDays ?? 1);
+    const end = start ? start.add(dur - 1, "day") : null;
+    const overlap = (ls: string, le: string) => {
+      if (!start || !end) return false;
+      const s = start.valueOf();
+      const e = end.endOf("day").valueOf();
+      return (
+        dayjs(ls).startOf("day").valueOf() <= e &&
+        dayjs(le).endOf("day").valueOf() >= s
+      );
+    };
+    return driversAll
+      .filter((d) => d.providerId === atProvider)
+      .map((d) => {
+        if (!d.isActive)
+          return { value: d.id, label: `${d.name ?? d.email} (inactive)`, disabled: true };
+        // Availability only known once a start date + tour (duration) is picked.
+        if (!start || !end || !atSelected) {
+          const n = (driverTours[d.id] ?? []).length;
+          return {
+            value: d.id,
+            label: `${d.name ?? d.email}${n > 0 ? ` (${n} tours)` : ""}`,
+            disabled: false,
+          };
+        }
+        const busy = (driverTours[d.id] ?? []).find(
+          (t) => t.status !== "CANCELED" && overlap(t.startDate, t.endDate),
+        );
+        if (busy)
+          return {
+            value: d.id,
+            label: `${d.name ?? d.email} — Busy ${dayjs(busy.startDate).format("DD MMM")}`,
+            disabled: true,
+          };
+        const off = (driverLeaves[d.id] ?? []).find((l) => overlap(l.startDate, l.endDate));
+        if (off)
+          return {
+            value: d.id,
+            label: `${d.name ?? d.email} — Off ${dayjs(off.startDate).format("DD MMM")}`,
+            disabled: true,
+          };
+        return { value: d.id, label: `${d.name ?? d.email}`, disabled: false };
+      });
+  }, [driversAll, atProvider, atDate, atSelected, driverTours, driverLeaves]);
+  // If the picked driver becomes unavailable for the chosen dates, clear it.
+  useEffect(() => {
+    if (atDriver && atDrivers.length > 0 && !atDrivers.some((d) => d.value === atDriver && !d.disabled)) {
+      const stillExists = atDrivers.some((d) => d.value === atDriver);
+      if (stillExists) setAtDriver(undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [atDrivers]);
   const atEndDate = useMemo(() => {
     if (!atDate || !atSelected) return null;
     return atDate.startOf("day").add(Math.max(1, atSelected.durationDays ?? 1) - 1, "day");
@@ -791,6 +877,7 @@ export default function TransportationPage() {
       title: centerTitle("Days off"),
       key: "daysOff",
       width: 190,
+      align: "center" as const,
       render: (_: any, r: DriverUser) => {
         if (!r.isActive) return <Tag color="volcano">Off duty</Tag>;
         const leaves = (driverLeaves[r.id] ?? [])
@@ -825,6 +912,64 @@ export default function TransportationPage() {
     },
   ] as any[];
 
+  // Stable color per provider id: first-seen order assigns 0..7, later providers
+  // append without recoloring existing ones — new drivers always inherit it.
+  const providerColorMap = useRef(new Map<string, number>());
+  const providerColorNext = useRef(0);
+  const stableProviderColor = (pid: string | null | undefined): number => {
+    if (!pid) return -1;
+    const m = providerColorMap.current;
+    let idx = m.get(pid);
+    if (idx === undefined) {
+      idx = providerColorNext.current++;
+      m.set(pid, idx);
+    }
+    return idx % 8;
+  };
+  for (const p of providers) stableProviderColor(p.id);
+
+  const allDriversColumns = [
+    indexColumn(1, 10),
+    {
+      title: centerTitle("Provider"),
+      dataIndex: "providerId",
+      key: "provider",
+      width: 230,
+      render: (pid: string | null) => {
+        const pi = providers.findIndex((x) => x.id === pid);
+        const ci = stableProviderColor(pid);
+        if (pi < 0 || ci < 0) return <Text type="secondary">Unassigned</Text>;
+        const tag = PROVIDER_TAGS[ci % PROVIDER_TAGS.length];
+        return (
+          <Space size={6}>
+            <Tag color={tag} style={{ marginInlineEnd: 0 }}>
+              P{pi + 1}
+            </Tag>
+            <Text strong>{providers[pi].name}</Text>
+          </Space>
+        );
+      },
+      filters: [
+        ...providers.map((p) => ({ text: p.name, value: p.id })),
+        { text: "Unassigned", value: "__none" },
+      ],
+      onFilter: (v: any, r: DriverUser) => (v === "__none" ? !r.providerId : r.providerId === v),
+      sorter: (a: DriverUser, b: DriverUser) =>
+        (providers.findIndex((x) => x.id === a.providerId) - providers.findIndex((x) => x.id === b.providerId)) ||
+        (a.name ?? a.email).localeCompare(b.name ?? b.email),
+    },
+    ...assignDriverColumns.slice(1),
+  ] as any[];
+
+  const sortedAllDrivers = useMemo(() => {
+    return [...driversAll].sort(
+      (a, b) =>
+        stableProviderColor(a.providerId ?? "") - stableProviderColor(b.providerId ?? "") ||
+        (a.name ?? a.email).localeCompare(b.name ?? b.email),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driversAll, providers]);
+
   const assignColumns = [
     indexColumn(assignPage, assignPageSize),
     {
@@ -832,6 +977,7 @@ export default function TransportationPage() {
       dataIndex: "code",
       key: "code",
       width: 200,
+      align: "center" as const,
       render: (c: string | undefined, r: AssignStatementRow) => (
         <Text strong>
           {c || r.tourName || "—"}
@@ -842,6 +988,7 @@ export default function TransportationPage() {
       title: centerTitle("Tour"),
       dataIndex: "tourName",
       key: "tour",
+      align: "center" as const,
       render: (t: string | undefined) => t || "—",
     },
     {
@@ -849,14 +996,26 @@ export default function TransportationPage() {
       dataIndex: "price",
       key: "price",
       width: 100,
-      align: "right" as const,
-      render: (p: number | undefined) => (p != null ? <Text strong>{vnd(p)}</Text> : <Text type="secondary">—</Text>),
+      align: "center" as const,
+      render: (p: number | undefined, r: AssignStatementRow) => {
+        // Live lookup so the price appears even if assignables arrived after the rows.
+        const live =
+          p ??
+          assignables.find(
+            (a) =>
+              a.providerId === r.providerId &&
+              a.vehicleId === r.vehicleId &&
+              a.tourName === r.tourName,
+          )?.price;
+        return live != null ? <Text strong>{vnd(live)}</Text> : <Text type="secondary">—</Text>;
+      },
     },
     {
       title: centerTitle("Vehicle"),
       dataIndex: "vehicleLabel",
       key: "vehicle",
       width: 190,
+      align: "center" as const,
       render: (v: string | undefined) => v || "—",
     },
     {
@@ -864,6 +1023,7 @@ export default function TransportationPage() {
       dataIndex: "providerName",
       key: "provider",
       width: 180,
+      align: "center" as const,
       render: (p: string | undefined) => p || "—",
     },
     {
@@ -871,6 +1031,7 @@ export default function TransportationPage() {
       dataIndex: "driverName",
       key: "driver",
       width: 150,
+      align: "center" as const,
       render: (d: string | undefined) => d || "—",
     },
     {
@@ -878,6 +1039,7 @@ export default function TransportationPage() {
       dataIndex: "startDate",
       key: "startDate",
       width: 110,
+      align: "center" as const,
       render: (d: string) => (d ? dayjs(d).format("DD MMM") : "—"),
     },
     {
@@ -885,6 +1047,7 @@ export default function TransportationPage() {
       dataIndex: "endDate",
       key: "endDate",
       width: 110,
+      align: "center" as const,
       render: (d: string) => (d ? dayjs(d).format("DD MMM") : "—"),
     },
     {
@@ -1091,6 +1254,7 @@ export default function TransportationPage() {
       title: centerTitle("Driver"),
       dataIndex: "driver",
       key: "driver",
+      align: "center" as const,
       render: (_: any, r: DriverRelationRow) => r.driver.name ?? r.driver.email,
       filters: Array.from(new Set(driverRelationRows.map((rd) => rd.driver.name ?? rd.driver.email).filter(Boolean))).sort().map((n: any) => ({ text: n, value: n })),
       onFilter: (v: any, r: DriverRelationRow) => (r.driver.name ?? r.driver.email).toLowerCase().includes(String(v).toLowerCase()),
@@ -1099,6 +1263,7 @@ export default function TransportationPage() {
       title: centerTitle("Email"),
       dataIndex: "driver",
       key: "email",
+      align: "center" as const,
       render: (_: any, r: DriverRelationRow) => r.driver.email,
       filters: Array.from(new Set(driverRelationRows.map((rd) => rd.driver.email).filter(Boolean))).sort().map((e: any) => ({ text: e, value: e })),
       onFilter: (v: any, r: DriverRelationRow) => (r.driver.email ?? "").toLowerCase().includes(String(v).toLowerCase()),
@@ -1108,6 +1273,7 @@ export default function TransportationPage() {
       dataIndex: "driver",
       key: "license",
       width: 160,
+      align: "center" as const,
       render: (_: any, r: DriverRelationRow) =>
         r.driver.licenseNumber ? (
           <Text code>{r.driver.licenseNumber}</Text>
@@ -1133,6 +1299,7 @@ export default function TransportationPage() {
       title: "Upcoming Tours",
       key: "tours",
       width: 200,
+      align: "center" as const,
       render: (_: any, r: DriverRelationRow) => {
         const tours = driverTours[r.driver.id] ?? [];
         const leaves = driverLeaves[r.driver.id] ?? [];
@@ -1441,7 +1608,10 @@ export default function TransportationPage() {
               style={{ width: "100%" }}
               placeholder="Provider"
               value={selProvider}
-              onChange={setSelProvider}
+              onChange={(v) => {
+                setSelProvider(v);
+                setSelSeat(undefined);
+              }}
               options={optionData.providers.map((p) => ({ value: p.id, label: p.name }))}
               showSearch
               optionFilterProp="label"
@@ -1451,27 +1621,41 @@ export default function TransportationPage() {
             <Text strong>Tour</Text>
             <Select
               style={{ width: "100%" }}
-              placeholder="Tour"
+              placeholder={selProvider && tourOptions.length === 0 ? "All tours already priced for this provider" : "Tour"}
               value={selTour}
-              onChange={setSelTour}
-              options={optionData.tours.map((t) => ({ value: t.id, label: t.name }))}
+              onChange={(v) => {
+                setSelTour(v);
+                setSelSeat(undefined);
+              }}
+              options={tourOptions.map((t) => ({ value: t.id, label: t.name }))}
               showSearch
               optionFilterProp="label"
+              disabled={!selProvider || (selProvider != null && tourOptions.length === 0)}
             />
+            {selProvider && (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Tours already priced for every vehicle of this provider are hidden.
+              </Text>
+            )}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <Text strong>Seats / Vehicle</Text>
             <Select
               style={{ width: "100%" }}
-              placeholder="Seats"
+              placeholder={selProvider && selTour && seatOptions.length === 0 ? "All seats already priced for this tour" : "Seats"}
               value={selSeat}
               onChange={setSelSeat}
-              disabled={!selProvider}
+              disabled={!selProvider || !selTour || seatOptions.length === 0}
               options={seatOptions.map((v) => ({
                 value: v.id,
                 label: `${v.capacity}-seat${v.brand ? ` (${v.brand})` : ""} — ${v.plateNumber ?? ""}`,
               }))}
             />
+            {selProvider && selTour && (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Seats already priced for this provider + tour are hidden — pick from the remaining vehicles.
+              </Text>
+            )}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <Text strong>Price</Text>
@@ -1586,7 +1770,7 @@ export default function TransportationPage() {
                   <Table<VehicleOpt>
                     rowKey="id"
                     size="small"
-                    columns={modalVehicleColumns}
+                    columns={centerColumns(modalVehicleColumns)}
                     dataSource={vehicles}
                     pagination={false}
                   />
@@ -1632,7 +1816,7 @@ export default function TransportationPage() {
                   <Table<PersonOpt>
                     rowKey="id"
                     size="small"
-                    columns={modalDriverColumns}
+                    columns={centerColumns(modalDriverColumns)}
                     dataSource={drivers}
                     pagination={false}
                   />
@@ -1692,7 +1876,7 @@ export default function TransportationPage() {
       dataIndex: "price",
       key: "price",
       width: 140,
-      align: "right" as const,
+      align: "center" as const,
       render: (v: string | number) => <Text strong>{vnd(v)}</Text>,
     },
     ...(canDelete
@@ -1763,12 +1947,9 @@ export default function TransportationPage() {
                     },
                   }}
                   dataSource={flatRows}
-                  columns={priceColumns}
-                  onRow={(r) => ({
-                    style: { backgroundColor: tourBg(r._providerIndex, isDark) },
-                  })}
+                  columns={centerColumns(priceColumns)}
                   rowClassName={(r) =>
-                    (r._providerIndex % 2 === 1 ? "transport-stripe" : "") +
+                    (r._providerIndex % 2 === 1 ? "tour-stripe-odd" : "tour-stripe-even") +
                     (r._first ? " tour-price-first" : " tour-price-row")
                   }
                   scroll={{ x: 800, y: tableHeight }}
@@ -1792,7 +1973,7 @@ export default function TransportationPage() {
                   loading={providersLoading}
                   tableLayout="fixed"
                   dataSource={providerRows}
-                  columns={providerColumns}
+                  columns={centerColumns(providerColumns)}
                   onRow={(r) => ({
                     onClick: () => {
                       const p = providers.find((x) => x.id === r.id);
@@ -1823,9 +2004,6 @@ export default function TransportationPage() {
                     </Button>
                   </FlexRow>
                 )}
-                <Typography.Text strong style={{ fontSize: 15 }}>
-                  Manage Numberplate
-                </Typography.Text>
                 <div style={{ marginTop: 8 }}>
                   <Table<VehicleManageRow>
                     rowKey={(r) => r.vehicle.id}
@@ -1854,17 +2032,17 @@ export default function TransportationPage() {
               <Card size="small" variant="borderless">
                 <FlexRow marginBottom={12}>
                   <Button
-                    size="small"
                     icon={<CalendarOutlined />}
+                    style={{ height: 32 }}
                     onClick={() => setCrewCalendarOpen(true)}
                   >
                     Crew availability calendar
                   </Button>
                   {canDriverCreate && (
                     <Button
-                      size="small"
                       type="primary"
                       icon={<PlusOutlined />}
+                      style={{ height: 32 }}
                       onClick={openDriverCreate}
                     >
                       Add Driver
@@ -1895,8 +2073,8 @@ export default function TransportationPage() {
                       />
                       <Button
                         type="primary"
-                        size="small"
                         icon={<UserAddOutlined />}
+                        style={{ height: 32 }}
                         loading={assigning}
                         disabled={!assignProvider || !assignUser}
                         onClick={() => assignProvider && assignUser && assignDriver(assignProvider, assignUser)}
@@ -1912,7 +2090,7 @@ export default function TransportationPage() {
                   loading={providersLoading}
                   tableLayout="fixed"
                   dataSource={driverRelationRows}
-                  columns={driverRelationColumns}
+                  columns={centerColumns(driverRelationColumns)}
                   locale={{ emptyText: "No drivers found" }}
                   pagination={{ pageSize: 20, showSizeChanger: true }}
                   scroll={{ x: 800, y: tableHeight }}
@@ -2016,11 +2194,20 @@ export default function TransportationPage() {
                   <Button
                     type="primary"
                     icon={<CheckOutlined />}
+                    style={{ height: 32 }}
                     loading={atSaving}
                     disabled={!canAssignTour || !atSelected || !atDate || !atDriver}
                     onClick={submitAssignTour}
                   >
                     Assign
+                  </Button>
+                  <Button
+                    icon={<CalendarOutlined />}
+                    style={{ height: 32 }}
+                    onClick={() => setAllDriversOpen(true)}
+                    title="Show all drivers in the sidebar (days off + unassigned)"
+                  >
+                    All drivers
                   </Button>
                 </Space>
                 {atSelected && (
@@ -2053,8 +2240,10 @@ export default function TransportationPage() {
                     rowKey="id"
                     size="small"
                     tableLayout="fixed"
-                    dataSource={driversAll.filter((d) => d.providerId === atProvider)}
-                    columns={assignDriverColumns}
+                    dataSource={
+                      driversAll.filter((d) => d.providerId === (isProviderRole ? myProviderId : atProvider))
+                    }
+                    columns={centerColumns(assignDriverColumns)}
                     locale={{ emptyText: "No drivers for this provider yet" }}
                     pagination={false}
                     title={() => (
@@ -2077,8 +2266,9 @@ export default function TransportationPage() {
                   size="small"
                   tableLayout="fixed"
                   dataSource={assignRows}
-                  columns={assignColumns}
+                  columns={centerColumns(assignColumns)}
                   locale={{ emptyText: "No assignments yet — pick a combo above and click Assign" }}
+                  rowClassName={(_, i) => (i % 2 === 1 ? "tour-stripe-odd" : "tour-stripe-even")}
                   pagination={{
                     current: assignPage,
                     pageSize: assignPageSize,
@@ -2088,7 +2278,7 @@ export default function TransportationPage() {
                     showTotal: (t) => `${t} items`,
                     onChange: (p, s) => loadAssignments(p, s),
                   }}
-                  scroll={{ x: 950, y: tableHeight }}
+                  scroll={{ x: 950 }}
                 />
               </Card>
             ),
@@ -2099,6 +2289,33 @@ export default function TransportationPage() {
       {renderProviderModal()}
       {renderVehicleForm()}
       {renderDriverModal()}
+      <Drawer
+        title="All drivers"
+        placement="right"
+        width={1200}
+        open={allDriversOpen}
+        onClose={() => setAllDriversOpen(false)}
+      >
+        <Space direction="vertical" style={{ width: "100%" }} size={8}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            Toggle a driver to mark them off duty (days off)
+          </Typography.Text>
+          <Table<DriverUser>
+            rowKey="id"
+            size="small"
+            tableLayout="fixed"
+            dataSource={sortedAllDrivers}
+            columns={centerColumns(allDriversColumns)}
+            locale={{ emptyText: "No drivers yet" }}
+            pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `${t} drivers` }}
+            scroll={{ x: 1140 }}
+            rowClassName={(r) => {
+              const ci = stableProviderColor((r as DriverUser).providerId);
+              return ci >= 0 ? `prov-tint-${ci % 8}` : "";
+            }}
+          />
+        </Space>
+      </Drawer>
       <CrewAvailabilityDrawer
         open={crewCalendarOpen}
         onClose={() => setCrewCalendarOpen(false)}
@@ -2120,6 +2337,7 @@ function FlexRow({
         display: "flex",
         gap: 8,
         flexWrap: "wrap",
+        alignItems: "center",
         marginBottom: marginBottom ?? 0,
       }}
     >
