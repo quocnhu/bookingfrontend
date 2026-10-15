@@ -36,7 +36,7 @@ import {
   MailOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
-import { api, getErrorMessage } from "@/lib/api";
+import { api, API_URL, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
 import { useFillHeight } from "@/lib/use-fill-height";
@@ -62,6 +62,7 @@ interface User {
   avatarUrl?: string | null;
   userType: string;
   isActive: boolean;
+  authProvider?: string | null;
   role?: string | null;
   roles?: { role: { id: string; name: string } }[];
   permissions?: { permission: { id: string; code: string } }[];
@@ -264,8 +265,8 @@ export default function UsersPage() {
 
   const connectMailbox = (accountId?: string) => {
     window.location.href = accountId
-      ? `/api/gmail/connect?accountId=${encodeURIComponent(accountId)}`
-      : "/api/gmail/connect";
+      ? `${API_URL}/gmail/connect?accountId=${encodeURIComponent(accountId)}`
+      : `${API_URL}/gmail/connect`;
   };
 
   const reconnectMailbox = (account: any) => {
@@ -475,6 +476,18 @@ export default function UsersPage() {
       dataIndex: "email",
       key: "email",
       onFilter: (v: any, r: User) => (r.email ?? "").toLowerCase().includes(String(v).toLowerCase()),
+    },
+    {
+      title: "Provider",
+      dataIndex: "authProvider",
+      key: "authProvider",
+      render: (v: string | null) =>
+        v === "GOOGLE" ? <Tag color="blue">Google</Tag> : <Tag>Local</Tag>,
+      filters: [
+        { text: "Google", value: "GOOGLE" },
+        { text: "Local", value: "LOCAL" },
+      ],
+      onFilter: (v: any, r: User) => (r.authProvider ?? "LOCAL") === v,
     },
     {
       title: "Type",
