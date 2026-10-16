@@ -1058,7 +1058,7 @@ export default function BoardCard({
             color={a.origin === "AUTO_ASSIGN" ? "geekblue" : "green"}
             style={{ marginInlineEnd: 0, fontSize: 10 }}
           >
-            {a.origin === "AUTO_ASSIGN" ? "Auto-Assign System" : "Manual"}
+            {a.origin === "AUTO_ASSIGN" ? "Automatic System" : "Manual"}
           </Tag>
         )}
       </Flex>

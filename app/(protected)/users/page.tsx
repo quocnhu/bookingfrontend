@@ -17,6 +17,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Checkbox,
   Popconfirm,
   Progress,
@@ -38,7 +39,7 @@ import {
 } from "@ant-design/icons";
 import { api, API_URL, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
-import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
+import { leftColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
 import { useFillHeight } from "@/lib/use-fill-height";
 
 interface Permission {
@@ -198,10 +199,6 @@ export default function UsersPage() {
   const [permTable, setPermTable] = useState<Permission[]>([]);
   const [permTotal, setPermTotal] = useState(0);
   const [permLoading, setPermLoading] = useState(false);
-  const [permissionModalOpen, setPermissionModalOpen] = useState(false);
-  const [permissionForm] = Form.useForm();
-  const [editingPermission, setEditingPermission] = useState<Permission | null>(null);
-  const [savingPermission, setSavingPermission] = useState(false);
 
   const [activeTab, setActiveTab] = useState("users");
   const tableHeight = useFillHeight({
@@ -448,7 +445,7 @@ export default function UsersPage() {
     }
   };
 
-  const userColumns = centerColumns([
+  const userColumns = leftColumns([
     indexColumn<User>(userPage, userPageSize),
     {
       title: "",
@@ -588,7 +585,7 @@ export default function UsersPage() {
     },
   ]);
 
-  const mailboxColumns = centerColumns([
+  const mailboxColumns = leftColumns([
     indexColumn(1, 999),
     {
       title: "Mailbox",
@@ -696,7 +693,7 @@ export default function UsersPage() {
       : []),
   ]);
 
-  const roleColumns = centerColumns([
+  const roleColumns = leftColumns([
     indexColumn<Role>(rolePage, rolePageSize),
     {
       title: "Name",
@@ -762,67 +759,29 @@ export default function UsersPage() {
     if (canManageRoles) loadPermissions().catch(() => {});
   }, [canManageRoles, loadPermissions]);
 
-  const openPermissionModal = (p?: Permission) => {
-    setEditingPermission(p ?? null);
-    permissionForm.setFieldsValue({
-      code: p?.code ?? "",
-      name: p?.name ?? "",
-      group: p?.group ?? "",
-    });
-    setPermissionModalOpen(true);
-  };
-
-  const savePermission = async () => {
-    const values = await permissionForm.validateFields();
-    setSavingPermission(true);
-    try {
-      if (editingPermission) {
-        await api.put(`/permissions/${editingPermission.id}`, {
-          name: values.name,
-          group: values.group ?? null,
-        });
-        message.success("Permission updated");
-      } else {
-        await api.post("/permissions", values);
-        message.success("Permission created");
-      }
-      setPermissionModalOpen(false);
-      load();
-      loadPermissions();
-    } catch (e) {
-      message.error(getErrorMessage(e, "Failed to save permission"));
-    } finally {
-      setSavingPermission(false);
-    }
-  };
-
-  const deletePermission = async (p: Permission) => {
-    try {
-      await api.delete(`/permissions/${p.id}`);
-      message.success("Permission deleted");
-      load();
-      loadPermissions();
-    } catch (e) {
-      message.error(getErrorMessage(e, "Failed to delete permission"));
-    }
-  };
-
-  const permissionColumns = centerColumns<Permission>([
+  const permissionColumns = leftColumns<Permission>([
     indexColumn<Permission>(permPage, permPageSize),
     {
       title: "Code",
       dataIndex: "code",
       key: "code",
+      align: "left",
       render: (v: string) => <Typography.Text code>{v}</Typography.Text>,
-      filters: Array.from(new Set(perms.map((p) => p.code).filter(Boolean))).map(
-        (c) => ({ text: c!, value: c! }),
-      ),
+      filters: Array.from(new Set(perms.map((p) => p.code).filter(Boolean)))
+        .sort()
+        .map((c) => ({ text: c!, value: c! })),
+      filterSearch: true,
       onFilter: (v: any, r: Permission) => r.code === v,
     },
     {
       title: "Name",
       dataIndex: "name",
       key: "name",
+      align: "left",
+      filters: Array.from(new Set(perms.map((p) => p.name).filter(Boolean)))
+        .sort()
+        .map((n) => ({ text: n!, value: n! })),
+      filterSearch: true,
       onFilter: (v: any, r: Permission) =>
         (r.name ?? "").toLowerCase().includes(String(v).toLowerCase()),
     },
@@ -830,41 +789,24 @@ export default function UsersPage() {
       title: "Group",
       dataIndex: "group",
       key: "group",
+      align: "left",
       render: (v: string | null | undefined) =>
-        v ? <Tag color="geekblue">{v}</Tag> : "—",
+        v ? <Tag color={colorFor(v)}>{v}</Tag> : "—",
       filters: Array.from(
         new Set(perms.map((p) => p.group).filter(Boolean) as string[]),
-      ).map((g) => ({ text: g, value: g })),
+      )
+        .sort()
+        .map((g) => ({ text: g, value: g })),
+      filterSearch: true,
       onFilter: (v: any, r: Permission) => r.group === v,
     },
-    ...(canManageRoles
-      ? [
-          {
-            title: "Actions",
-            key: "actions",
-            render: (_: any, r: Permission) => (
-              <Space size={8}>
-                <Button
-                  size="small"
-                  icon={<EditOutlined />}
-                  onClick={() => openPermissionModal(r)}
-                  aria-label={`Edit ${r.code}`}
-                />
-                <Popconfirm
-                  title="Delete this permission?"
-                  onConfirm={() => deletePermission(r)}
-                >
-                  <Button danger size="small" icon={<DeleteOutlined />} />
-                </Popconfirm>
-              </Space>
-            ),
-          },
-        ]
-      : []),
   ]);
 
   return (
     <div className="users-page">
+      <style>{`
+        .users-page .ant-table-filter-column { display: inline-flex; }
+      `}</style>
       {!canManageUsers && !canManageRoles && !canManageMailbox && (
         <Typography.Text type="secondary">You have no access to user management.</Typography.Text>
       )}
@@ -885,19 +827,27 @@ export default function UsersPage() {
                   children: (
                     <Card
                       variant="borderless"
-                      title="Tracked mailboxes"
                       extra={
                         <Flex gap={8} align="center">
                           <Button icon={<ReloadOutlined />} onClick={loadMailboxes}>
                             Refresh
                           </Button>
-                          <Button
-                            type="primary"
-                            icon={<MailOutlined />}
-                            onClick={() => connectMailbox()}
+                          <Tooltip
+                            title={
+                              mailboxes.length >= 1
+                                ? "Only one mailbox can be tracked. Reconnect or remove the existing mailbox first."
+                                : ""
+                            }
                           >
-                            Connect mailbox
-                          </Button>
+                            <Button
+                              type="primary"
+                              icon={<MailOutlined />}
+                              disabled={mailboxes.length >= 1}
+                              onClick={() => connectMailbox()}
+                            >
+                              Connect mailbox
+                            </Button>
+                          </Tooltip>
                         </Flex>
                       }
                     >
@@ -926,7 +876,6 @@ export default function UsersPage() {
             children: (
               <Card
                 variant="borderless"
-                title="Users"
                 extra={
                   <Flex wrap gap={8} align="center">
                     <Select
@@ -995,7 +944,6 @@ export default function UsersPage() {
             children: (
               <Card
                 variant="borderless"
-                title="Roles"
                 extra={
                   <Flex wrap gap={8} align="center">
                     {canManageRoles && (
@@ -1033,28 +981,14 @@ export default function UsersPage() {
             key: "permissions",
             label: "Permissions",
             children: (
-              <Card
-                variant="borderless"
-                title="Permissions"
-                extra={
-                  canManageRoles && (
-                    <Button
-                      type="primary"
-                      icon={<PlusOutlined />}
-                      onClick={() => openPermissionModal()}
-                    >
-                      Add Permission
-                    </Button>
-                  )
-                }
-              >
+              <Card variant="borderless">
                 <Table
                   rowKey="id"
                   size="small"
                   columns={permissionColumns}
                   dataSource={permTable}
                   loading={permLoading}
-                  scroll={{ x: "max-content", y: tableHeight }}
+                  scroll={{ y: tableHeight }}
                   pagination={{
                     current: permPage,
                     pageSize: permPageSize,
@@ -1260,35 +1194,6 @@ export default function UsersPage() {
         </Form>
       </Modal>
 
-      <Modal
-        title={editingPermission ? `Edit Permission: ${editingPermission.code}` : "Add Permission"}
-        open={permissionModalOpen}
-        onCancel={() => setPermissionModalOpen(false)}
-        onOk={savePermission}
-        confirmLoading={savingPermission}
-        width={480}
-      >
-        <Form form={permissionForm} layout="vertical">
-          <Form.Item
-            name="code"
-            label="Code"
-            rules={[{ required: true, message: "Code required" }]}
-            extra="Codes follow the format resource.action (e.g. assignment.create)"
-          >
-            <Input disabled={!!editingPermission} placeholder="e.g. assignment.create" />
-          </Form.Item>
-          <Form.Item
-            name="name"
-            label="Name"
-            rules={[{ required: true, message: "Name required" }]}
-          >
-            <Input placeholder="e.g. Create assignment" />
-          </Form.Item>
-          <Form.Item name="group" label="Group">
-            <Input placeholder="e.g. assignment" />
-          </Form.Item>
-        </Form>
-      </Modal>
     </div>
   );
 }

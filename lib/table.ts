@@ -26,6 +26,15 @@ export function centerColumns<T>(columns: ColumnsType<T>): ColumnsType<T> {
   });
 }
 
+export function leftColumns<T>(columns: ColumnsType<T>): ColumnsType<T> {
+  return columns.map((col) => {
+    if (!col || typeof col !== "object" || !("align" in col)) {
+      return { ...(col as any), align: "left" as const };
+    }
+    return col;
+  });
+}
+
 export function indexColumn<T>(page: number, pageSize: number) {
   return {
     title: "#",
