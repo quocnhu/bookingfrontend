@@ -5,7 +5,7 @@ const TOKEN_COOKIE = "booking_access_token";
 
 const PROTECTED_PREFIXES = [
   "/dashboard",
-  "/tours",
+  "/manage",
   "/bookings",
   "/users",
   "/audit",

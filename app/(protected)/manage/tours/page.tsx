@@ -335,7 +335,7 @@ export default function ToursPage() {
             <Button
               size="small"
               icon={<ScheduleOutlined />}
-              onClick={() => router.push(`/tours/${r.id}`)}
+              onClick={() => router.push(`/manage/tours/${r.id}`)}
               aria-label={`Itinerary ${r.name}`}
               title="Edit itinerary"
             />

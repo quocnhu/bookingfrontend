@@ -18,6 +18,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
 import { message } from "@/lib/antd-message";
@@ -27,6 +28,7 @@ import {
   PlusOutlined,
   ReloadOutlined,
   ScheduleOutlined,
+  WarningOutlined,
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
@@ -38,6 +40,14 @@ const ASSIGNMENT_STATUS = ["PENDING", "DISPATCHED", "COMPLETED", "CANCELED"];
 const BOOKING_CHANNELS = ["TRIPADVISOR", "GETYOURGUIDE", "WEBSITE", "MANUAL", "AIRBNB", "BOOKING_COM", "VIATOR"];
 const PAYMENT_STATUS = ["PENDING", "PAID", "REFUNDED"];
 const TOUR_TYPES = ["PRIVATE_TOUR", "GROUP_TOUR"];
+
+/**
+ * A booking can only be cancelled while the tour is still more than 24h away
+ * — inside the window the vehicle, the guide and the tickets are committed.
+ * The backend enforces this (HTTP 400 "Cancellation window closed"); the
+ * frontend only has to react to it and offer the admin override.
+ */
+const CANCEL_WINDOW_HOURS = 24;
 
 /**
  * Fixed table body height so every page reserves a full page of rows:
@@ -59,11 +69,12 @@ const endDate = (start: any, days?: number | null): Date | null => {
 const fmtDate = (d: Date | null) => (d ? new Date(d).toLocaleDateString() : "—");
 
 export default function BookingsPage() {
-  const { hasPermission } = useApp();
+  const { hasPermission, user } = useApp();
   const canCreateBooking = hasPermission("booking.create");
   const canUpdateBooking = hasPermission("booking.update");
   const canUpdateAssignment = hasPermission("assignment.update");
   const canManageMailbox = hasPermission("gmail.manage");
+  const isAdmin = user?.role === "ADMIN";
 
   const [bookings, setBookings] = useState<any[]>([]);
   const [bookingsTotal, setBookingsTotal] = useState(0);
@@ -155,6 +166,31 @@ export default function BookingsPage() {
     parse_failed: "red",
   };
 
+  /**
+   * What the email was: a new booking, an amendment or a cancellation.
+   * `outcome` is what the system did with it (created / updated / cancelled /
+   * unchanged / skipped).
+   */
+  const RAW_DATA_ACTION_LABELS: Record<string, string> = {
+    CREATE: "New booking",
+    MODIFY: "Amended",
+    CANCEL: "Cancelled",
+  };
+
+  const RAW_DATA_ACTION_COLORS: Record<string, string> = {
+    CREATE: "blue",
+    MODIFY: "gold",
+    CANCEL: "red",
+  };
+
+  const RAW_DATA_OUTCOME_LABELS: Record<string, string> = {
+    CREATED: "created",
+    UPDATED: "updated",
+    CANCELLED: "cancelled",
+    UNCHANGED: "no change",
+    SKIPPED: "ignored",
+  };
+
   const rawDataColumns = centerColumns([
     indexColumn(rawDataPage, rawDataPageSize),
     {
@@ -166,6 +202,31 @@ export default function BookingsPage() {
       ),
       filters: ["pending", "parsed", "unparsed", "parse_failed"].map((s) => ({ text: s, value: s })),
       onFilter: (v: any, r: any) => r.status === v,
+    },
+    {
+      title: "Action",
+      dataIndex: "action",
+      key: "action",
+      render: (v: any, r: any) =>
+        v ? (
+          <Space size={4}>
+            <Tag color={RAW_DATA_ACTION_COLORS[v] ?? "default"}>
+              {RAW_DATA_ACTION_LABELS[v] ?? v}
+            </Tag>
+            {r.outcome ? (
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                {RAW_DATA_OUTCOME_LABELS[r.outcome] ?? r.outcome}
+              </Typography.Text>
+            ) : null}
+          </Space>
+        ) : (
+          "—"
+        ),
+      filters: Object.keys(RAW_DATA_ACTION_LABELS).map((a) => ({
+        text: RAW_DATA_ACTION_LABELS[a],
+        value: a,
+      })),
+      onFilter: (v: any, r: any) => r.action === v,
     },
     {
       title: "Email",
@@ -190,9 +251,16 @@ export default function BookingsPage() {
           <Button size="small" onClick={() => setRawDetail(r)}>
             View payload
           </Button>
-          {r.bookingId && (
-            <Tag color="green">→ booking {r.bookingId.slice(0, 8)}</Tag>
-          )}
+          {r.bookingId ? (
+            <Tag color={r.isCancellation ? "red" : r.isAmendment ? "gold" : "green"}>
+              {r.isCancellation
+                ? "→ cancelled "
+                : r.isAmendment
+                  ? "→ amended "
+                  : "→ booking "}
+              {r.bookingRef ?? r.bookingId.slice(0, 8)}
+            </Tag>
+          ) : null}
         </Space>
       ),
     },
@@ -210,6 +278,63 @@ export default function BookingsPage() {
       })
       .catch((e) => message.error(getErrorMessage(e)))
       .finally(() => setBookingsLoading(false));
+  };
+
+  /**
+   * Cancel a booking.
+   *
+   * The 24h cancellation window is enforced by the backend: it answers with
+   * 400 "Cancellation window closed" when the tour departs too soon. Only an
+   * administrator may override it (the override is recorded in the audit
+   * trail), so a non-admin simply gets the error.
+   */
+  const cancelBooking = async (r: any) => {
+    const cancel = async (override: boolean) =>
+      api.put(`/bookings/${r.id}`, {
+        status: "CANCELED",
+        ...(override ? { overrideCancelWindow: true } : {}),
+      });
+
+    try {
+      await cancel(false);
+      message.success("Booking canceled");
+      loadBookings();
+    } catch (e) {
+      const text = getErrorMessage(e);
+      if (!/cancellation window closed/i.test(text)) {
+        message.error(text);
+        return;
+      }
+      if (!isAdmin) {
+        message.error(text);
+        return;
+      }
+      Modal.confirm({
+        title: "Cancellation window closed",
+        content: `${text} You are an administrator, so you can cancel anyway — the override is recorded in the audit trail.`,
+        okText: "Cancel anyway",
+        okButtonProps: { danger: true },
+        cancelText: "Keep booking",
+        onOk: async () => {
+          try {
+            await cancel(true);
+            message.success("Booking canceled (window override)");
+            loadBookings();
+          } catch (e2) {
+            message.error(getErrorMessage(e2));
+            throw e2;
+          }
+        },
+      });
+    }
+  };
+
+  /** The last moment this booking could be cancelled without an override. */
+  const cancelDeadline = (r: any): Date | null => {
+    if (!r?.startingDate) return null;
+    const d = new Date(r.startingDate);
+    if (Number.isNaN(d.getTime())) return null;
+    return new Date(d.getTime() - CANCEL_WINDOW_HOURS * 60 * 60 * 1000);
   };
 
   const loadAssignments = () => {
@@ -509,26 +634,42 @@ export default function BookingsPage() {
             key: "actions",
             width: 140,
             fixed: "right" as const,
-            render: (_: any, r: any) => (
-              <div style={{ whiteSpace: "nowrap" }}>
-                <Select
-                  size="small"
-                  value={r.status}
-                  style={{ width: 130 }}
-                  options={BOOKING_STATUS.map((s) => ({ value: s, label: s }))}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={async (status) => {
-                    try {
-                      await api.put(`/bookings/${r.id}`, { status });
-                      message.success("Status updated");
-                      loadBookings();
-                    } catch (e) {
-                      message.error(getErrorMessage(e));
-                    }
-                  }}
-                />
-              </div>
-            ),
+            render: (_: any, r: any) => {
+              const deadline = cancelDeadline(r);
+              const windowClosed =
+                deadline !== null && Date.now() > deadline.getTime();
+              return (
+                <div style={{ whiteSpace: "nowrap" }}>
+                  <Select
+                    size="small"
+                    value={r.status}
+                    style={{ width: 130 }}
+                    options={BOOKING_STATUS.map((s) => ({ value: s, label: s }))}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={async (status) => {
+                      if (status === "CANCELED") {
+                        await cancelBooking(r);
+                        return;
+                      }
+                      try {
+                        await api.put(`/bookings/${r.id}`, { status });
+                        message.success("Status updated");
+                        loadBookings();
+                      } catch (e) {
+                        message.error(getErrorMessage(e));
+                      }
+                    }}
+                  />
+                  {windowClosed && r.status !== "CANCELED" ? (
+                    <Tooltip title={`Cancellation window closed ${deadline!.toLocaleString()} — cancelling needs an admin override`}>
+                      <WarningOutlined
+                        style={{ color: "#faad14", marginLeft: 6 }}
+                      />
+                    </Tooltip>
+                  ) : null}
+                </div>
+              );
+            },
           },
         ]
       : []),

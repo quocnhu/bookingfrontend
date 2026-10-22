@@ -81,6 +81,25 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   white-space: nowrap;
 }
 
+/* Filters + Coordinates tables: keep the filter funnel next to its header label
+   instead of letting it drift to the far right edge of the cell, and follow the
+   column's own alignment. */
+.coordinate-page .ant-table-thead .ant-table-filter-column {
+  gap: 4px;
+}
+.coordinate-page .ant-table-thead .ant-table-filter-column .ant-table-column-title {
+  flex: 0 1 auto;
+}
+.coordinate-page .ant-table-thead .ant-table-filter-trigger {
+  margin-inline: 0;
+}
+.coordinate-page .ant-table-thead th[style*="text-align: center"] .ant-table-filter-column {
+  justify-content: center;
+}
+.coordinate-page .ant-table-thead th[style*="text-align: left"] .ant-table-filter-column {
+  justify-content: flex-start;
+}
+
 /* ===== Responsive (mobile / tablet) ===== */
 
 /* Let every antd table scroll horizontally instead of blowing up the layout */

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Flex, Typography } from "antd";
 import { CompassOutlined, LoginOutlined, DashboardOutlined } from "@ant-design/icons";
@@ -15,7 +16,11 @@ export default function PublicHeader() {
       align="center"
       style={{ padding: "16px 24px", borderBottom: "1px solid var(--ant-color-border-secondary)" }}
     >
-      <Flex align="center" gap={10} style={{ cursor: "pointer" }} onClick={() => router.push("/")}>
+      <Link
+        href="/"
+        aria-label="Hana Tourist — home"
+        style={{ display: "flex", alignItems: "center", gap: 10 }}
+      >
         <span
           style={{
             display: "inline-flex",
@@ -43,8 +48,11 @@ export default function PublicHeader() {
         >
           Hana Tourist
         </Typography.Title>
-      </Flex>
-      <Flex gap={8}>
+      </Link>
+      <Flex gap={8} align="center">
+        <Link href="/tours" style={{ fontSize: 14, padding: "0 8px" }}>
+          All tours
+        </Link>
         {authLoading ? null : user ? (
           <Button type="primary" icon={<DashboardOutlined />} onClick={() => router.push("/dashboard")}>
             Dashboard

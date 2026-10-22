@@ -8,9 +8,16 @@ import type { GalleryImage } from "@/components/gallery-manager";
 interface Props {
   images: GalleryImage[];
   height?: number;
+  /** The description of the photos — read by the screen readers and by the
+   *  search engines, so it has to say what the picture shows. */
+  alt?: string;
 }
 
-export default function TourSlideshow({ images, height = 320 }: Props) {
+export default function TourSlideshow({
+  images,
+  height = 320,
+  alt = "Tour photo",
+}: Props) {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
   if (images.length === 0) {
@@ -56,7 +63,7 @@ export default function TourSlideshow({ images, height = 320 }: Props) {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={img.url}
-                alt="tour"
+                alt={alt}
                 style={{
                   width: "100%",
                   height,
@@ -127,7 +134,7 @@ export default function TourSlideshow({ images, height = 320 }: Props) {
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={img.url}
-                    alt="tour"
+                    alt={alt}
                     style={{
                       width: "100%",
                       maxHeight: "78vh",

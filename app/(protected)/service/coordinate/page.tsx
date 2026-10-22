@@ -17,7 +17,7 @@ import { message } from "@/lib/antd-message";
 import { EditOutlined, PlusOutlined, DeleteOutlined, EnvironmentOutlined } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
-import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
+import { indexColumn, leftColumns, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
 import { useFillHeight } from "@/lib/use-fill-height";
 
 export default function CoordinatePage() {
@@ -109,7 +109,7 @@ export default function CoordinatePage() {
     }
   };
 
-  const columns = centerColumns([
+  const columns = leftColumns([
     indexColumn(page, pageSize),
     {
       title: "Hotel Name",
@@ -131,7 +131,7 @@ export default function CoordinatePage() {
       title: "Star",
       dataIndex: "starRating",
       key: "starRating",
-      width: 60,
+      width: 64,
       align: "center" as const,
       filters: Array.from(new Set(coordinates.map((c: any) => c.starRating).filter((s: any) => s != null))).sort((a: any, b: any) => a - b).map((s: any) => ({ text: `${s}★`, value: s })),
       onFilter: (v: any, r: any) => r.starRating === v,
@@ -140,20 +140,21 @@ export default function CoordinatePage() {
       title: "Latitude",
       dataIndex: "latitude",
       key: "latitude",
-      width: 100,
+      width: 96,
       render: (v: number) => (v != null ? Number(v).toFixed(5) : "—"),
     },
     {
       title: "Longitude",
       dataIndex: "longitude",
       key: "longitude",
-      width: 100,
+      width: 96,
       render: (v: number) => (v != null ? Number(v).toFixed(5) : "—"),
     },
     {
       title: "Map",
       key: "map",
-      width: 60,
+      width: 56,
+      align: "center" as const,
       render: (_: any, r: any) =>
         r.latitude != null && r.longitude != null ? (
           <a
@@ -172,18 +173,28 @@ export default function CoordinatePage() {
           {
             title: "Actions",
             key: "actions",
-            width: 120,
+            width: 88,
+            align: "center" as const,
             render: (_: any, r: any) => (
-              <Flex gap={8}>
+              <Flex gap={4} justify="center">
                 {canUpdate && (
-                  <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>
-                    Edit
-                  </Button>
+                  <Button
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={() => openEdit(r)}
+                    aria-label={`Edit ${r.hotelName}`}
+                    title="Edit"
+                  />
                 )}
                 {canDelete && (
-                  <Button size="small" danger icon={<DeleteOutlined />} onClick={() => deleteRecord(r.id)}>
-                    Delete
-                  </Button>
+                  <Button
+                    size="small"
+                    danger
+                    icon={<DeleteOutlined />}
+                    onClick={() => deleteRecord(r.id)}
+                    aria-label={`Delete ${r.hotelName}`}
+                    title="Delete"
+                  />
                 )}
               </Flex>
             ),
@@ -212,7 +223,8 @@ export default function CoordinatePage() {
           columns={columns}
           dataSource={coordinates}
           loading={loading}
-          scroll={{ x: 800, y: tableHeight }}
+          tableLayout="fixed"
+          scroll={{ y: tableHeight }}
           pagination={{
             current: page,
             pageSize,

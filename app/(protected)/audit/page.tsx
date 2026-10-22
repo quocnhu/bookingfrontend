@@ -13,14 +13,28 @@ interface AuditLog {
   entityType: string;
   entityId: string | null;
   action: string;
-  before?: any;
-  after?: any;
+  // The API returns the raw AuditLog rows, so the images are named
+  // beforeData / afterData (not before / after).
+  beforeData?: any;
+  afterData?: any;
   metadata?: any;
-  changedBy?: any;
+  changedBy?: string | null;
+  user?: { id: string; email: string; name?: string | null } | null;
   createdAt: string;
 }
 
 const ENTITY_TYPES = ["Booking", "Assignment", "Tour", "User", "Role"];
+
+/** The actions the pipeline and the dashboard write. */
+const AUDIT_ACTIONS = [
+  "CREATE",
+  "UPDATE",
+  "DELETE",
+  "UPDATE_BATCH",
+  "CREATE_EMAIL",
+  "UPSERT_EMAIL",
+  "AMEND_EMAIL",
+];
 
 export default function AuditPage() {
   const { hasPermission } = useApp();
@@ -85,7 +99,7 @@ export default function AuditPage() {
       title: "Action",
       dataIndex: "action",
       key: "action",
-      filters: ["CREATE", "UPDATE", "DELETE"].map((a) => ({ text: a, value: a })),
+      filters: AUDIT_ACTIONS.map((a) => ({ text: a, value: a })),
       onFilter: (v: any, r: AuditLog) => r.action === v,
       render: (v: string) => <Tag color="cyan">{v}</Tag>,
     },
@@ -94,22 +108,22 @@ export default function AuditPage() {
       dataIndex: "changedBy",
       key: "changedBy",
       onFilter: (v: any, r: AuditLog) => {
-        const email = r.changedBy?.email ?? "";
+        const email = r.user?.email ?? r.changedBy ?? "";
         return email.toLowerCase().includes(String(v).toLowerCase());
       },
-      render: (v: any) => v?.email ?? v ?? "—",
+      render: (_: any, r: AuditLog) => r.user?.email ?? r.changedBy ?? "—",
     },
     {
       title: "Details",
       key: "details",
       onFilter: (v: any, r: AuditLog) => {
-        const s = JSON.stringify(r.after ?? r.before ?? "").toLowerCase();
+        const s = JSON.stringify(r.afterData ?? r.beforeData ?? "").toLowerCase();
         return s.includes(String(v).toLowerCase());
       },
       render: (_: any, r: AuditLog) => {
         const parts = [
-          r.after ? { label: "after", value: r.after } : null,
-          r.before ? { label: "before", value: r.before } : null,
+          r.afterData ? { label: "after", value: r.afterData } : null,
+          r.beforeData ? { label: "before", value: r.beforeData } : null,
         ].filter(Boolean);
         return parts.map((p: any, i) => (
           <Typography.Text

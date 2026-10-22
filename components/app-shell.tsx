@@ -48,7 +48,7 @@ const { Header, Sider, Content } = Layout;
 
 const menuItems = [
   { key: "/dashboard", icon: <DashboardOutlined />, label: <MenuLabel text="Dashboard" /> },
-  { key: "/tours", icon: <CarOutlined />, label: <MenuLabel text="Tours" /> },
+  { key: "/manage/tours", icon: <CarOutlined />, label: <MenuLabel text="Tours" /> },
   { key: "/bookings", icon: <FileTextOutlined />, label: <MenuLabel text="Bookings" /> },
   { key: "/drive", icon: <CloudOutlined />, label: <MenuLabel text="Drive" /> },
   { key: "/leaves", icon: <CalendarOutlined />, label: <MenuLabel text="Day Off Requests" /> },

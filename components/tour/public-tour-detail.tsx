@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   AutoComplete,
   Button,
@@ -17,7 +17,6 @@ import {
   Modal,
   Row,
   Select,
-  Spin,
   Tabs,
   Tag,
   Typography,
@@ -36,7 +35,6 @@ import {
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
-import { sanitizeHtml } from "@/lib/sanitize";
 import { useApp } from "@/lib/app-context";
 import { useMapSrc } from "@/lib/use-map-src";
 import { discountedPrice, discountFor, isTypePromoActive } from "@/lib/promo";
@@ -44,57 +42,27 @@ import PromoCountdown from "@/components/promo-countdown";
 import PublicHeader from "@/components/public-header";
 import TourSlideshow from "@/components/tour-slideshow";
 import DayTimeline from "@/components/day-timeline";
-import type { GalleryImage } from "@/components/gallery-manager";
+import type { PublicTour } from "@/lib/server-tours";
 
-interface PublicItinerary {
-  id: string;
-  dayNumber: number;
-  orderIndex: number;
-  title: string;
-  description?: string | null;
-  timeSlot?: string | null;
-  location?: string | null;
-}
-
-interface PublicTour {
-  id: string;
-  code: string;
-  name: string;
-  type: "PRIVATE_TOUR" | "GROUP_TOUR";
-  durationDays?: number | null;
-  departureLocation?: string | null;
-  transportation?: string | null;
-  adultPrice?: string | number | null;
-  currency?: string;
-  privateDiscountPercent?: number | null;
-  groupDiscountPercent?: number | null;
-  promotionStartsAt?: string | null;
-  promotionEndsAt?: string | null;
-  typePrices?: {
-    type: "PRIVATE_TOUR" | "GROUP_TOUR";
-    adultPrice?: string | number | null;
-    childPrice?: string | number | null;
-    infantPrice?: string | number | null;
-    currency?: string | null;
-  }[];
-  mapQuery?: string | null;
-  gallery?: GalleryImage[];
-  overview?: string | null;
-  highlights?: string | null;
-  regulations?: string | null;
-  insurancePolicy?: string | null;
-  itineraries: PublicItinerary[];
-}
 
 const vnd = (value: string | number | null | undefined) =>
   `${Number(value ?? 0).toLocaleString("vi-VN", { maximumFractionDigits: 0 })} ₫`;
 
-export default function PublicTourDetailPage() {
-  const params = useParams<{ id: string }>();
+/**
+ * The public tour page.
+ *
+ * The tour is fetched on the SERVER (app/tour/[slug]/page.tsx) and handed
+ * over as a prop: the HTML Googlebot receives already contains the tour, its
+ * itinerary and its price. Fetching it in an effect would render an empty
+ * page for the crawler.
+ */
+export default function PublicTourDetail({
+  tour,
+}: {
+  tour: PublicTour;
+}) {
   const router = useRouter();
   const { user, hasPermission } = useApp();
-  const [tour, setTour] = useState<PublicTour | null>(null);
-  const [loading, setLoading] = useState(true);
 
   const [bookingOpen, setBookingOpen] = useState(false);
   const [bookingForm] = Form.useForm();
@@ -109,14 +77,6 @@ export default function PublicTourDetailPage() {
     const p = tour?.typePrices?.find((x) => x.type === type);
     return Number(p?.adultPrice ?? tour?.adultPrice ?? 0) || 0;
   };
-
-  useEffect(() => {
-    api
-      .get(`/tours/${params.id}`)
-      .then((r) => setTour(r.data))
-      .catch((e) => message.error(getErrorMessage(e, "Failed to load tour")))
-      .finally(() => setLoading(false));
-  }, [params.id]);
 
   useEffect(() => {
     api
@@ -155,7 +115,7 @@ export default function PublicTourDetailPage() {
   };
 
   const days = useMemo(() => {
-    const map = new Map<number, PublicItinerary[]>();
+    const map = new Map<number, NonNullable<PublicTour["itineraries"]>>();
     [...(tour?.itineraries ?? [])]
       .sort((a, b) => a.dayNumber - b.dayNumber || a.orderIndex - b.orderIndex)
       .forEach((it) => {
@@ -173,13 +133,7 @@ export default function PublicTourDetailPage() {
       <PublicHeader />
 
       <Flex flex="1" justify="center" style={{ padding: "24px 16px 56px" }}>
-        {loading ? (
-          <Flex justify="center" style={{ padding: 80, width: "100%" }}>
-            <Spin size="large" />
-          </Flex>
-        ) : !tour ? (
-          <Typography.Text type="secondary">Tour not found.</Typography.Text>
-        ) : (
+        {(
           <Flex vertical gap={16} style={{ width: "100%", maxWidth: 1360 }}>
             {/* ─── PUBLIC VIEW TOP BAR ─── */}
             <Flex justify="space-between" align="center" wrap gap={12}>
@@ -190,13 +144,13 @@ export default function PublicTourDetailPage() {
                 <Tag color={tour.type === "PRIVATE_TOUR" ? "purple" : "cyan"}>
                   {tour.type.replace("_", " ")}
                 </Tag>
-                <Typography.Title level={3} style={{ margin: 0 }}>
+                <Typography.Title level={1} style={{ margin: 0, fontSize: 26 }}>
                   {tour.name}
                 </Typography.Title>
               </Flex>
               <Flex gap={8} className="no-print">
                 {user && canEdit && (
-                  <Button icon={<EditOutlined />} onClick={() => router.push(`/tours/${tour.id}`)}>
+                  <Button icon={<EditOutlined />} onClick={() => router.push(`/manage/tours/${tour.id}`)}>
                     Back to Editor
                   </Button>
                 )}
@@ -222,7 +176,10 @@ export default function PublicTourDetailPage() {
                       </Flex>
                     }
                   >
-                    <TourSlideshow images={tour.gallery ?? []} />
+                    <TourSlideshow
+                      images={tour.gallery ?? []}
+                      alt={`${tour.name} — photo ${tour.departureLocation ?? "Vietnam"}`}
+                    />
                   </Card>
 
                   {/* PICKUP & MEETING */}
@@ -325,7 +282,7 @@ export default function PublicTourDetailPage() {
   <div
     className="prose-content"
     style={{ marginTop: 4 }}
-    dangerouslySetInnerHTML={{ __html: sanitizeHtml(it.description) }}
+    dangerouslySetInnerHTML={{ __html: it.description ?? "" }}
   />
 )}
                                     </Flex>
@@ -361,7 +318,7 @@ export default function PublicTourDetailPage() {
     </Typography.Text>
     <div
       className="prose-content"
-      dangerouslySetInnerHTML={{ __html: sanitizeHtml(tour.highlights) }}
+      dangerouslySetInnerHTML={{ __html: tour.highlights }}
     />
   </Flex>
 )}
@@ -378,7 +335,7 @@ export default function PublicTourDetailPage() {
 children: tour.overview ? (
   <div
     className="prose-content"
-    dangerouslySetInnerHTML={{ __html: sanitizeHtml(tour.overview) }}
+    dangerouslySetInnerHTML={{ __html: tour.overview }}
   />
 ) : (
                               <Typography.Text type="secondary">
@@ -396,7 +353,7 @@ children: tour.overview ? (
 children: tour.regulations ? (
   <div
     className="prose-content"
-    dangerouslySetInnerHTML={{ __html: sanitizeHtml(tour.regulations) }}
+    dangerouslySetInnerHTML={{ __html: tour.regulations }}
   />
 ) : (
                               <Typography.Text type="secondary">
@@ -414,7 +371,7 @@ children: tour.regulations ? (
 children: tour.insurancePolicy ? (
   <div
     className="prose-content"
-    dangerouslySetInnerHTML={{ __html: sanitizeHtml(tour.insurancePolicy) }}
+    dangerouslySetInnerHTML={{ __html: tour.insurancePolicy }}
   />
 ) : (
                               <Typography.Text type="secondary">
