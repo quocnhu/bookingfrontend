@@ -12,6 +12,7 @@ export interface SessionUser {
   role: string;
   userType?: string | null;
   authProvider?: string | null;
+  isActive?: boolean;
   createdAt?: string | null;
   providerId?: string | null;
   permissions: string[];

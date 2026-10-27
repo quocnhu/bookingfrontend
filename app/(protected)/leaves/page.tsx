@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Button,
   Card,
+  Checkbox,
   DatePicker,
+  Drawer,
   Flex,
   Form,
   Input,
@@ -18,13 +20,22 @@ import {
 } from "antd";
 import { message } from "@/lib/antd-message";
 import {
+  BarChartOutlined,
   CheckOutlined,
   CloseOutlined,
   PlusOutlined,
+  ThunderboltOutlined,
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { indexColumn, PAGE_SIZE_OPTIONS } from "@/lib/table";
+import LeaveSummaryCards from "@/components/leave-summary";
+import {
+  formatLeaveDayCount,
+  isLeaveDateDisabled,
+  leaveDayCount,
+  leaveTimingHint,
+} from "@/lib/leave";
 import dayjs, { Dayjs } from "dayjs";
 
 const { RangePicker } = DatePicker;
@@ -164,6 +175,7 @@ interface LeaveRow {
   startDate: string;
   endDate: string;
   reason?: string | null;
+  isEmergency?: boolean;
   status: "PENDING" | "APPROVED" | "REJECTED";
   reviewedByName?: string | null;
   reviewedByRole?: string | null;
@@ -177,6 +189,7 @@ export default function LeavesAdminPage() {
 
   const [items, setItems] = useState<LeaveRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [summaryKey, setSummaryKey] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
   const [total, setTotal] = useState(0);
@@ -189,7 +202,9 @@ export default function LeavesAdminPage() {
   const [requestedFilter, setRequestedFilter] = useState<DateRange>(undefined);
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [createForm] = Form.useForm();
+  const createEmergency = Form.useWatch("isEmergency", createForm) === true;
   const [savingCreate, setSavingCreate] = useState(false);
   const [staffOptions, setStaffOptions] = useState<
     { value: string; label: string; group?: string }[]
@@ -244,6 +259,7 @@ export default function LeavesAdminPage() {
         await api.put(`/leaves/${id}/status`, { status });
         message.success(status === "APPROVED" ? "Day off approved" : "Day off rejected");
         setPage(1);
+        setSummaryKey((k) => k + 1);
         load();
       } catch (e) {
         message.error(getErrorMessage(e, "Failed to update day-off request"));
@@ -283,6 +299,7 @@ export default function LeavesAdminPage() {
         startDate: start.startOf("day").format("YYYY-MM-DD"),
         endDate: end.startOf("day").format("YYYY-MM-DD"),
         reason: values.reason,
+        isEmergency: values.isEmergency === true,
       };
       if (isStaff && values.userId) {
         payload.userId = values.userId;
@@ -292,6 +309,7 @@ export default function LeavesAdminPage() {
       setCreateModalOpen(false);
       createForm.resetFields();
       setPage(1);
+      setSummaryKey((k) => k + 1);
       load();
     } catch (e) {
       message.error(getErrorMessage(e, "Failed to create day-off request"));
@@ -332,9 +350,24 @@ export default function LeavesAdminPage() {
         setPage(1);
       }),
       render: (_: any, r: LeaveRow) => (
-        <Typography.Text>
-          {dayjs(r.startDate).format("DD MMM YYYY")} → {dayjs(r.endDate).format("DD MMM YYYY")}
-        </Typography.Text>
+        <Flex align="center" gap={8} wrap>
+          <Typography.Text>
+            {dayjs(r.startDate).format("DD MMM YYYY")} →{" "}
+            {dayjs(r.endDate).format("DD MMM YYYY")}
+          </Typography.Text>
+          <Tag color="blue" style={{ margin: 0 }}>
+            {formatLeaveDayCount(leaveDayCount(r.startDate, r.endDate))}
+          </Tag>
+          {r.isEmergency && (
+            <Tag
+              color="red"
+              icon={<ThunderboltOutlined />}
+              style={{ margin: 0, fontWeight: 600 }}
+            >
+              Emergency
+            </Tag>
+          )}
+        </Flex>
       ),
     },
     {
@@ -465,19 +498,43 @@ export default function LeavesAdminPage() {
 
   return (
     <div style={{ padding: 4 }}>
+      <Drawer
+        title={
+          <Flex align="center" gap={8}>
+            <BarChartOutlined />
+            <Typography.Text strong style={{ fontSize: 15 }}>
+              My leave totals
+            </Typography.Text>
+          </Flex>
+        }
+        placement="right"
+        width={360}
+        open={summaryOpen}
+        onClose={() => setSummaryOpen(false)}
+      >
+        <LeaveSummaryCards refreshKey={summaryKey} embedded />
+      </Drawer>
       <Card
         title={
           <Flex align="center" justify="space-between" wrap gap={8}>
             <Typography.Title level={5} style={{ margin: 0 }}>
               {isStaff ? "Day Off Requests" : "My Day-Off Requests"}
             </Typography.Title>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={openCreateModal}
-            >
-              Request day off
-            </Button>
+            <Flex align="center" gap={8} wrap>
+              <Button
+                icon={<BarChartOutlined />}
+                onClick={() => setSummaryOpen(true)}
+              >
+                Leave totals
+              </Button>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={openCreateModal}
+              >
+                Request day off
+              </Button>
+            </Flex>
           </Flex>
         }
         styles={{ body: { padding: 16 } }}
@@ -531,6 +588,11 @@ export default function LeavesAdminPage() {
           layout="vertical"
           onFinish={submitCreate}
           style={{ marginTop: 16 }}
+          onValuesChange={(changed) => {
+            if ("isEmergency" in changed) {
+              createForm.setFieldValue("range", undefined);
+            }
+          }}
         >
           {isStaff && (
             <Form.Item
@@ -555,6 +617,25 @@ export default function LeavesAdminPage() {
             </Form.Item>
           )}
           <Form.Item
+            name="isEmergency"
+            valuePropName="checked"
+            style={{ marginBottom: 8 }}
+          >
+            <Checkbox>
+              <ThunderboltOutlined style={{ color: "#cf1322", marginRight: 4 }} />
+              <Typography.Text strong style={{ color: "#cf1322" }}>
+                Emergency
+              </Typography.Text>{" "}
+              — last-minute leave
+            </Checkbox>
+          </Form.Item>
+          <Typography.Text
+            type="secondary"
+            style={{ display: "block", fontSize: 11, marginBottom: 12 }}
+          >
+            {leaveTimingHint(createEmergency)}
+          </Typography.Text>
+          <Form.Item
             name="range"
             label="Dates off"
             rules={[{ required: true, message: "Please pick the days off" }]}
@@ -563,7 +644,7 @@ export default function LeavesAdminPage() {
               style={{ width: "100%" }}
               format="DD MMM YYYY"
               disabledDate={(d: Dayjs) =>
-                d.isBefore(dayjs().startOf("day"), "day")
+                isLeaveDateDisabled(d, createEmergency)
               }
             />
           </Form.Item>

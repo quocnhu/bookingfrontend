@@ -7,6 +7,7 @@ import {
   Card,
   Flex,
   Form,
+  Grid,
   Input,
   Modal,
   Space,
@@ -31,6 +32,8 @@ interface DriverRow {
 
 export default function ProviderDriversPage() {
   const { user } = useApp();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [rows, setRows] = useState<DriverRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -115,7 +118,12 @@ export default function ProviderDriversPage() {
             Drivers running under your fleet.
           </Typography.Text>
         </Flex>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() => setCreating(true)}
+          block={isMobile}
+        >
           Add driver
         </Button>
       </Flex>
@@ -134,9 +142,21 @@ export default function ProviderDriversPage() {
           size="small"
           loading={loading}
           dataSource={rows}
-          pagination={{ pageSize: 10, showSizeChanger: false }}
+          scroll={{ x: "max-content" }}
+          pagination={{
+            pageSize: 10,
+            simple: isMobile,
+            showSizeChanger: false,
+          }}
           locale={{ emptyText: "No drivers yet" }}
           columns={[
+            {
+              title: "#",
+              key: "__index",
+              width: 56,
+              align: "center",
+              render: (_: unknown, __: DriverRow, index: number) => index + 1,
+            },
             {
               title: "Name",
               render: (_: unknown, r: DriverRow) => (

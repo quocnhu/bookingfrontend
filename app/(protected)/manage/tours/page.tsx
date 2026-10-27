@@ -7,6 +7,7 @@ import {
   Card,
   Col,
   DatePicker,
+  Drawer,
   Flex,
   Form,
   Input,
@@ -25,6 +26,11 @@ import dayjs, { type Dayjs } from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { isTypePromoActive } from "@/lib/promo";
+import {
+  departureLabel,
+  formatDepartureTime,
+  formatTourDuration,
+} from "@/lib/tour-display";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
 import { useFillHeight } from "@/lib/use-fill-height";
 import ThumbnailPicker from "@/components/thumbnail-picker";
@@ -37,6 +43,11 @@ interface Tour {
   type: "PRIVATE_TOUR" | "GROUP_TOUR";
   thumbnailUrl?: string | null;
   durationDays?: number | null;
+  durationValue?: number | null;
+  durationUnit?: "HOUR" | "DAY" | null;
+  freeCancellationHours?: number | null;
+  cancellationPolicy?: string | null;
+  departureTimes?: string[] | null;
   departureLocation?: string | null;
   adultPrice?: string | number | null;
   childPrice?: string | number | null;
@@ -57,24 +68,104 @@ interface Tour {
   _count?: { bookings: number };
 }
 
-const TYPE_PRICE_LABELS: Record<string, string> = {
-  PRIVATE_TOUR: "Private Tour",
-  GROUP_TOUR: "Group Tour",
-};
-
-const num = (v: any) => Number(v ?? 0) || 0;
-
-const typePrice = (
-  tour: Tour,
-  type: "PRIVATE_TOUR" | "GROUP_TOUR",
-  field: "adultPrice" | "childPrice" | "infantPrice",
-) => {
-  const tp = tour.typePrices?.find((x) => x.type === type);
-  const fallback = type === "PRIVATE_TOUR" ? (tour[field] ?? 0) : 0;
-  return num(tp?.[field] ?? fallback);
-};
-
 const LIMIT = 20;
+
+const PRIVATE_COLOR = "#722ed1";
+const GROUP_COLOR = "#08979c";
+const PERSON_COLORS = {
+  adult: "#1677ff",
+  child: "#fa8c16",
+  infant: "#52c41a",
+};
+
+function PriceField({
+  name,
+  label,
+  color,
+}: {
+  name: string;
+  label: string;
+  color: string;
+}) {
+  return (
+    <Form.Item
+      name={name}
+      label={
+        <span style={{ color, fontWeight: 600 }}>
+          <span
+            style={{
+              display: "inline-block",
+              width: 8,
+              height: 8,
+              borderRadius: 4,
+              background: color,
+              marginRight: 6,
+            }}
+          />
+          {label}
+        </span>
+      }
+      initialValue={0}
+    >
+      <InputNumber
+        style={{ width: "100%", borderColor: color }}
+        min={0}
+      />
+    </Form.Item>
+  );
+}
+
+function PricingSection({
+  title,
+  color,
+  background,
+  prefix,
+}: {
+  title: string;
+  color: string;
+  background: string;
+  prefix: "privatePrices" | "groupPrices";
+}) {
+  return (
+    <Flex
+      vertical
+      gap={8}
+      style={{
+        padding: 12,
+        borderRadius: 10,
+        border: `1px solid ${color}`,
+        background,
+      }}
+    >
+      <Tag color={color} style={{ alignSelf: "flex-start", margin: 0 }}>
+        {title}
+      </Tag>
+      <Row gutter={12}>
+        <Col span={8}>
+          <PriceField
+            name={`${prefix}Adult`}
+            label="Adult price"
+            color={PERSON_COLORS.adult}
+          />
+        </Col>
+        <Col span={8}>
+          <PriceField
+            name={`${prefix}Child`}
+            label="Child price"
+            color={PERSON_COLORS.child}
+          />
+        </Col>
+        <Col span={8}>
+          <PriceField
+            name={`${prefix}Infant`}
+            label="Infant price"
+            color={PERSON_COLORS.infant}
+          />
+        </Col>
+      </Row>
+    </Flex>
+  );
+}
 
 function promotionState(
   pct: number | null | undefined,
@@ -116,7 +207,7 @@ export default function ToursPage() {
     activeTab: "",
     deps: [data?.items?.length],
   });
-  const [modalOpen, setModalOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [form] = Form.useForm();
   const [editing, setEditing] = useState<Tour | null>(null);
   const [saving, setSaving] = useState(false);
@@ -153,6 +244,11 @@ export default function ToursPage() {
       name: tour?.name ?? "",
       thumbnailUrl: tour?.thumbnailUrl ?? null,
       durationDays: tour?.durationDays ?? 1,
+      durationValue: tour?.durationValue ?? tour?.durationDays ?? 1,
+      durationUnit: tour?.durationUnit ?? "DAY",
+      freeCancellationHours: tour?.freeCancellationHours ?? 24,
+      cancellationPolicy: tour?.cancellationPolicy ?? "",
+      departureTimes: tour?.departureTimes ?? [],
       departureLocation: tour?.departureLocation ?? "",
       privatePricesAdult: pvt?.adultPrice ?? (tour?.type === "PRIVATE_TOUR" ? tour?.adultPrice : 0) ?? 0,
       privatePricesChild: pvt?.childPrice ?? (tour?.type === "PRIVATE_TOUR" ? tour?.childPrice : 0) ?? 0,
@@ -168,7 +264,7 @@ export default function ToursPage() {
           ? [dayjs(tour.promotionStartsAt), dayjs(tour.promotionEndsAt)]
           : null,
     });
-    setModalOpen(true);
+    setDrawerOpen(true);
   };
 
   const openGallery = async (tour: Tour) => {
@@ -201,11 +297,22 @@ export default function ToursPage() {
     const tourType = editing?.type ?? "PRIVATE_TOUR";
     const primaryTypePrices =
       typePrices.find((p) => p.type === tourType) ?? typePrices[0];
+    const durationValue = Number(values.durationValue ?? values.durationDays ?? 1);
+    const durationUnit = values.durationUnit ?? "DAY";
+    const durationDays =
+      durationUnit === "DAY"
+        ? durationValue
+        : Math.max(1, Math.ceil(durationValue / 24));
     const payload: any = {
       name: values.name,
       type: tourType,
       thumbnailUrl: values.thumbnailUrl,
-      durationDays: values.durationDays,
+      durationDays,
+      durationValue,
+      durationUnit,
+      freeCancellationHours: values.freeCancellationHours,
+      cancellationPolicy: values.cancellationPolicy,
+      departureTimes: values.departureTimes,
       departureLocation: values.departureLocation,
       currency: values.currency,
       privateDiscountPercent: values.privateDiscountPercent,
@@ -226,7 +333,7 @@ export default function ToursPage() {
         await api.post("/tours", payload);
         message.success("Tour created");
       }
-      setModalOpen(false);
+      setDrawerOpen(false);
       load();
     } catch (e) {
       message.error(getErrorMessage(e, "Failed to save tour"));
@@ -261,45 +368,47 @@ export default function ToursPage() {
     { title: "Code", dataIndex: "code", key: "code", onFilter: (v: any, r: Tour) => (r.code ?? "").toLowerCase().includes(String(v).toLowerCase()) },
     { title: "Name", dataIndex: "name", key: "name", onFilter: (v: any, r: Tour) => (r.name ?? "").toLowerCase().includes(String(v).toLowerCase()) },
     {
-      title: "Price (Private / Group)",
-      key: "price",
-      width: 230,
-      render: (_: any, r: Tour) => (
-        <Flex vertical gap={3}>
-          <Flex justify="space-between" gap={8}>
-            <Tag color="purple" style={{ margin: 0, fontSize: 11 }}>
-              Private
-            </Tag>
-            <Typography.Text strong style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-              A {typePrice(r, "PRIVATE_TOUR", "adultPrice").toLocaleString()} · C{" "}
-              {typePrice(r, "PRIVATE_TOUR", "childPrice").toLocaleString()} · I{" "}
-              {typePrice(r, "PRIVATE_TOUR", "infantPrice").toLocaleString()}{" "}
-              {r.currency}
-            </Typography.Text>
-          </Flex>
-          <Flex justify="space-between" gap={8}>
-            <Tag color="cyan" style={{ margin: 0, fontSize: 11 }}>
-              Group
-            </Tag>
-            <Typography.Text strong style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-              A {typePrice(r, "GROUP_TOUR", "adultPrice").toLocaleString()} · C{" "}
-              {typePrice(r, "GROUP_TOUR", "childPrice").toLocaleString()} · I{" "}
-              {typePrice(r, "GROUP_TOUR", "infantPrice").toLocaleString()}{" "}
-              {r.currency}
-            </Typography.Text>
-          </Flex>
-        </Flex>
+      title: "Group",
+      dataIndex: "type",
+      key: "group",
+      filters: [
+        { text: "Private", value: "PRIVATE_TOUR" },
+        { text: "Group", value: "GROUP_TOUR" },
+      ],
+      onFilter: (v: any, r: Tour) => r.type === v,
+      render: (v: Tour["type"]) => (
+        <Tag color={v === "PRIVATE_TOUR" ? "purple" : "cyan"}>
+          {v === "PRIVATE_TOUR" ? "Private" : "Group"}
+        </Tag>
       ),
     },
     {
       title: "Duration",
-      dataIndex: "durationDays",
-      key: "durationDays",
-      filters: Array.from(new Set<number>((data?.items ?? []).map((t: Tour) => t.durationDays ?? 1))).sort((a, b) => a - b).map((d) => ({ text: d === 1 ? "1 Day" : `${d} Days`, value: d })),
-      onFilter: (v: any, r: Tour) => (r.durationDays ?? 1) === v,
-      render: (v: number | null) => (
-        <Tag>{(v ?? 1) === 1 ? "1 Day" : `${v} Days`}</Tag>
-      ),
+      key: "duration",
+      render: (_: any, r: Tour) => <Tag>{formatTourDuration(r)}</Tag>,
+    },
+    {
+      title: "Departures",
+      key: "departures",
+      filters: [
+        { text: "Morning", value: "Morning" },
+        { text: "Afternoon", value: "Afternoon" },
+        { text: "Evening", value: "Evening" },
+      ],
+      onFilter: (v: any, r: Tour) =>
+        (r.departureTimes ?? []).some((time) => departureLabel(time) === v),
+      render: (_: any, r: Tour) =>
+        r.departureTimes?.length ? (
+          <Flex gap={4} wrap>
+            {r.departureTimes.map((time) => (
+              <Tag key={time} color="geekblue" style={{ margin: 0 }}>
+                {formatDepartureTime(time)}
+              </Tag>
+            ))}
+          </Flex>
+        ) : (
+          <Typography.Text type="secondary">—</Typography.Text>
+        ),
     },
     {
       title: "Bookings",
@@ -413,13 +522,19 @@ export default function ToursPage() {
         />
       </Card>
 
-      <Modal
+      <Drawer
         title={editing ? `Edit Tour: ${editing.name}` : "Add Tour"}
-        open={modalOpen}
-        onCancel={() => setModalOpen(false)}
-        onOk={save}
-        confirmLoading={saving}
-        width={560}
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        width={620}
+        footer={
+          <Flex justify="flex-end" gap={8}>
+            <Button onClick={() => setDrawerOpen(false)}>Cancel</Button>
+            <Button type="primary" loading={saving} onClick={save}>
+              {editing ? "Save changes" : "Create tour"}
+            </Button>
+          </Flex>
+        }
       >
         <Form form={form} layout="vertical">
           <Form.Item name="thumbnailUrl" label="Thumbnail">
@@ -433,57 +548,91 @@ export default function ToursPage() {
             <Input placeholder="e.g. Ha Long Bay Full Day" />
           </Form.Item>
           <Row gutter={12}>
-            <Col span={12}>
-              <Form.Item name="durationDays" label="Duration (days)" initialValue={1}>
+            <Col span={8}>
+              <Form.Item
+                name="durationValue"
+                label="Duration"
+                initialValue={1}
+              >
                 <InputNumber style={{ width: "100%" }} min={1} />
               </Form.Item>
             </Col>
-            <Col span={12}>
-              <Form.Item name="departureLocation" label="Pickup / meeting point">
-                <Input placeholder="e.g. Central Station Plaza, Main Gate 3" />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Typography.Text strong style={{ marginTop: 8, display: "block" }}>
-            Private Tour pricing
-          </Typography.Text>
-          <Row gutter={12}>
             <Col span={8}>
-              <Form.Item name="privatePricesAdult" label="Private adult price" initialValue={0}>
-                <InputNumber style={{ width: "100%" }} min={0} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="privatePricesChild" label="Private child price" initialValue={0}>
-                <InputNumber style={{ width: "100%" }} min={0} />
+              <Form.Item
+                name="durationUnit"
+                label="Duration unit"
+                initialValue="DAY"
+              >
+                <Select
+                  options={[
+                    { value: "HOUR", label: "Hour(s)" },
+                    { value: "DAY", label: "Day(s)" },
+                  ]}
+                />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="privatePricesInfant" label="Private infant price" initialValue={0}>
-                <InputNumber style={{ width: "100%" }} min={0} />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Typography.Text strong style={{ marginTop: 8, display: "block" }}>
-            Group Tour pricing
-          </Typography.Text>
-          <Row gutter={12}>
-            <Col span={8}>
-              <Form.Item name="groupPricesAdult" label="Group adult price" initialValue={0}>
-                <InputNumber style={{ width: "100%" }} min={0} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="groupPricesChild" label="Group child price" initialValue={0}>
-                <InputNumber style={{ width: "100%" }} min={0} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="groupPricesInfant" label="Group infant price" initialValue={0}>
+              <Form.Item
+                name="freeCancellationHours"
+                label="Free cancellation (hours)"
+                initialValue={24}
+              >
                 <InputNumber style={{ width: "100%" }} min={0} />
               </Form.Item>
             </Col>
           </Row>
+          <Form.Item
+            name="departureLocation"
+            label="Pickup / meeting point"
+          >
+            <Input placeholder="e.g. Central Station Plaza, Main Gate 3" />
+          </Form.Item>
+          <Form.Item name="cancellationPolicy" label="Cancellation policy note">
+            <Input.TextArea
+              rows={2}
+              placeholder="Shown on the tour page when provided"
+            />
+          </Form.Item>
+          <Form.Item
+            name="departureTimes"
+            label="Departure times"
+            extra="Type a time and press Enter, e.g. 08:00, 13:30"
+            rules={[
+              {
+                validator: (_, value: string[] | undefined) => {
+                  const bad = (value ?? []).find(
+                    (time) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(time),
+                  );
+                  return bad
+                    ? Promise.reject(
+                        new Error(`Use 24-hour HH:mm format: ${bad}`),
+                      )
+                    : Promise.resolve();
+                },
+              },
+            ]}
+          >
+            <Select
+              mode="tags"
+              tokenSeparators={[",", " "]}
+              placeholder="08:00, 13:30"
+              options={[]}
+            />
+          </Form.Item>
+          <Flex vertical gap={12} style={{ marginTop: 8 }}>
+            <PricingSection
+              title="Private Tour pricing"
+              color={PRIVATE_COLOR}
+              background="rgba(114, 46, 209, 0.06)"
+              prefix="privatePrices"
+            />
+            <PricingSection
+              title="Group Tour pricing"
+              color={GROUP_COLOR}
+              background="rgba(8, 151, 156, 0.06)"
+              prefix="groupPrices"
+            />
+          </Flex>
           <Form.Item name="currency" label="Currency" initialValue="USD">
             <Select
               options={["VND", "USD", "EUR"].map((c) => ({ value: c, label: c }))}
@@ -516,7 +665,7 @@ export default function ToursPage() {
             Reset discounts & window
           </Button>
         </Form>
-      </Modal>
+      </Drawer>
       <Modal
         title={`Photo folder — ${galleryTour?.name ?? ""}`}
         open={galleryOpen}

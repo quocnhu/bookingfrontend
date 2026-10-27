@@ -175,12 +175,14 @@ export default function BookingsPage() {
     CREATE: "New booking",
     MODIFY: "Amended",
     CANCEL: "Cancelled",
+    DUPLICATE: "Duplicate",
   };
 
   const RAW_DATA_ACTION_COLORS: Record<string, string> = {
     CREATE: "blue",
     MODIFY: "gold",
     CANCEL: "red",
+    DUPLICATE: "orange",
   };
 
   const RAW_DATA_OUTCOME_LABELS: Record<string, string> = {
@@ -229,6 +231,40 @@ export default function BookingsPage() {
       onFilter: (v: any, r: any) => r.action === v,
     },
     {
+      title: "Booking Ref",
+      key: "bookingRef",
+      render: (_: any, r: any) => {
+        const ref = r.bookingRef ?? r.linkedBooking?.bookingRef ?? r.booking?.bookingRef;
+        return ref ? <Typography.Text copyable>{ref}</Typography.Text> : "—";
+      },
+      filters: Array.from(
+        new Set(
+          rawData
+            .map((r: any) => r.bookingRef ?? r.linkedBooking?.bookingRef ?? r.booking?.bookingRef)
+            .filter(Boolean),
+        ),
+      )
+        .sort()
+        .map((d: any) => ({ text: d, value: d })),
+      onFilter: (v: any, r: any) => {
+        const ref = r.bookingRef ?? r.linkedBooking?.bookingRef ?? r.booking?.bookingRef;
+        return ref === v;
+      },
+    },
+    {
+      title: "History ID",
+      key: "historyId",
+      width: 110,
+      render: (_: any, r: any) => {
+        const hid = r.payload?.historyId ?? r.historyId;
+        return hid ? <Typography.Text copyable style={{ fontSize: 12 }}>{hid}</Typography.Text> : "—";
+      },
+      onFilter: (v: any, r: any) => {
+        const hid = r.payload?.historyId ?? r.historyId;
+        return String(hid ?? "").includes(String(v));
+      },
+    },
+    {
       title: "Email",
       dataIndex: "email",
       key: "email",
@@ -244,23 +280,13 @@ export default function BookingsPage() {
       onFilter: (v: any, r: any) => r.createdAt ? new Date(r.createdAt).toLocaleDateString() === v : false,
     },
     {
-      title: "Actions",
-      key: "actions",
+      title: "Payload",
+      key: "payload",
       render: (_: any, r: any) => (
         <Space size={8}>
           <Button size="small" onClick={() => setRawDetail(r)}>
-            View payload
+            View
           </Button>
-          {r.bookingId ? (
-            <Tag color={r.isCancellation ? "red" : r.isAmendment ? "gold" : "green"}>
-              {r.isCancellation
-                ? "→ cancelled "
-                : r.isAmendment
-                  ? "→ amended "
-                  : "→ booking "}
-              {r.bookingRef ?? r.bookingId.slice(0, 8)}
-            </Tag>
-          ) : null}
         </Space>
       ),
     },
@@ -1409,6 +1435,7 @@ extra={
               { key: "tourType", label: "Tour type", children: bookingDetail.tourType ?? "—" },
               { key: "duration", label: "Duration", children: bookingDetail.tour?.durationDays ? `${bookingDetail.tour.durationDays} ${bookingDetail.tour.durationDays === 1 ? 'Day' : 'Days'}` : "—" },
               { key: "start", label: "Start date", children: bookingDetail.startingDate ? new Date(bookingDetail.startingDate).toLocaleString() : "—" },
+              { key: "departureTime", label: "Departure time", children: bookingDetail.departureTime ?? "—" },
               { key: "end", label: "End date", children: fmtDate(endDate(bookingDetail.startingDate, bookingDetail.tour?.durationDays)) },
               { key: "pax", label: "Pax", children: `${bookingDetail.totalPax ?? 0}` },
               { key: "notes", label: "Note", children: bookingDetail.notes ?? "—" },

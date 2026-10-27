@@ -9,10 +9,16 @@ import {
   DashboardOutlined,
   ClockCircleOutlined,
   CalendarOutlined,
+  SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { useApp, getDefaultRoute } from "@/lib/app-context";
 import PromoCountdown from "@/components/promo-countdown";
 import { discountedPrice, discountFor, isTypePromoActive } from "@/lib/promo";
+import {
+  formatDepartureTime,
+  formatFreeCancellation,
+  formatTourDuration,
+} from "@/lib/tour-display";
 
 interface HomepageTour {
   id: string;
@@ -25,6 +31,11 @@ interface HomepageTour {
   childPrice?: string | number | null;
   infantPrice?: string | number | null;
   currency?: string;
+  durationDays?: number | null;
+  durationValue?: number | null;
+  durationUnit?: "HOUR" | "DAY" | null;
+  freeCancellationHours?: number | null;
+  departureTimes?: string[] | null;
   privateDiscountPercent?: number | null;
   groupDiscountPercent?: number | null;
   promotionStartsAt?: string | null;
@@ -326,10 +337,25 @@ export default function HomePage({
                       </div>
                     </div>
 
-                    <Flex gap={12} align="center" style={{ marginTop: "auto", paddingTop: 8 }}>
+                    <Flex gap={12} wrap align="center" style={{ marginTop: "auto", paddingTop: 8 }}>
                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        <ClockCircleOutlined /> {(tour as any).durationDays ?? 1} {(tour as any).durationDays === 1 ? "Day" : "Days"}
+                        <ClockCircleOutlined /> {formatTourDuration(tour)}
                       </Typography.Text>
+                      {formatFreeCancellation(tour.freeCancellationHours) && (
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          <SafetyCertificateOutlined />{" "}
+                          {formatFreeCancellation(tour.freeCancellationHours)}
+                        </Typography.Text>
+                      )}
+                      {(tour.departureTimes ?? []).map((time) => (
+                        <Tag
+                          key={time}
+                          color="geekblue"
+                          style={{ margin: 0, fontSize: 11 }}
+                        >
+                          {formatDepartureTime(time)}
+                        </Tag>
+                      ))}
                     </Flex>
                     <Link
                       href={`/tour/${tour.slug || tour.id}`}

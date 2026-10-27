@@ -224,6 +224,13 @@ export default function CrewAvailabilityDrawer({
   const columns = useMemo<ColumnsType<CrewRow>>(
     () => [
       {
+        title: "#",
+        key: "__index",
+        width: 48,
+        align: "center",
+        render: (_: unknown, __: CrewRow, index: number) => index + 1,
+      },
+      {
         title: "Crew",
         key: "name",
         fixed: "left",

@@ -41,6 +41,11 @@ import { sanitizeHtml } from "@/lib/sanitize";
 import { useApp } from "@/lib/app-context";
 import { useMapSrc } from "@/lib/use-map-src";
 import { discountedPrice, discountFor, isTypePromoActive } from "@/lib/promo";
+import {
+  formatDepartureTime,
+  formatFreeCancellation,
+  formatTourDuration,
+} from "@/lib/tour-display";
 import PromoCountdown from "@/components/promo-countdown";
 import GalleryManager, { type GalleryImage } from "@/components/gallery-manager";
 import TourSlideshow from "@/components/tour-slideshow";
@@ -78,6 +83,11 @@ interface TourState {
   type: "PRIVATE_TOUR" | "GROUP_TOUR";
   thumbnailUrl?: string | null;
   durationDays?: number | null;
+  durationValue?: number | null;
+  durationUnit?: "HOUR" | "DAY" | null;
+  freeCancellationHours?: number | null;
+  cancellationPolicy?: string | null;
+  departureTimes?: string[] | null;
   departureLocation?: string | null;
   transportation?: string | null;
   adultPrice?: string | number | null;
@@ -235,6 +245,11 @@ export default function TourItineraryEditorPage() {
         type: tour.type,
         thumbnailUrl: tour.thumbnailUrl,
         durationDays: tour.durationDays ?? 1,
+        durationValue: tour.durationValue,
+        durationUnit: tour.durationUnit,
+        freeCancellationHours: tour.freeCancellationHours,
+        cancellationPolicy: tour.cancellationPolicy,
+        departureTimes: tour.departureTimes,
         departureLocation: tour.departureLocation,
         transportation: tour.transportation,
         adultPrice: tour.adultPrice,
@@ -685,22 +700,92 @@ export default function TourItineraryEditorPage() {
 
               <Divider style={{ margin: "16px 0" }} />
 
-              <Flex justify="space-between" style={{ marginBottom: 8 }}>
+              <Flex justify="space-between" align="center" style={{ marginBottom: 8 }}>
                 <Typography.Text>Duration</Typography.Text>
                 {canEdit && mode === "edit" ? (
-                  <InputNumber
-                    min={1}
-                    size="small"
-                    value={tour.durationDays ?? 1}
-                    style={{ width: 72 }}
-                    onChange={(v) => patchTour({ durationDays: v })}
-                  />
+                  <Flex gap={6}>
+                    <InputNumber
+                      min={1}
+                      size="small"
+                      value={tour.durationValue ?? tour.durationDays ?? 1}
+                      style={{ width: 72 }}
+                      onChange={(v) => {
+                        const value = Number(v ?? 1);
+                        const unit = tour.durationUnit ?? "DAY";
+                        patchTour({
+                          durationValue: value,
+                          durationDays:
+                            unit === "DAY"
+                              ? value
+                              : Math.max(1, Math.ceil(value / 24)),
+                        });
+                      }}
+                    />
+                    <Select
+                      size="small"
+                      value={tour.durationUnit ?? "DAY"}
+                      style={{ width: 86 }}
+                      options={[
+                        { value: "HOUR", label: "Hour(s)" },
+                        { value: "DAY", label: "Day(s)" },
+                      ]}
+                      onChange={(unit) => {
+                        const value = Number(
+                          tour.durationValue ?? tour.durationDays ?? 1,
+                        );
+                        patchTour({
+                          durationUnit: unit,
+                          durationValue: value,
+                          durationDays:
+                            unit === "DAY"
+                              ? value
+                              : Math.max(1, Math.ceil(value / 24)),
+                        });
+                      }}
+                    />
+                  </Flex>
                 ) : (
                   <Typography.Text strong>
-                    {tour.durationDays ?? 1} {Number(tour.durationDays ?? 1) === 1 ? "Day" : "Days"}
+                    {formatTourDuration(tour)}
                   </Typography.Text>
                 )}
               </Flex>
+              <Flex justify="space-between" align="center" style={{ marginBottom: 8 }}>
+                <Typography.Text>Free cancellation</Typography.Text>
+                {canEdit && mode === "edit" ? (
+                  <InputNumber
+                    min={0}
+                    size="small"
+                    value={tour.freeCancellationHours ?? 24}
+                    style={{ width: 92 }}
+                    addonAfter="h"
+                    onChange={(v) =>
+                      patchTour({ freeCancellationHours: Number(v ?? 0) })
+                    }
+                  />
+                ) : (
+                  <Typography.Text strong>
+                    {formatFreeCancellation(tour.freeCancellationHours) ?? "—"}
+                  </Typography.Text>
+                )}
+              </Flex>
+              {(tour.departureTimes ?? []).length > 0 && (
+                <Flex
+                  justify="space-between"
+                  align="flex-start"
+                  gap={8}
+                  style={{ marginBottom: 8 }}
+                >
+                  <Typography.Text>Departures</Typography.Text>
+                  <Flex gap={4} wrap justify="flex-end">
+                    {(tour.departureTimes ?? []).map((time) => (
+                      <Tag key={time} color="geekblue" style={{ margin: 0 }}>
+                        {formatDepartureTime(time)}
+                      </Tag>
+                    ))}
+                  </Flex>
+                </Flex>
+              )}
               <Flex justify="space-between" style={{ marginBottom: 16 }}>
                 <Typography.Text>Stops</Typography.Text>
                 <Typography.Text strong>
@@ -717,9 +802,14 @@ export default function TourItineraryEditorPage() {
               >
                 BOOK THIS TOUR NOW
               </Button>
-              <Typography.Text type="secondary" style={{ fontSize: 12, marginTop: 8, textAlign: "center" }}>
-                Free cancellation within 24h
-              </Typography.Text>
+              {formatFreeCancellation(tour.freeCancellationHours) && (
+                <Typography.Text
+                  type="secondary"
+                  style={{ fontSize: 12, marginTop: 8, textAlign: "center" }}
+                >
+                  {formatFreeCancellation(tour.freeCancellationHours)}
+                </Typography.Text>
+              )}
             </Flex>
           </Card>
         </Col>

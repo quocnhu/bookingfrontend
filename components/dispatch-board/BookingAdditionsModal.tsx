@@ -14,6 +14,7 @@ import type { ColumnsType } from "antd/es/table";
 import { App, InputNumber, Select, Tooltip } from "antd";
 import { DollarOutlined, RollbackOutlined, WarningOutlined } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
+import { useApp } from "@/lib/app-context";
 import { useTourMoney } from "./use-tour-money";
 import type { BoardItem } from "./types";
 
@@ -54,12 +55,15 @@ export default function BookingAdditionsModal({
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [draftBusy, setDraftBusy] = useState(false);
+  const { user } = useApp();
 
   const { money, loading: moneyLoading, load: loadMoney, perBooking, addMoney } =
     useTourMoney(open ? assignment?.id : null);
 
   // Check if booking details are locked (tour report submitted for verification)
   const isLocked = assignment?.tourReport?.locked === true;
+  const isAdmin = user?.role === "ADMIN";
+  const lockBlocksMe = isLocked && !isAdmin;
 
   useEffect(() => {
     if (!open || !assignment) return;
@@ -81,9 +85,9 @@ export default function BookingAdditionsModal({
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...p } : r)));
 
   const save = async () => {
-    if (isLocked) {
+    if (lockBlocksMe) {
       message.warning(
-        "This trip's details are locked because the tour report has been submitted for verification. Only accounting can unlock it by rejecting the report.",
+        "This trip's details are locked because the tour report has been submitted for verification. Only an administrator can change it; accounting can unlock it by rejecting the report.",
       );
       return;
     }
@@ -115,9 +119,9 @@ export default function BookingAdditionsModal({
       );
       return;
     }
-    if (isLocked) {
+    if (lockBlocksMe) {
       message.warning(
-        "This trip's details are locked because the tour report has been submitted for verification. Only accounting can unlock it by rejecting the report.",
+        "This trip's details are locked because the tour report has been submitted for verification. Only an administrator can change it; accounting can unlock it by rejecting the report.",
       );
       return;
     }
@@ -159,6 +163,13 @@ export default function BookingAdditionsModal({
 
   const columns: ColumnsType<RowState> = [
     {
+      title: "#",
+      key: "__index",
+      width: 48,
+      align: "center",
+      render: (_: unknown, __: RowState, index: number) => index + 1,
+    },
+    {
       title: "Bus",
       dataIndex: "busCode",
       key: "busCode",
@@ -186,11 +197,11 @@ export default function BookingAdditionsModal({
       render: (v: string, r) => (
         <Input
           value={v}
-          onChange={isLocked ? undefined : (e) => patch(r.id, { notes: e.target.value })}
+          onChange={lockBlocksMe ? undefined : (e) => patch(r.id, { notes: e.target.value })}
           placeholder="Diet, entry place, special instructions..."
           size="small"
           allowClear
-          disabled={isLocked}
+          disabled={lockBlocksMe}
         />
       ),
     },
@@ -229,7 +240,7 @@ export default function BookingAdditionsModal({
             <Button
               size="small"
               icon={<DollarOutlined />}
-              disabled={money?.locked || isLocked}
+              disabled={money?.locked || lockBlocksMe}
               onClick={() => openDraft(r, "COLLECT_MONEY")}
             >
               Collect
@@ -239,7 +250,7 @@ export default function BookingAdditionsModal({
             <Button
               size="small"
               icon={<RollbackOutlined />}
-              disabled={money?.locked || isLocked}
+              disabled={money?.locked || lockBlocksMe}
               onClick={() => openDraft(r, "PAY_MONEY")}
             >
               Refund
@@ -301,17 +312,26 @@ export default function BookingAdditionsModal({
           style={{
             marginTop: 8,
             padding: "6px 10px",
-            border: "1px solid #ffccc7",
-            background: "#fff1f0",
+            border: `1px solid ${isAdmin ? "#ffe58f" : "#ffccc7"}`,
+            background: isAdmin ? "#fffbe6" : "#fff1f0",
             borderRadius: 6,
             fontSize: 12,
-            color: "#cf1322",
+            color: isAdmin ? "#ad6800" : "#cf1322",
           }}
         >
           <WarningOutlined style={{ marginRight: 6 }} />
-          This trip's details are <strong>locked</strong> — the tour report has been submitted for
-          accounting verification. Notes and collect/refund entries are disabled. Only accounting
-          can unlock by rejecting the report.
+          {isAdmin ? (
+            <>
+              The tour report has been submitted for accounting verification. Details are locked
+              for everyone else, but you can still edit them as an administrator.
+            </>
+          ) : (
+            <>
+              This trip's details are <strong>locked</strong> — the tour report has been submitted
+              for accounting verification. Notes and collect/refund entries are disabled. Only an
+              administrator can change them; accounting can unlock by rejecting the report.
+            </>
+          )}
         </div>
       )}
       {rows.length === 0 ? (

@@ -9,7 +9,7 @@ export default function TourGuideMyTripsPage() {
       mode="guide"
       title="My Trips"
       titleIcon={<CarOutlined />}
-      subtitle="Your tours with itinerary & pickups — filter by date range and open the route in Google Maps."
+      subtitle="Tours assigned to you by admin or operations — open a trip to see crew, pickups and the route."
     />
   );
 }

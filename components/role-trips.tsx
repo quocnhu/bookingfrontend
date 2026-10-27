@@ -4,21 +4,23 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Button,
   Card,
-  Col,
   Collapse,
   DatePicker,
   Descriptions,
-  Empty,
+  Drawer,
   Flex,
-  Row,
+  Grid,
   Segmented,
   Spin,
   Statistic,
+  Table,
   Tag,
   Typography,
   theme as antdTheme,
 } from "antd";
+import type { ColumnsType } from "antd/es/table";
 import {
+  BarChartOutlined,
   CalendarOutlined,
   CarOutlined,
   CheckCircleOutlined,
@@ -37,6 +39,8 @@ import { api, getErrorMessage } from "@/lib/api";
 import GuideBookingsPanel, {
   type GuideBooking,
 } from "@/components/tour-guide/guide-bookings-panel";
+import MyTripsBoard from "@/components/tour-guide/my-trips-board";
+import type { BoardItem } from "@/components/dispatch-board/types";
 import dayjs from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
 import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
@@ -107,9 +111,12 @@ export default function RoleTripsPage({
   subtitle,
 }: RoleTripsProps) {
   const { token } = antdTheme.useToken();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [assignments, setAssignments] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"list" | "calendar">("list");
+  const [view, setView] = useState<"list" | "calendar" | "board">("list");
+  const [statsOpen, setStatsOpen] = useState(false);
   const [calMonth, setCalMonth] = useState(dayjs());
   const [range, setRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
   const [calendarData, setCalendarData] = useState<{
@@ -257,95 +264,12 @@ export default function RoleTripsPage({
   const DOT_ORANGE = "#fa8c16";
   const DOT_GREEN = "#52c41a";
 
-  const renderTripCard = (a: Trip) => {
-    const route = directionsUrl(a.pickups ?? []);
+  const renderTripDetails = (a: Trip) => {
     /** The booking's note, looked up by bookingRef — pickups is the shortened version. */
     const noteOf = (ref?: string) =>
       a.bookings?.find((b) => b.bookingRef === ref)?.notes?.trim() || null;
     return (
-      <Card
-        key={a.id}
-        variant="borderless"
-        style={{
-          marginBottom: 12,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          borderRadius: 12,
-        }}
-      >
-        <Flex justify="space-between" align="flex-start" wrap gap={16}>
-          <Flex vertical gap={4} style={{ flex: 1, minWidth: 240 }}>
-            <Flex align="center" gap={8} wrap>
-              <Typography.Text strong style={{ fontSize: 16 }}>
-                {a.tourName ?? a.code}
-              </Typography.Text>
-              <Tag color={STATUS_COLOR[a.status]} style={{ margin: 0 }}>
-                {a.status}
-              </Tag>
-              {mode === "guide" && a.tourReport && (
-                <Tag
-                  color={
-                    a.tourReport.status === "VERIFIED"
-                      ? "green"
-                      : a.tourReport.status === "REJECTED"
-                        ? "red"
-                        : "orange"
-                  }
-                  style={{ margin: 0 }}
-                >
-                  Report: {a.tourReport.status}
-                </Tag>
-              )}
-            </Flex>
-            <Typography.Text type="secondary">
-              <CalendarOutlined /> {dayjs(a.startDate).format("DD/MM/YYYY")} —{" "}
-              {dayjs(a.endDate).format("DD/MM/YYYY")}
-              {a.durationDays
-                ? ` · ${a.durationDays} ${a.durationDays === 1 ? "Day" : "Days"}`
-                : ""}
-            </Typography.Text>
-            {a.vehicle && (
-              <Typography.Text type="secondary">
-                <CarOutlined /> {a.vehicle.plateNumber}
-              </Typography.Text>
-            )}
-            {mode === "provider" && (
-              <Typography.Text type="secondary">
-                <UserOutlined /> Driver: {a.driver?.name ?? "Not assigned"} · Guide:{" "}
-                {a.guide?.name ?? "Not assigned"}
-              </Typography.Text>
-            )}
-            <Typography.Text type="secondary">
-              <TeamOutlined /> {a.bookings?.length ?? 0} bookings · {a.totalPax ?? 0} pax
-            </Typography.Text>
-          </Flex>
-          {(route || mode === "guide") && (
-            <Flex gap={8} wrap>
-              {route && (
-                <Button
-                  type="primary"
-                  ghost
-                  icon={<EnvironmentOutlined />}
-                  onClick={() => window.open(route, "_blank")}
-                >
-                  Where to go
-                </Button>
-              )}
-              {mode === "guide" && (
-                <Link href={`/tour-guide/submit-report?assignmentId=${a.id}`}>
-                  <Button
-                    type={a.status === "DISPATCHED" && !a.tourReport ? "primary" : "default"}
-                    icon={<FileTextOutlined />}
-                  >
-                    {a.status === "DISPATCHED" && !a.tourReport
-                      ? "Submit report"
-                      : "View report"}
-                  </Button>
-                </Link>
-              )}
-            </Flex>
-          )}
-        </Flex>
-
+      <div>
         {mode === "guide" && a.itinerary && a.itinerary.length > 0 && (
           <Collapse
             size="small"
@@ -469,9 +393,160 @@ export default function RoleTripsPage({
             ]}
           />
         )}
-      </Card>
+      </div>
     );
   };
+
+  const tripColumns: ColumnsType<Trip> = [
+    {
+      title: "#",
+      key: "__index",
+      width: 56,
+      align: "center",
+      render: (_: unknown, __: Trip, index: number) => index + 1,
+    },
+    {
+      title: "Tour",
+      key: "tour",
+      render: (_: unknown, a: Trip) => (
+        <Flex vertical gap={2}>
+          <Flex align="center" gap={6} wrap>
+            <Typography.Text strong>{a.tourName ?? a.code ?? "—"}</Typography.Text>
+            {a.tourType && (
+              <Tag
+                color={a.tourType === "GROUP_TOUR" ? "blue" : "purple"}
+                style={{ margin: 0, fontSize: 10 }}
+              >
+                {a.tourType === "GROUP_TOUR" ? "Group" : "Private"}
+              </Tag>
+            )}
+          </Flex>
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            {a.code ?? "—"}
+            {a.durationDays ? ` · ${a.durationDays} day${a.durationDays > 1 ? "s" : ""}` : ""}
+          </Typography.Text>
+        </Flex>
+      ),
+    },
+    {
+      title: "Dates",
+      key: "dates",
+      render: (_: unknown, a: Trip) => (
+        <Typography.Text style={{ whiteSpace: "nowrap" }}>
+          {dayjs(a.startDate).format("DD/MM/YYYY")} →{" "}
+          {dayjs(a.endDate).format("DD/MM/YYYY")}
+        </Typography.Text>
+      ),
+    },
+    {
+      title: "Status",
+      dataIndex: "status",
+      key: "status",
+      filters: Object.keys(STATUS_COLOR).map((v) => ({ text: v, value: v })),
+      onFilter: (v, a) => a.status === v,
+      render: (v: string) => (
+        <Tag color={STATUS_COLOR[v] ?? "default"} style={{ margin: 0 }}>
+          {v}
+        </Tag>
+      ),
+    },
+    {
+      title: "Crew",
+      key: "crew",
+      render: (_: unknown, a: Trip) => (
+        <Flex vertical gap={2}>
+          <Typography.Text style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+            <UserOutlined /> {a.guide?.name ?? "—"}
+          </Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
+            <TeamOutlined /> {a.driver?.name ?? "—"}
+          </Typography.Text>
+        </Flex>
+      ),
+    },
+    {
+      title: "Assignment",
+      key: "assignment",
+      render: (_: unknown, a: Trip) => (
+        <Flex vertical gap={2}>
+          <Typography.Text strong style={{ fontSize: 12 }}>
+            {a.code ?? "—"}
+          </Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
+            <CarOutlined /> {a.vehicle?.plateNumber ?? "No vehicle"}
+          </Typography.Text>
+        </Flex>
+      ),
+    },
+    {
+      title: "Bookings / Pax",
+      key: "pax",
+      render: (_: unknown, a: Trip) =>
+        `${a.bookings?.length ?? 0} / ${a.totalPax ?? 0}`,
+    },
+    ...(mode === "guide"
+      ? [
+          {
+            title: "Report",
+            key: "report",
+            render: (_: unknown, a: Trip) =>
+              a.tourReport ? (
+                <Tag
+                  color={
+                    a.tourReport.status === "VERIFIED"
+                      ? "green"
+                      : a.tourReport.status === "REJECTED"
+                        ? "red"
+                        : "orange"
+                  }
+                  style={{ margin: 0 }}
+                >
+                  {a.tourReport.status}
+                </Tag>
+              ) : (
+                <Typography.Text type="secondary">—</Typography.Text>
+              ),
+          },
+        ]
+      : []),
+    {
+      title: "Actions",
+      key: "actions",
+      render: (_: unknown, a: Trip) => {
+        const route = directionsUrl(a.pickups ?? []);
+        return (
+          <Flex gap={6} wrap>
+            {route && (
+              <Button
+                size="small"
+                icon={<EnvironmentOutlined />}
+                onClick={() => window.open(route, "_blank")}
+              >
+                Route
+              </Button>
+            )}
+            {mode === "guide" && (
+              <Link href={`/tour-guide/submit-report?assignmentId=${a.id}`}>
+                <Button
+                  size="small"
+                  type={
+                    a.status === "DISPATCHED" && !a.tourReport
+                      ? "primary"
+                      : "default"
+                  }
+                  icon={<FileTextOutlined />}
+                >
+                  {a.status === "DISPATCHED" && !a.tourReport
+                    ? "Report"
+                    : "View report"}
+                </Button>
+              </Link>
+            )}
+          </Flex>
+        );
+      },
+    },
+  ];
 
   return (
     <div>
@@ -486,32 +561,108 @@ export default function RoleTripsPage({
             </Typography.Text>
           )}
         </Flex>
-        <Flex align="center" gap={8} wrap>
-          <DatePicker.RangePicker
-            allowClear
-            value={range}
-            onChange={(v) => setRange(v as [dayjs.Dayjs, dayjs.Dayjs] | null)}
-            placeholder={["From", "To"]}
-            size="middle"
-          />
-          <Button icon={<ReloadOutlined />} onClick={loadAssignments} loading={loading}>
+        <Flex
+          align="center"
+          gap={8}
+          wrap
+          style={{ width: isMobile ? "100%" : undefined }}
+        >
+          <Button
+            icon={<BarChartOutlined />}
+            onClick={() => setStatsOpen(true)}
+            style={{ flex: isMobile ? 1 : undefined }}
+          >
+            Stats
+          </Button>
+          {view !== "board" && (
+            <DatePicker.RangePicker
+              allowClear
+              value={range}
+              onChange={(v) => setRange(v as [dayjs.Dayjs, dayjs.Dayjs] | null)}
+              placeholder={["From", "To"]}
+              size={isMobile ? "small" : "middle"}
+              style={{ width: isMobile ? "100%" : undefined }}
+            />
+          )}
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={loadAssignments}
+            loading={loading}
+            style={{ flex: isMobile ? 1 : undefined }}
+          >
             Refresh
           </Button>
           {mode === "driver" && (
-            <Button icon={<DownloadOutlined />} onClick={exportCsv}>
+            <Button
+              icon={<DownloadOutlined />}
+              onClick={exportCsv}
+              style={{ flex: isMobile ? 1 : undefined }}
+            >
               Export
             </Button>
           )}
           <Segmented
+            block={isMobile}
             value={view}
             onChange={(v) => setView(v as any)}
             options={[
               { label: "List", value: "list" },
+              { label: "Board", value: "board" },
               { label: "Calendar", value: "calendar" },
             ]}
+            style={isMobile ? { width: "100%" } : undefined}
           />
         </Flex>
       </Flex>
+
+      <Drawer
+        title={
+          <Flex align="center" gap={8}>
+            <BarChartOutlined />
+            <Typography.Text strong>Trip stats</Typography.Text>
+          </Flex>
+        }
+        placement="right"
+        width={isMobile ? "100%" : 360}
+        open={statsOpen}
+        onClose={() => setStatsOpen(false)}
+      >
+        <Flex vertical gap={12}>
+          <Card variant="borderless" styles={{ body: { padding: 16 } }}>
+            <Statistic title="Total Trips" value={filtered.length} prefix={<CarOutlined />} />
+          </Card>
+          <Card variant="borderless" styles={{ body: { padding: 16 } }}>
+            <Statistic
+              title="Upcoming"
+              value={upcoming.length}
+              prefix={<ClockCircleOutlined />}
+              styles={{ content: { color: token.colorWarning } }}
+            />
+          </Card>
+          <Card variant="borderless" styles={{ body: { padding: 16 } }}>
+            <Statistic
+              title="Completed"
+              value={completed.length}
+              prefix={<CheckCircleOutlined />}
+              styles={{ content: { color: token.colorSuccess } }}
+            />
+          </Card>
+          {mode === "guide" && (
+            <Card variant="borderless" styles={{ body: { padding: 16 } }}>
+              <Statistic
+                title="Need Report"
+                value={needsReport.length}
+                prefix={<FileTextOutlined />}
+                styles={{
+                  content: {
+                    color: needsReport.length > 0 ? token.colorError : token.colorSuccess,
+                  },
+                }}
+              />
+            </Card>
+          )}
+        </Flex>
+      </Drawer>
 
       {loading ? (
         <Flex justify="center" style={{ padding: 80 }}>
@@ -519,54 +670,6 @@ export default function RoleTripsPage({
         </Flex>
       ) : view === "list" ? (
         <>
-          <Row gutter={[16, 16]}>
-            <Col xs={12} sm={8} lg={6}>
-              <Card variant="borderless">
-                <Statistic
-                  title="Total Trips"
-                  value={filtered.length}
-                  prefix={<CarOutlined />}
-                />
-              </Card>
-            </Col>
-            <Col xs={12} sm={8} lg={6}>
-              <Card variant="borderless">
-                <Statistic
-                  title="Upcoming"
-                  value={upcoming.length}
-                  prefix={<ClockCircleOutlined />}
-                  styles={{ content: { color: token.colorWarning } }}
-                />
-              </Card>
-            </Col>
-            <Col xs={12} sm={8} lg={6}>
-              <Card variant="borderless">
-                <Statistic
-                  title="Completed"
-                  value={completed.length}
-                  prefix={<CheckCircleOutlined />}
-                  styles={{ content: { color: token.colorSuccess } }}
-                />
-              </Card>
-            </Col>
-            {mode === "guide" && (
-              <Col xs={12} sm={8} lg={6}>
-                <Card variant="borderless">
-                  <Statistic
-                    title="Need Report"
-                    value={needsReport.length}
-                    prefix={<FileTextOutlined />}
-                    styles={{
-                      content: {
-                        color: needsReport.length > 0 ? token.colorError : token.colorSuccess,
-                      },
-                    }}
-                  />
-                </Card>
-              </Col>
-            )}
-          </Row>
-
           {mode === "guide" && needsReport.length > 0 && (
             <Card
               variant="borderless"
@@ -585,15 +688,43 @@ export default function RoleTripsPage({
           )}
 
           <Typography.Title level={5} style={{ marginTop: 24, marginBottom: 12 }}>
-            Upcoming Trips
+            My Trips
           </Typography.Title>
 
-          {upcoming.length === 0 ? (
-            <Empty description="No upcoming trips in this period" />
-          ) : (
-            upcoming.map(renderTripCard)
-          )}
+          <Table
+            rowKey="id"
+            size={isMobile ? "small" : "middle"}
+            columns={tripColumns}
+            dataSource={filtered}
+            scroll={{ x: "max-content" }}
+            expandable={{
+              expandedRowRender: (a) => renderTripDetails(a),
+              rowExpandable: (a) =>
+                Boolean(
+                  a.itinerary?.length || a.pickups?.length || a.bookings?.length,
+                ),
+            }}
+            pagination={{
+              pageSize: isMobile ? 5 : 10,
+              simple: isMobile,
+              showSizeChanger: !isMobile,
+              showTotal: isMobile ? undefined : (t) => `Total: ${t}`,
+            }}
+            locale={{
+              emptyText: range
+                ? "No trips in this period"
+                : mode === "provider"
+                  ? "No fleet trips yet"
+                  : "No tours assigned to you yet — ask your admin or operator",
+            }}
+          />
         </>
+      ) : view === "board" ? (
+        <MyTripsBoard
+          assignments={assignments as unknown as BoardItem[]}
+          loading={loading}
+          onRefresh={loadAssignments}
+        />
       ) : (
         /* Calendar view */
         <div>

@@ -316,7 +316,15 @@ export default function GuideBookingsPanel({
                 size="small"
                 pagination={false}
                 dataSource={money?.rows ?? []}
+                scroll={{ x: "max-content" }}
                 columns={[
+                  {
+                    title: "#",
+                    key: "__index",
+                    width: 48,
+                    align: "center",
+                    render: (_: unknown, __: MoneyRow, i: number) => i + 1,
+                  },
                   {
                     title: "Category",
                     dataIndex: ["category", "name"],

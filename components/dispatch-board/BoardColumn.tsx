@@ -13,6 +13,7 @@ export default function BoardColumn({
   dispatchingId,
   recallingId,
   canConfirm,
+  readOnly,
   onConfirm,
   onDispatch,
   onRecall,
@@ -31,6 +32,7 @@ export default function BoardColumn({
   dispatchingId: string | null;
   recallingId: string | null;
   canConfirm: boolean;
+  readOnly?: boolean;
   onConfirm: (assignment: BoardItem) => void;
   onDispatch: (assignment: BoardItem) => void;
   onRecall: (assignment: BoardItem) => void;
@@ -96,6 +98,7 @@ export default function BoardColumn({
             dispatching={dispatchingId === a.id}
             recalling={recallingId === a.id}
             canConfirm={canConfirm}
+            readOnly={readOnly}
             onConfirm={onConfirm}
             onDispatch={onDispatch}
             onRecall={onRecall}

@@ -243,8 +243,14 @@ export default function ProfilePage() {
           <Col xs={12} lg={6}>
             <Statistic
               title="Status"
-              value="Active"
-              styles={{ content: { fontSize: 18, fontWeight: 700 } }}
+              value={user.isActive === false ? "Inactive" : "Active"}
+              styles={{
+                content: {
+                  fontSize: 18,
+                  fontWeight: 700,
+                  color: user.isActive === false ? "#cf1322" : "#389e0d",
+                },
+              }}
             />
           </Col>
         </Row>

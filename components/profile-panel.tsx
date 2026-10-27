@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import {
-  Avatar,
   Button,
   Card,
   Col,
   Divider,
   Flex,
   Form,
+  Grid,
   Input,
   Row,
   Space,
@@ -27,6 +27,7 @@ import {
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
+import AvatarEditor from "@/components/avatar-editor";
 
 interface ProfilePanelProps {
   roleLabel: string;
@@ -40,6 +41,8 @@ export default function ProfilePanel({
   roleColor,
 }: ProfilePanelProps) {
   const { user, refreshProfile } = useApp();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [profileForm] = Form.useForm();
@@ -81,16 +84,19 @@ export default function ProfilePanel({
 
   return (
     <div>
-      <Card variant="borderless" styles={{ body: { padding: 32 } }}>
-        <Flex align="center" gap={24} wrap>
-          <Avatar
-            size={104}
-            src={user.avatarUrl || undefined}
-            icon={<UserOutlined />}
-            style={{ backgroundColor: roleColor, fontSize: 44 }}
+      <Card variant="borderless" styles={{ body: { padding: isMobile ? 16 : 32 } }}>
+        <Flex align="center" gap={isMobile ? 16 : 24} wrap>
+          <AvatarEditor
+            avatarUrl={user.avatarUrl}
+            fallbackColor={roleColor}
+            onUpdated={refreshProfile}
           />
-          <Flex vertical gap={2}>
-            <Typography.Title level={2} style={{ margin: 0 }}>
+          <Flex vertical gap={2} style={{ minWidth: 0 }}>
+            <Typography.Title
+              level={isMobile ? 4 : 2}
+              ellipsis
+              style={{ margin: 0, maxWidth: "100%" }}
+            >
               {user.name ?? user.email}
             </Typography.Title>
             <Typography.Text type="secondary">
@@ -120,6 +126,19 @@ export default function ProfilePanel({
               styles={{ content: { fontSize: 18, fontWeight: 700 } }}
             />
           </Col>
+          <Col xs={12} lg={6}>
+            <Statistic
+              title="Status"
+              value={user.isActive === false ? "Inactive" : "Active"}
+              styles={{
+                content: {
+                  fontSize: 18,
+                  fontWeight: 700,
+                  color: user.isActive === false ? "#cf1322" : "#389e0d",
+                },
+              }}
+            />
+          </Col>
         </Row>
       </Card>
 
@@ -146,6 +165,7 @@ export default function ProfilePanel({
                   type="primary"
                   loading={savingProfile}
                   onClick={saveProfile}
+                  block={isMobile}
                   style={{ height: 32, minWidth: 140 }}
                 >
                   Save changes
@@ -192,6 +212,7 @@ export default function ProfilePanel({
                   type="primary"
                   loading={savingPassword}
                   onClick={savePassword}
+                  block={isMobile}
                   style={{ height: 32, minWidth: 140 }}
                 >
                   Change password

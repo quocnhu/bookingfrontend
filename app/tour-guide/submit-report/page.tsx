@@ -10,6 +10,7 @@ import {
   Empty,
   Flex,
   Form,
+  Grid,
   Image,
   Input,
   InputNumber,
@@ -50,6 +51,10 @@ const STATUS_COLOR: Record<string, string> = {
 interface EvidenceItem {
   name?: string;
   url: string;
+  ext?: string;
+  storageKey?: string;
+  size?: number;
+  mimeType?: string;
   uploadedAt?: string;
   uploadedByName?: string;
 }
@@ -57,6 +62,8 @@ interface EvidenceItem {
 export default function SubmitReportPage() {
   const { user } = useApp();
   const { token } = antdTheme.useToken();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [assignments, setAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -169,11 +176,16 @@ export default function SubmitReportPage() {
 
   return (
     <div>
-      <Flex justify="space-between" align="center" style={{ marginBottom: 16 }}>
+      <Flex justify="space-between" align="center" wrap gap={8} style={{ marginBottom: 16 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
           <FileTextOutlined /> Submit Tour Report
         </Typography.Title>
-        <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
+        <Button
+          icon={<ReloadOutlined />}
+          onClick={load}
+          loading={loading}
+          block={isMobile}
+        >
           Refresh
         </Button>
       </Flex>
@@ -194,6 +206,11 @@ export default function SubmitReportPage() {
           const hasReport = Boolean(a.tourReport);
           const reportStatus = a.tourReport?.status;
           const readyToEdit = !hasReport || reportStatus === "REJECTED";
+          const moneyLocked = Boolean(a.tourReport?.moneyVerifiedAt);
+          const moneyReturned = Boolean(a.tourReport?.moneyRejectedAt);
+          const isToday =
+            dayjs().isSameOrAfter(dayjs(a.startDate), "day") &&
+            dayjs().isSameOrBefore(dayjs(a.endDate), "day");
           return (
             <Card
               key={a.id}
@@ -219,6 +236,7 @@ export default function SubmitReportPage() {
                       {a.tourName ?? a.code}
                     </Typography.Text>
                     <Tag color={STATUS_COLOR[a.status]}>{a.status}</Tag>
+                    {isToday && a.status === "DISPATCHED" && <Tag color="blue">Today</Tag>}
                     {hasReport && (
                       <Tag
                         color={
@@ -237,6 +255,21 @@ export default function SubmitReportPage() {
                         Need to verify again
                       </Tag>
                     )}
+                    {hasReport &&
+                      (moneyLocked ? (
+                        <Tag color="green">
+                          Money locked
+                          {a.tourReport.moneyVerifiedByName
+                            ? ` by ${a.tourReport.moneyVerifiedByName}`
+                            : ""}
+                        </Tag>
+                      ) : moneyReturned ? (
+                        <Tag color="red">Money returned by accounting</Tag>
+                      ) : reportStatus === "SUBMITTED" ? (
+                        <Tag color="gold">Waiting for accounting</Tag>
+                      ) : reportStatus === "VERIFIED" ? (
+                        <Tag color="gold">Report verified — money pending</Tag>
+                      ) : null)}
                   </Flex>
                   <Typography.Text type="secondary">
                     <ClockCircleOutlined /> {dayjs(a.startDate).format("DD/MM/YYYY")} —{" "}
@@ -255,6 +288,8 @@ export default function SubmitReportPage() {
                   type={readyToEdit ? "primary" : "default"}
                   icon={readyToEdit ? <SendOutlined /> : <CheckCircleOutlined />}
                   onClick={() => openDetail(a)}
+                  block={isMobile}
+                  style={isMobile ? { width: "100%" } : undefined}
                 >
                   {!hasReport
                     ? "Submit Report"
@@ -272,7 +307,7 @@ export default function SubmitReportPage() {
         title={`Tour Report — ${detail?.tourName ?? detail?.code ?? ""}`}
         open={Boolean(detail)}
         onClose={() => setDetail(null)}
-        size={520}
+        width={isMobile ? "100%" : 520}
         footer={
           detail && canEditReport(detail) ? (
             <Flex justify="end">
@@ -282,6 +317,7 @@ export default function SubmitReportPage() {
                 loading={submitting}
                 disabled={entryCount === 0}
                 onClick={() => submit(detail.id)}
+                block={isMobile}
               >
                 {reportStatus === "REJECTED" ? "Resubmit Report" : "Submit Report"}
               </Button>
@@ -371,6 +407,16 @@ export default function SubmitReportPage() {
                 {detail.tourReport.verificationNotes && (
                   <Descriptions.Item label="Verification note">
                     {detail.tourReport.verificationNotes}
+                  </Descriptions.Item>
+                )}
+                {detail.tourReport.moneyVerifiedAt && (
+                  <Descriptions.Item label="Collected/paid amounts">
+                    <Tag color="green" style={{ fontWeight: 600 }}>
+                      Locked by accounting
+                      {detail.tourReport.moneyVerifiedByName
+                        ? ` — ${detail.tourReport.moneyVerifiedByName}`
+                        : ""}
+                    </Tag>
                   </Descriptions.Item>
                 )}
                 {detail.tourReport.moneyRejectedAt && (
@@ -471,8 +517,9 @@ export default function SubmitReportPage() {
                     </Flex>
                   )}
                   <Typography.Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 8 }}>
-                    Pictures are saved to the tour guide folder (guide name + tour date) and
-                    stay pending until an administrator verifies this report.
+                    Pictures stay pending here, then move into your Drive folder named
+                    "tour name + date" once an administrator or accounting verifies this
+                    report.
                   </Typography.Text>
                 </div>
               </>

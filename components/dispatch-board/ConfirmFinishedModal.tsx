@@ -108,6 +108,9 @@ interface EvidenceRow {
   name?: string;
   url?: string;
   ext?: string;
+  storageKey?: string;
+  size?: number;
+  mimeType?: string;
   uploadedAt?: string;
   uploadedByName?: string;
 }
@@ -187,6 +190,11 @@ export default function ConfirmFinishedModal({
             name: f.name,
             url: f.url,
             ext: f.ext,
+            storageKey: f.storageKey,
+            size: f.size,
+            mimeType: f.mimeType,
+            uploadedAt: f.uploadedAt,
+            uploadedByName: f.uploadedByName,
           })),
       });
       message.success(`Tour report submitted for "${assignment.tourName ?? assignment.code}" — awaiting accounting verification`);
@@ -248,6 +256,13 @@ export default function ConfirmFinishedModal({
   };
 
   const moneyColumns: ColumnsType<MoneyRow> = [
+    {
+      title: "#",
+      key: "__index",
+      width: 48,
+      align: "center",
+      render: (_: unknown, __: MoneyRow, index: number) => index + 1,
+    },
     {
       title: "Category",
       key: "cat",

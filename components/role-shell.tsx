@@ -51,6 +51,7 @@ export default function RoleShell({ children, menuItems, roleLabel, roleColor }:
   const [collapsed, setCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const isMobile = !screens.lg;
+  const isNarrow = !screens.sm;
   const isDark = theme === "dark";
 
   useEffect(() => {
@@ -160,8 +161,8 @@ export default function RoleShell({ children, menuItems, roleLabel, roleColor }:
         </Flex>
       </Drawer>
       <Layout>
-        <Header>
-          <Flex align="center" justify="space-between" gap={12} style={{ height: "100%" }}>
+        <Header style={{ paddingInline: isNarrow ? 8 : isMobile ? 16 : 24 }}>
+          <Flex align="center" justify="space-between" gap={isNarrow ? 4 : 12} style={{ height: "100%" }}>
             <Flex align="center" gap={8} style={{ minWidth: 0 }}>
               <Button
                 type="text"
@@ -171,9 +172,11 @@ export default function RoleShell({ children, menuItems, roleLabel, roleColor }:
                 onClick={() => (isMobile ? setMobileNavOpen((o) => !o) : setCollapsed((c) => !c))}
                 aria-label={isMobile ? "Open navigation" : collapsed ? "Expand sidebar" : "Collapse sidebar"}
               />
-              <Typography.Text strong ellipsis style={{ maxWidth: "100%" }}>
-                Welcome, {user.name ?? user.email}
-              </Typography.Text>
+              {!isNarrow && (
+                <Typography.Text strong ellipsis style={{ maxWidth: "100%" }}>
+                  Welcome, {user.name ?? user.email}
+                </Typography.Text>
+              )}
             </Flex>
             <Flex align="center" gap={8}>
               <Button
@@ -232,7 +235,7 @@ export default function RoleShell({ children, menuItems, roleLabel, roleColor }:
             </Flex>
           </Flex>
         </Header>
-        <Content style={{ padding: 16 }}>{children}</Content>
+        <Content style={{ padding: isMobile ? 12 : 16 }}>{children}</Content>
       </Layout>
     </Layout>
   );

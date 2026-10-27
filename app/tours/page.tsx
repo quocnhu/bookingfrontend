@@ -4,6 +4,10 @@ import { fetchCompany, fetchTours, tourPath } from "@/lib/server-tours";
 import { buildPublicGraph, buildTourListJsonLd } from "@/lib/seo-jsonld";
 import { absoluteUrl, BRAND } from "@/lib/site";
 import PublicHeader from "@/components/public-header";
+import {
+  formatDepartureTime,
+  formatTourDuration,
+} from "@/lib/tour-display";
 
 /**
  * The public tour listing: /tours
@@ -109,7 +113,6 @@ export default async function PublicToursPage() {
           >
             {tours.map((tour) => {
               const price = fromPrice(tour);
-              const days = Number(tour.durationDays ?? 1);
               return (
                 <li key={tour.id}>
                   <Link
@@ -178,8 +181,20 @@ export default async function PublicToursPage() {
                             color: "var(--ant-color-text-secondary)",
                           }}
                         >
-                          {days} day{days === 1 ? "" : "s"} · {tour.code}
+                          {formatTourDuration(tour)} · {tour.code}
                         </span>
+                        {(tour.departureTimes ?? []).length > 0 ? (
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: "var(--ant-color-text-secondary)",
+                            }}
+                          >
+                            {(tour.departureTimes ?? [])
+                              .map((time) => formatDepartureTime(time))
+                              .join(" · ")}
+                          </span>
+                        ) : null}
                       </div>
                       <h2
                         style={{

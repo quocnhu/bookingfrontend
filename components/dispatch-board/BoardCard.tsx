@@ -42,6 +42,7 @@ import type { BoardCrew, BoardItem, BookingItem, TourMeta } from "./types";
 import MarqueeText from "@/components/MarqueeText";
 import StatementVoucherModal from "@/components/accounting/StatementVoucherModal";
 import { api } from "@/lib/api";
+import { useApp } from "@/lib/app-context";
 import { STATUS_COLORS, LEAVE_COLOR } from "./types";
 
 const { Text } = Typography;
@@ -449,6 +450,7 @@ export default function BoardCard({
   today,
   confirming,
   canConfirm,
+  readOnly,
   onConfirm,
   onDispatch,
   dispatching,
@@ -468,6 +470,7 @@ export default function BoardCard({
   today: Dayjs;
   confirming: boolean;
   canConfirm: boolean;
+  readOnly?: boolean;
   onConfirm: (assignment: BoardItem) => void;
   onDispatch: (assignment: BoardItem) => void;
   dispatching: boolean;
@@ -491,6 +494,8 @@ export default function BoardCard({
   ) => void;
 }) {
   const { token } = antdTheme.useToken();
+  const { user } = useApp();
+  const isAdmin = user?.role === "ADMIN";
   const [dragOver, setDragOver] = useState(false);
   const [voucherOpen, setVoucherOpen] = useState(false);
   // The insertion position is shown (above/below the hovered row) instead of
@@ -701,7 +706,7 @@ export default function BoardCard({
       // A card that can't accept a drop used to fail silently - the browser
       // just showed the "not allowed" cursor. Say why instead.
       title={
-        !canConfirm ? (
+        readOnly ? undefined : !canConfirm ? (
           <Text type="secondary" style={{ fontSize: 11 }}>
             You do not have permission to move bookings
           </Text>
@@ -874,15 +879,17 @@ export default function BoardCard({
         >
           {a.totalPax}/{capacity} pax
         </Tag>
-        <Tooltip title="Print the tour manifest (stamp for year-end audit)">
-          <Button
-            type="text"
-            size="small"
-            icon={<PrinterOutlined />}
-            style={{ margin: 0, height: 28, width: 28 }}
-            onClick={() => onTemplate(a)}
-          />
-        </Tooltip>
+        {!readOnly && (
+          <Tooltip title="Print the tour manifest (stamp for year-end audit)">
+            <Button
+              type="text"
+              size="small"
+              icon={<PrinterOutlined />}
+              style={{ margin: 0, height: 28, width: 28 }}
+              onClick={() => onTemplate(a)}
+            />
+          </Tooltip>
+        )}
         <Tag
           color={procColor ?? "default"}
           style={{ fontSize: 10, margin: 0 }}
@@ -1685,19 +1692,21 @@ export default function BoardCard({
           </Tooltip>
         </Space.Compact>
       ) : null}
-      {canConfirm && !a.tourReport?.locked && (
+      {canConfirm && (!a.tourReport?.locked || isAdmin) && (
         <Button
           type="dashed"
           size="small"
           block
-          icon={<PlusOutlined />}
+          icon={a.tourReport?.locked ? <LockOutlined /> : <PlusOutlined />}
           style={{ marginTop: 12, borderRadius: 8 }}
           onClick={() => onAdditions?.(a)}
         >
-          Booking details — notes, collect & refund
+          {a.tourReport?.locked
+            ? "Booking details — locked, admin override"
+            : "Booking details — notes, collect & refund"}
         </Button>
       )}
-      {canConfirm && a.tourReport?.locked && (
+      {canConfirm && a.tourReport?.locked && !isAdmin && (
         <Button
           type="dashed"
           size="small"

@@ -785,6 +785,13 @@ export function PeriodTab({
                     pagination={false}
                     columns={[
                       {
+                        title: "#",
+                        key: "__index",
+                        width: 48,
+                        align: "center",
+                        render: (_: unknown, __: PeriodLine, i: number) => i + 1,
+                      },
+                      {
                         title: "Trip",
                         render: (_: unknown, r: PeriodLine) => (
                           <>
@@ -862,6 +869,13 @@ export function PeriodTab({
                     dataSource={preview.lines}
                     pagination={false}
                     columns={[
+                      {
+                        title: "#",
+                        key: "__index",
+                        width: 48,
+                        align: "center",
+                        render: (_: unknown, __: PeriodLine, i: number) => i + 1,
+                      },
                       {
                         title: "Trip",
                         render: (_: unknown, r: PeriodLine) => (
@@ -1431,6 +1445,13 @@ return (
         locale={{ emptyText: "No entries yet" }}
         columns={[
           {
+            title: "#",
+            key: "__index",
+            width: 48,
+            align: "center",
+            render: (_: unknown, __: Settlement, i: number) => i + 1,
+          },
+          {
             title: "Category",
             render: (_: unknown, r: Settlement) => r.category?.name ?? "—",
           },
@@ -1776,6 +1797,13 @@ export function HistoryTab({ people, canVoid }: { people: Person[]; canVoid: boo
             pagination={false}
             dataSource={open.lines}
             columns={[
+              {
+                title: "#",
+                key: "__index",
+                width: 48,
+                align: "center",
+                render: (_: unknown, __: unknown, i: number) => i + 1,
+              },
               { title: "Trip", dataIndex: "tourName", render: (v) => v ?? "—" },
               { title: "Ngày", dataIndex: "tourDate", render: (v) => fmtDate(v) },
               {

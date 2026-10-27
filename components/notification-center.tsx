@@ -1,9 +1,25 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Badge, Button, List, Popover, Tag, Typography, theme as antdTheme } from "antd";
+import {
+  Badge,
+  Button,
+  Drawer,
+  Flex,
+  Grid,
+  List,
+  Popover,
+  Tag,
+  Typography,
+  notification as antdNotification,
+  theme as antdTheme,
+} from "antd";
 import { message } from "@/lib/antd-message";
-import { BellOutlined, CheckOutlined } from "@ant-design/icons";
+import {
+  BellOutlined,
+  CheckCircleFilled,
+  CheckOutlined,
+} from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";
 import { useSocket } from "@/lib/use-socket";
@@ -22,10 +38,13 @@ const TYPE_COLORS: Record<string, string> = {
 
 export default function NotificationCenter() {
   const { token } = antdTheme.useToken();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const { on, connected } = useSocket();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -40,22 +59,43 @@ export default function NotificationCenter() {
 
   useEffect(() => { load(); }, [load]);
 
+  const markRead = useCallback(async (id: string) => {
+    try {
+      await api.put(`/notifications/${id}/read`);
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
+      );
+      setUnreadCount((c) => Math.max(0, c - 1));
+      antdNotification.destroy(id);
+    } catch (e) {
+      message.error(getErrorMessage(e));
+    }
+  }, []);
+
   useEffect(() => {
     const cleanup = on("notification", (notif: any) => {
       setNotifications((prev) => [notif, ...prev].slice(0, 50));
       setUnreadCount((c) => c + 1);
-      message.info({ content: notif.title, duration: 4 });
+      antdNotification.open({
+        key: notif.id,
+        message: notif.title,
+        description: notif.body,
+        placement: "topRight",
+        duration: 6,
+        btn: (
+          <Button
+            size="small"
+            type="text"
+            icon={<CheckOutlined />}
+            onClick={() => markRead(notif.id)}
+          >
+            Mark as read
+          </Button>
+        ),
+      });
     });
     return cleanup;
-  }, [on]);
-
-  const markRead = async (id: string) => {
-    try {
-      await api.put(`/notifications/${id}/read`);
-      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-      setUnreadCount((c) => Math.max(0, c - 1));
-    } catch (e) { message.error(getErrorMessage(e)); }
-  };
+  }, [on, markRead]);
 
   const markAllRead = async () => {
     try {
@@ -65,14 +105,89 @@ export default function NotificationCenter() {
     } catch (e) { message.error(getErrorMessage(e)); }
   };
 
-  const content = (
-    <div style={{ width: 360, maxWidth: "calc(100vw - 24px)", maxHeight: 400, overflow: "auto" }}>
+  const liveTag = (
+    <Tag color={connected ? "green" : "red"} style={{ margin: 0, fontSize: 10 }}>
+      {connected ? "LIVE" : "OFFLINE"}
+    </Tag>
+  );
+
+  const list = (
+    <List
+      size="small"
+      split={false}
+      dataSource={notifications}
+      loading={loading}
+      locale={{ emptyText: "No notifications" }}
+      renderItem={(item: any) => (
+        <div
+          style={{
+            cursor: item.read ? "default" : "pointer",
+            border: `1px solid ${
+              item.read ? token.colorBorderSecondary : token.colorPrimaryBorder
+            }`,
+            background: item.read ? token.colorBgContainer : `${token.colorPrimary}08`,
+            borderRadius: 10,
+            padding: "10px 12px",
+            marginBottom: 8,
+          }}
+          onClick={() => !item.read && markRead(item.id)}
+        >
+          <Flex align="flex-start" gap={8}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Flex align="center" gap={6} wrap style={{ marginBottom: 4 }}>
+                <Tag
+                  color={TYPE_COLORS[item.type] ?? "default"}
+                  style={{ margin: 0, fontSize: 10 }}
+                >
+                  {item.type?.replaceAll("_", " ")}
+                </Tag>
+                <Typography.Text strong style={{ fontSize: 12, flex: 1, minWidth: 0 }}>
+                  {item.title}
+                </Typography.Text>
+              </Flex>
+              <Typography.Text
+                type="secondary"
+                style={{ fontSize: 11, wordBreak: "break-word" }}
+              >
+                {item.body}
+              </Typography.Text>
+              <div style={{ marginTop: 4, fontSize: 10, color: token.colorTextTertiary }}>
+                {item.sender?.name && <span>{item.sender.name}</span>}
+                <span>
+                  {item.sender?.name ? " · " : ""}
+                  {dayjs(item.createdAt).format("DD MMM · HH:mm")}
+                </span>
+              </div>
+            </div>
+            {item.read ? (
+              <CheckCircleFilled
+                title="Read"
+                style={{ color: token.colorSuccess, fontSize: 14, marginTop: 2 }}
+              />
+            ) : (
+              <Button
+                size="small"
+                type="text"
+                title="Mark as read"
+                icon={<CheckOutlined />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  markRead(item.id);
+                }}
+              />
+            )}
+          </Flex>
+        </div>
+      )}
+    />
+  );
+
+  const popoverContent = (
+    <div style={{ width: 380, maxWidth: "calc(100vw - 24px)", maxHeight: 440, overflow: "auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, padding: "0 4px" }}>
         <Typography.Text strong>Notifications</Typography.Text>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-          <Tag color={connected ? "green" : "red"} style={{ margin: 0, fontSize: 10 }}>
-            {connected ? "LIVE" : "OFFLINE"}
-          </Tag>
+          {liveTag}
           {unreadCount > 0 && (
             <Button size="small" type="link" onClick={markAllRead} icon={<CheckOutlined />}>
               Mark all read
@@ -80,54 +195,56 @@ export default function NotificationCenter() {
           )}
         </div>
       </div>
-      <List
-        size="small"
-        dataSource={notifications}
-        locale={{ emptyText: "No notifications" }}
-        renderItem={(item: any) => (
-          <List.Item
-            style={{
-              cursor: "pointer",
-              background: item.read ? "transparent" : `${token.colorPrimary}08`,
-              borderRadius: 8,
-              padding: "8px 12px",
-              marginBottom: 4,
-            }}
-            onClick={() => !item.read && markRead(item.id)}
-          >
-            <List.Item.Meta
-              title={
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  {!item.read && <div style={{ width: 6, height: 6, borderRadius: "50%", background: token.colorPrimary, flexShrink: 0 }} />}
-                  <Tag color={TYPE_COLORS[item.type] ?? "default"} style={{ margin: 0, fontSize: 10 }}>
-                    {item.type?.replace("_", " ")}
-                  </Tag>
-                  <Typography.Text strong style={{ fontSize: 12, flex: 1 }}>{item.title}</Typography.Text>
-                </div>
-              }
-              description={
-                <>
-                  <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                    {item.body}
-                  </Typography.Text>
-                  <div style={{ marginTop: 2, fontSize: 10, color: token.colorTextTertiary }}>
-                    {item.sender?.name && <span>{item.sender.name}</span>}
-                    <span>{item.sender?.name ? " · " : ""}{dayjs(item.createdAt).format("DD MMM · HH:mm")}</span>
-                  </div>
-                </>
-              }
-            />
-          </List.Item>
-        )}
-      />
+      {list}
     </div>
   );
 
+  const bell = (
+    <Badge count={unreadCount} size="small" offset={[-2, 4]}>
+      <Button
+        type="text"
+        icon={<BellOutlined style={{ fontSize: 18 }} />}
+        onClick={() => {
+          if (isMobile) setDrawerOpen(true);
+        }}
+      />
+    </Badge>
+  );
+
+  if (isMobile) {
+    return (
+      <>
+        {bell}
+        <Drawer
+          title={
+            <Flex align="center" gap={8}>
+              <BellOutlined />
+              <Typography.Text strong>Notifications</Typography.Text>
+              {liveTag}
+            </Flex>
+          }
+          extra={
+            unreadCount > 0 ? (
+              <Button size="small" type="link" onClick={markAllRead} icon={<CheckOutlined />}>
+                Mark all read
+              </Button>
+            ) : null
+          }
+          placement="bottom"
+          height="75vh"
+          styles={{ body: { padding: "8px 12px 16px" } }}
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+        >
+          {list}
+        </Drawer>
+      </>
+    );
+  }
+
   return (
-    <Popover content={content} trigger="click" placement="bottomRight">
-      <Badge count={unreadCount} size="small" offset={[-2, 4]}>
-        <Button type="text" icon={<BellOutlined style={{ fontSize: 18 }} />} />
-      </Badge>
+    <Popover content={popoverContent} trigger="click" placement="bottomRight">
+      {bell}
     </Popover>
   );
 }

@@ -36,6 +36,11 @@ export type PublicTour = {
   infantPrice?: number | string | null;
   currency?: string;
   durationDays?: number | null;
+  durationValue?: number | null;
+  durationUnit?: "HOUR" | "DAY" | null;
+  freeCancellationHours?: number | null;
+  cancellationPolicy?: string | null;
+  departureTimes?: string[] | null;
   departureLocation?: string | null;
   transportation?: string | null;
   overview?: string | null;

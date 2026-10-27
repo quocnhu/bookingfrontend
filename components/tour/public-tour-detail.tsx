@@ -38,6 +38,11 @@ import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { useMapSrc } from "@/lib/use-map-src";
 import { discountedPrice, discountFor, isTypePromoActive } from "@/lib/promo";
+import {
+  formatDepartureTime,
+  formatFreeCancellation,
+  formatTourDuration,
+} from "@/lib/tour-display";
 import PromoCountdown from "@/components/promo-countdown";
 import PublicHeader from "@/components/public-header";
 import TourSlideshow from "@/components/tour-slideshow";
@@ -90,6 +95,7 @@ export default function PublicTourDetail({
     bookingForm.setFieldsValue({
       tourType: tour?.type ?? "PRIVATE_TOUR",
       tourId: tour?.id,
+      departureTime: tour?.departureTimes?.[0],
     });
     setBookingOpen(true);
   };
@@ -485,9 +491,26 @@ children: tour.insurancePolicy ? (
                     <Flex justify="space-between" style={{ marginBottom: 8 }}>
                       <Typography.Text>Duration</Typography.Text>
                       <Typography.Text strong>
-                        {tour.durationDays ?? 1} {Number(tour.durationDays ?? 1) === 1 ? "Day" : "Days"}
+                        {formatTourDuration(tour)}
                       </Typography.Text>
                     </Flex>
+                    {(tour.departureTimes ?? []).length > 0 && (
+                      <Flex
+                        justify="space-between"
+                        align="flex-start"
+                        gap={8}
+                        style={{ marginBottom: 8 }}
+                      >
+                        <Typography.Text>Departures</Typography.Text>
+                        <Flex gap={4} wrap justify="flex-end">
+                          {(tour.departureTimes ?? []).map((time) => (
+                            <Tag key={time} color="geekblue" style={{ margin: 0 }}>
+                              {formatDepartureTime(time)}
+                            </Tag>
+                          ))}
+                        </Flex>
+                      </Flex>
+                    )}
                     <Flex justify="space-between" style={{ marginBottom: 16 }}>
                       <Typography.Text>Stops</Typography.Text>
                       <Typography.Text strong>
@@ -505,12 +528,19 @@ children: tour.insurancePolicy ? (
                     >
                       BOOK THIS TOUR NOW
                     </Button>
-                    <Typography.Text
-                      type="secondary"
-                      style={{ fontSize: 12, marginTop: 8, textAlign: "center" }}
-                    >
-                      Free cancellation within 24h
-                    </Typography.Text>
+                    {formatFreeCancellation(tour.freeCancellationHours) && (
+                      <Typography.Text
+                        type="secondary"
+                        style={{
+                          fontSize: 12,
+                          marginTop: 8,
+                          textAlign: "center",
+                        }}
+                      >
+                        <SafetyCertificateOutlined />{" "}
+                        {formatFreeCancellation(tour.freeCancellationHours)}
+                      </Typography.Text>
+                    )}
                   </Flex>
                 </Card>
               </Col>
@@ -541,6 +571,23 @@ children: tour.insurancePolicy ? (
               ]}
             />
           </Form.Item>
+          {(tour?.departureTimes ?? []).length > 0 && (
+            <Form.Item
+              name="departureTime"
+              label="Departure time"
+              rules={[
+                { required: true, message: "Please choose a departure time" },
+              ]}
+            >
+              <Select
+                placeholder="Choose a departure time"
+                options={(tour?.departureTimes ?? []).map((time) => ({
+                  value: time,
+                  label: formatDepartureTime(time),
+                }))}
+              />
+            </Form.Item>
+          )}
           <Form.Item label="Price" style={{ marginBottom: 8 }}>
             <Typography.Text strong>
               {vnd(discountedPrice(priceOf(selectedType), discountFor(tour ?? {}, selectedType)))}{" "}
