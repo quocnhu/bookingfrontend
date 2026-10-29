@@ -24,12 +24,14 @@ import {
   CheckOutlined,
   CloseOutlined,
   PlusOutlined,
+  TableOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { indexColumn, PAGE_SIZE_OPTIONS } from "@/lib/table";
 import LeaveSummaryCards from "@/components/leave-summary";
+import EmployeeTimesheetDrawer from "@/components/employee-timesheet-drawer";
 import {
   formatLeaveDayCount,
   isLeaveDateDisabled,
@@ -45,7 +47,17 @@ const ROLE_LABEL: Record<string, string> = {
   OFFICE: "Office",
   TOUR_GUIDE: "Tour Guide",
   DRIVER: "Driver",
+  TRANSPORT_PROVIDER: "Transport Provider",
   CUSTOMER: "Customer",
+};
+
+const ROLE_COLOR: Record<string, string> = {
+  ADMIN: "red",
+  OFFICE: "geekblue",
+  TOUR_GUIDE: "green",
+  DRIVER: "cyan",
+  TRANSPORT_PROVIDER: "purple",
+  CUSTOMER: "default",
 };
 
 const STATUS_TEXT: Record<string, string> = {
@@ -203,11 +215,12 @@ export default function LeavesAdminPage() {
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [timesheetOpen, setTimesheetOpen] = useState(false);
   const [createForm] = Form.useForm();
   const createEmergency = Form.useWatch("isEmergency", createForm) === true;
   const [savingCreate, setSavingCreate] = useState(false);
   const [staffOptions, setStaffOptions] = useState<
-    { value: string; label: string; group?: string }[]
+    { value: string; label: string; group?: string; role?: string }[]
   >([]);
 
   const load = useCallback(async () => {
@@ -271,24 +284,22 @@ export default function LeavesAdminPage() {
   const openCreateModal = () => {
     setCreateModalOpen(true);
     if (!isStaff) return;
-    Promise.all([
-      api.get("/users", { params: { userType: "guide", limit: 1000 } }),
-      api.get("/users", { params: { userType: "driver", limit: 1000 } }),
-    ])
-      .then(([g, d]) => {
-        const map = (list: any[]) =>
+    api
+      .get("/leaves/employees")
+      .then((r) => {
+        const list: any[] = r.data ?? [];
+        setStaffOptions(
           list
-            .filter((u: any) => u.isActive !== false)
-            .map((u: any) => ({
+            .filter((u) => u.isActive !== false)
+            .map((u) => ({
               value: u.id,
               label: u.name ?? u.email,
-            }));
-        setStaffOptions([
-          ...map(g.data.items ?? g.data ?? []).map((o) => ({ ...o, group: "Tour Guide" })),
-          ...map(d.data.items ?? d.data ?? []).map((o) => ({ ...o, group: "Driver" })),
-        ]);
+              group: ROLE_LABEL[u.role] ?? u.role,
+              role: u.role,
+            })),
+        );
       })
-      .catch((e) => message.error(getErrorMessage(e, "Failed to load staff")));
+      .catch((e) => message.error(getErrorMessage(e, "Failed to load employees")));
   };
 
   const submitCreate = async (values: any) => {
@@ -514,6 +525,10 @@ export default function LeavesAdminPage() {
       >
         <LeaveSummaryCards refreshKey={summaryKey} embedded />
       </Drawer>
+      <EmployeeTimesheetDrawer
+        open={timesheetOpen}
+        onClose={() => setTimesheetOpen(false)}
+      />
       <Card
         title={
           <Flex align="center" justify="space-between" wrap gap={8}>
@@ -521,6 +536,14 @@ export default function LeavesAdminPage() {
               {isStaff ? "Day Off Requests" : "My Day-Off Requests"}
             </Typography.Title>
             <Flex align="center" gap={8} wrap>
+              {isStaff && (
+                <Button
+                  icon={<TableOutlined />}
+                  onClick={() => setTimesheetOpen(true)}
+                >
+                  Employee Timesheet
+                </Button>
+              )}
               <Button
                 icon={<BarChartOutlined />}
                 onClick={() => setSummaryOpen(true)}
@@ -603,12 +626,15 @@ export default function LeavesAdminPage() {
               <Select
                 showSearch
                 optionFilterProp="label"
-                placeholder="Select a tour guide or driver"
+                placeholder="Select an employee"
                 options={staffOptions}
                 optionRender={(option) => (
                   <Flex justify="space-between" align="center">
                     <span>{option.label}</span>
-                    <Tag color={option.data.group === "Tour Guide" ? "green" : "cyan"} style={{ margin: 0 }}>
+                    <Tag
+                      color={ROLE_COLOR[option.data.role as string] ?? "default"}
+                      style={{ margin: 0 }}
+                    >
                       {option.data.group}
                     </Tag>
                   </Flex>
