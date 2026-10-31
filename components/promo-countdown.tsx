@@ -11,7 +11,17 @@ const pad = (n: number) => String(n).padStart(2, "0");
  * Live countdown to the end of a tour promotion.
  * Renders nothing when there is no active promotion window.
  */
-export default function PromoCountdown({ tour }: { tour: PromoFields }) {
+export default function PromoCountdown({
+  tour,
+  compact = false,
+  bare = false,
+  showLabel = true,
+}: {
+  tour: PromoFields;
+  compact?: boolean;
+  bare?: boolean;
+  showLabel?: boolean;
+}) {
   const [remaining, setRemaining] = useState(() => promoEndsAt(tour));
 
   useEffect(() => {
@@ -28,6 +38,53 @@ export default function PromoCountdown({ tour }: { tour: PromoFields }) {
   if (remaining <= 0) return null;
 
   const { days, hours, minutes, seconds } = splitDuration(remaining);
+
+  if (compact) {
+    return (
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          maxWidth: "100%",
+          padding: bare ? 0 : "4px 10px",
+          borderRadius: bare ? 0 : 999,
+          background: bare
+            ? undefined
+            : "linear-gradient(120deg, rgba(220,38,38,0.08), rgba(234,179,8,0.10))",
+          border: bare ? undefined : "1px solid rgba(220,38,38,0.18)",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+        }}
+      >
+        <ThunderboltOutlined style={{ color: "#dc2626", fontSize: 11 }} />
+        {showLabel && (
+          <Typography.Text
+            strong
+            style={{
+              fontSize: 10,
+              letterSpacing: 0.4,
+              textTransform: "uppercase",
+              color: "#b91c1c",
+            }}
+          >
+            Ends in
+          </Typography.Text>
+        )}
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            color: "#dc2626",
+            fontVariantNumeric: "tabular-nums",
+            letterSpacing: 0.3,
+          }}
+        >
+          {pad(days)}d {pad(hours)}h {pad(minutes)}m {pad(seconds)}s
+        </span>
+      </div>
+    );
+  }
 
   const cells = [
     [days, "d"],

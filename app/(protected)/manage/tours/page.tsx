@@ -366,7 +366,14 @@ export default function ToursPage() {
         ),
     },
     { title: "Code", dataIndex: "code", key: "code", onFilter: (v: any, r: Tour) => (r.code ?? "").toLowerCase().includes(String(v).toLowerCase()) },
-    { title: "Name", dataIndex: "name", key: "name", onFilter: (v: any, r: Tour) => (r.name ?? "").toLowerCase().includes(String(v).toLowerCase()) },
+    {
+      title: "Name",
+      dataIndex: "name",
+      key: "name",
+      width: 360,
+      ellipsis: { showTitle: true },
+      onFilter: (v: any, r: Tour) => (r.name ?? "").toLowerCase().includes(String(v).toLowerCase()),
+    },
     {
       title: "Group",
       dataIndex: "type",

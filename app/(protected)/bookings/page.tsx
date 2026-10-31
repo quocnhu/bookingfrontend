@@ -1306,6 +1306,21 @@ extra={
             <InputNumber min={1} max={12} precision={0} style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item
+            name="paxDetail"
+            label="Pax detail"
+            required
+            rules={[
+              { required: true, whitespace: true, message: "Pax detail is required" },
+              { max: 1000, message: "Pax detail max 1000 characters" },
+            ]}
+          >
+            <Input.TextArea
+              rows={3}
+              placeholder="e.g. 2 adults, 1 child"
+              maxLength={1000}
+            />
+          </Form.Item>
+          <Form.Item
             name="notes"
             label="Note"
             extra="A note specific to this booking. Optional."

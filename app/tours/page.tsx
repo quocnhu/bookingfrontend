@@ -143,7 +143,16 @@ export default async function PublicToursPage() {
                           display: "block",
                         }}
                       />
-                    ) : null}
+                    ) : (
+                      <div
+                        style={{
+                          height: 180,
+                          width: "100%",
+                          background:
+                            "linear-gradient(135deg, rgba(34,211,238,0.15), rgba(59,130,246,0.15))",
+                        }}
+                      />
+                    )}
                     <div
                       style={{
                         padding: 16,
@@ -159,6 +168,8 @@ export default async function PublicToursPage() {
                           alignItems: "center",
                           gap: 8,
                           flexWrap: "wrap",
+                          minHeight: 44,
+                          alignContent: "flex-start",
                         }}
                       >
                         <span
@@ -197,26 +208,50 @@ export default async function PublicToursPage() {
                         ) : null}
                       </div>
                       <h2
+                        title={tour.name}
                         style={{
                           margin: 0,
+                          minHeight: "2.7em",
                           fontSize: 17,
                           lineHeight: 1.35,
                           color: "var(--ant-color-text)",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
                         }}
                       >
                         {tour.name}
                       </h2>
                       {tour.departureLocation ? (
                         <span
+                          title={tour.departureLocation}
                           style={{
+                            display: "block",
+                            minHeight: "1.4em",
                             fontSize: 13,
+                            lineHeight: 1.4,
                             color: "var(--ant-color-text-secondary)",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
                           }}
                         >
                           {tour.departureLocation}
                         </span>
-                      ) : null}
-                      <strong style={{ marginTop: "auto" }}>
+                      ) : (
+                        <span style={{ display: "block", minHeight: "1.4em" }} />
+                      )}
+                      <strong
+                        style={{
+                          marginTop: "auto",
+                          paddingTop: 4,
+                          minHeight: 24,
+                          fontSize: 16,
+                          lineHeight: 1.4,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
                         From {vnd(price)} / person
                       </strong>
                     </div>

@@ -135,22 +135,47 @@ export default function HomePage({
         {tours.length === 0 ? (
           <Empty description="No tours available right now." />
         ) : (
-          <Row gutter={[16, 16]}>
+          <Row gutter={[16, 16]} align="top">
             {tours.map((tour) => {
               const typePrices = tour.typePrices ?? [];
-              const hasPrice = (type: string) =>
-                Number(typePrices.find((p) => p.type === type)?.adultPrice ?? 0) > 0;
-              const bothTypes = hasPrice("PRIVATE_TOUR") && hasPrice("GROUP_TOUR");
-              const cheapest = typePrices
-                .map((p) => ({ type: p.type, price: Number(p.adultPrice ?? 0) }))
-                .filter((p) => p.price > 0)
+              const priceOf = (type: string) =>
+                Number(typePrices.find((p) => p.type === type)?.adultPrice ?? 0) || 0;
+              const privatePrice = priceOf("PRIVATE_TOUR");
+              const groupPrice = priceOf("GROUP_TOUR");
+              const bothTypes = privatePrice > 0 && groupPrice > 0;
+              const fallbackType = tour.type ?? "PRIVATE_TOUR";
+              const offers = [
+                {
+                  type: "PRIVATE_TOUR",
+                  label: "Private",
+                  price: privatePrice,
+                  pct: discountFor(tour, "PRIVATE_TOUR"),
+                },
+                {
+                  type: "GROUP_TOUR",
+                  label: "Group",
+                  price: groupPrice,
+                  pct: discountFor(tour, "GROUP_TOUR"),
+                },
+              ]
+                .filter((o) => o.price > 0)
+                .map((o) => ({ ...o, promo: isTypePromoActive(tour, o.type) }));
+              if (offers.length === 0) {
+                offers.push({
+                  type: fallbackType,
+                  label: fallbackType === "GROUP_TOUR" ? "Group" : "Private",
+                  price: Number(tour.adultPrice ?? 0) || 0,
+                  pct: discountFor(tour, fallbackType),
+                  promo: isTypePromoActive(tour, fallbackType),
+                });
+              }
+              const promoOffers = offers.filter((o) => o.promo);
+              const promo = promoOffers.length > 0;
+              const cheapest = [...offers]
+                .filter((o) => o.price > 0)
                 .sort((a, b) => a.price - b.price)[0];
               const fromPrice = cheapest ? cheapest.price : Number(tour.adultPrice ?? 0);
-              const fromType = cheapest ? cheapest.type : tour.type;
-              const pct = discountFor(tour, fromType);
-              const promo = isTypePromoActive(tour, fromType);
-              const price = vnd(Number.isFinite(fromPrice) && fromPrice > 0 ? fromPrice : tour.adultPrice);
-              const discounted = vnd(discountedPrice(Number.isFinite(fromPrice) && fromPrice > 0 ? fromPrice : tour.adultPrice, pct));
+              const price = vnd(fromPrice);
               const typeLabel = bothTypes
                 ? "Private · Group"
                 : (tour.type ?? "").replace("_", " ");
@@ -219,30 +244,44 @@ export default function HomePage({
                               top: 10,
                               right: 10,
                               zIndex: 2,
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "flex-end",
+                              gap: 6,
                             }}
                           >
-                            <div
-                              style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                width: 54,
-                                height: 54,
-                                borderRadius: "50%",
-                                background: "linear-gradient(135deg, #ef4444, #dc2626)",
-                                color: "#fff",
-                                boxShadow: "0 4px 14px rgba(220,38,38,0.45)",
-                                border: "2px solid #fff",
-                              }}
-                            >
-                              <span style={{ fontSize: 16, fontWeight: 800, lineHeight: 1 }}>
-                                -{pct}%
-                              </span>
-                              <span style={{ fontSize: 9, letterSpacing: 0.5, opacity: 0.9 }}>
-                                OFF
-                              </span>
-                            </div>
+                            {promoOffers.map((offer) => (
+                              <div
+                                key={offer.type}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  padding: "3px 9px",
+                                  borderRadius: 999,
+                                  background:
+                                    "linear-gradient(135deg, #ef4444, #dc2626)",
+                                  color: "#fff",
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  lineHeight: 1.4,
+                                  boxShadow: "0 4px 14px rgba(220,38,38,0.45)",
+                                  border: "2px solid #fff",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    fontSize: 9,
+                                    letterSpacing: 0.4,
+                                    textTransform: "uppercase",
+                                    opacity: 0.9,
+                                  }}
+                                >
+                                  {offer.label}
+                                </span>
+                                <span>-{offer.pct}%</span>
+                              </div>
+                            ))}
                           </div>
                         )}
                         <div
@@ -259,7 +298,12 @@ export default function HomePage({
                     }
                     onClick={() => router.push(`/tour/${tour.slug || tour.id}`)}
                   >
-                    <Flex justify="space-between" align="center" wrap gap={8}>
+                    <Flex
+                      justify="space-between"
+                      align="center"
+                      gap={8}
+                      style={{ height: 24, overflow: "hidden" }}
+                    >
                       <Tag
                         color={typeColor}
                         style={{ borderRadius: 999, fontWeight: 600 }}
@@ -270,13 +314,14 @@ export default function HomePage({
                         {tour.code}
                       </Typography.Text>
                     </Flex>
-                    <Typography.Title
-                      level={2}
+                    <h2
+                      title={tour.name}
                       style={{
                         margin: 0,
-                        lineHeight: 1.35,
-                        minHeight: 44,
+                        height: 44,
                         fontSize: 16,
+                        fontWeight: 600,
+                        lineHeight: 1.35,
                         display: "-webkit-box",
                         WebkitLineClamp: 2,
                         WebkitBoxOrient: "vertical",
@@ -289,32 +334,125 @@ export default function HomePage({
                       >
                         {tour.name}
                       </Link>
-                    </Typography.Title>
+                    </h2>
 
-                    <div style={{ minHeight: 34, display: "flex", alignItems: "center" }}>
-                      {promo ? (
-                        <Flex align="baseline" wrap gap={6} style={{ marginTop: 2 }}>
-                          <Typography.Title
-                            level={4}
-                            style={{ margin: 0, color: "#dc2626", fontWeight: 800 }}
-                          >
-                            {discounted}
-                          </Typography.Title>
-                          <Typography.Text
-                            type="secondary"
-                            delete
-                            style={{ fontSize: 13, fontWeight: 500 }}
-                          >
-                            {price}
-                          </Typography.Text>
-                          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-                            / person
-                          </Typography.Text>
+                    {promo ? (
+                      <div
+                        style={{
+                          marginTop: 2,
+                          padding: "8px 10px",
+                          borderRadius: 12,
+                          border: "1px solid rgba(220,38,38,0.22)",
+                          background:
+                            "linear-gradient(120deg, rgba(220,38,38,0.06), rgba(234,179,8,0.08))",
+                        }}
+                      >
+                        <Flex vertical gap={6}>
+                          {promoOffers.map((offer, index) => (
+                            <div
+                              key={offer.type}
+                              style={
+                                index > 0
+                                  ? {
+                                      paddingTop: 6,
+                                      borderTop:
+                                        "1px dashed rgba(220,38,38,0.22)",
+                                    }
+                                  : undefined
+                              }
+                            >
+                              <Flex
+                                justify="space-between"
+                                align="center"
+                                gap={6}
+                                style={{ minWidth: 0 }}
+                              >
+                                <Flex align="center" gap={5}>
+                                  <span
+                                    style={{
+                                      fontSize: 10,
+                                      fontWeight: 800,
+                                      letterSpacing: 0.4,
+                                      textTransform: "uppercase",
+                                      color: "#b91c1c",
+                                    }}
+                                  >
+                                    {offer.label}
+                                  </span>
+                                  <span
+                                    style={{
+                                      padding: "0 5px",
+                                      borderRadius: 999,
+                                      background: "#dc2626",
+                                      color: "#fff",
+                                      fontSize: 9,
+                                      fontWeight: 700,
+                                      lineHeight: "14px",
+                                    }}
+                                  >
+                                    -{offer.pct}%
+                                  </span>
+                                </Flex>
+                                <PromoCountdown
+                                  tour={tour}
+                                  compact
+                                  bare
+                                  showLabel={false}
+                                />
+                              </Flex>
+                              <Flex
+                                align="baseline"
+                                gap={5}
+                                style={{ minWidth: 0, marginTop: 1 }}
+                              >
+                                <Typography.Text
+                                  type="secondary"
+                                  delete
+                                  style={{ fontSize: 10, whiteSpace: "nowrap" }}
+                                >
+                                  {vnd(offer.price)}
+                                </Typography.Text>
+                                <Typography.Text
+                                  strong
+                                  style={{
+                                    color: "#dc2626",
+                                    fontWeight: 800,
+                                    fontSize: 14,
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {vnd(
+                                    discountedPrice(offer.price, offer.pct),
+                                  )}
+                                </Typography.Text>
+                                <Typography.Text
+                                  type="secondary"
+                                  style={{ fontSize: 10, whiteSpace: "nowrap" }}
+                                >
+                                  / person
+                                </Typography.Text>
+                              </Flex>
+                            </div>
+                          ))}
                         </Flex>
-                      ) : (
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          height: 44,
+                          display: "flex",
+                          alignItems: "flex-end",
+                          overflow: "hidden",
+                        }}
+                      >
                         <Typography.Title
                           level={4}
-                          style={{ margin: "4px 0 0", color: "var(--ant-color-primary)" }}
+                          style={{
+                            margin: "4px 0 0",
+                            color: "var(--ant-color-primary)",
+                            fontSize: 18,
+                            whiteSpace: "nowrap",
+                          }}
                         >
                           From {price}
                           <Typography.Text type="secondary" style={{ fontSize: 13, fontWeight: 400 }}>
@@ -322,20 +460,8 @@ export default function HomePage({
                             / person
                           </Typography.Text>
                         </Typography.Title>
-                      )}
-                    </div>
-
-                    <div
-                      style={{
-                        minHeight: promo ? 108 : 0,
-                        display: "flex",
-                        alignItems: "center",
-                      }}
-                    >
-                      <div style={{ width: "100%" }}>
-                        <PromoCountdown tour={tour} />
                       </div>
-                    </div>
+                    )}
 
                     <Flex gap={12} wrap align="center" style={{ marginTop: "auto", paddingTop: 8 }}>
                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>

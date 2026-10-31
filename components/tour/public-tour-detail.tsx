@@ -76,12 +76,42 @@ export default function PublicTourDetail({
 
   const canEdit = hasPermission("tour.itinerary.edit") || hasPermission("tour.update");
 
-  const selectedType = Form.useWatch("tourType", bookingForm) ?? tour?.type ?? "PRIVATE_TOUR";
+  const [selectedType, setSelectedType] = useState<string>(
+    tour?.type ?? "PRIVATE_TOUR",
+  );
+
+  const selectTourType = (type: string) => {
+    setSelectedType(type);
+    bookingForm.setFieldsValue({ tourType: type });
+  };
 
   const priceOf = (type?: string) => {
     const p = tour?.typePrices?.find((x) => x.type === type);
     return Number(p?.adultPrice ?? tour?.adultPrice ?? 0) || 0;
   };
+
+  const priceOptions = (["PRIVATE_TOUR", "GROUP_TOUR"] as const)
+    .map((type) => ({
+      type,
+      label: type === "PRIVATE_TOUR" ? "Private" : "Group",
+      price: priceOf(type),
+      pct: discountFor(tour ?? {}, type),
+      promo: isTypePromoActive(tour ?? {}, type),
+    }))
+    .filter((o) => o.price > 0);
+
+  if (priceOptions.length === 0) {
+    const type = tour?.type ?? "PRIVATE_TOUR";
+    priceOptions.push({
+      type,
+      label: type === "GROUP_TOUR" ? "Group" : "Private",
+      price: Number(tour?.adultPrice ?? 0) || 0,
+      pct: discountFor(tour ?? {}, type),
+      promo: isTypePromoActive(tour ?? {}, type),
+    });
+  }
+
+  const hasPromo = priceOptions.some((o) => o.promo);
 
   useEffect(() => {
     api
@@ -91,9 +121,10 @@ export default function PublicTourDetail({
   }, []);
 
   const openBooking = () => {
+    const tourType = selectedType ?? tour?.type ?? "PRIVATE_TOUR";
     bookingForm.resetFields();
     bookingForm.setFieldsValue({
-      tourType: tour?.type ?? "PRIVATE_TOUR",
+      tourType,
       tourId: tour?.id,
       departureTime: tour?.departureTimes?.[0],
     });
@@ -449,7 +480,7 @@ children: tour.insurancePolicy ? (
                           shape="round"
                           size="small"
                           type={selectedType === t ? "primary" : "default"}
-                          onClick={() => bookingForm.setFieldsValue({ tourType: t })}
+                          onClick={() => selectTourType(t)}
                           style={{ fontWeight: 600 }}
                         >
                           {t === "PRIVATE_TOUR" ? "Private" : "Group"}
@@ -460,28 +491,106 @@ children: tour.insurancePolicy ? (
                     <Typography.Text type="secondary" style={{ fontSize: 12, marginTop: 12 }}>
                       TOTAL PRICE ({(selectedType ?? "").replace("_", " ").toUpperCase()})
                     </Typography.Text>
-                    {isTypePromoActive(tour, selectedType) ? (
-                      <>
-                        <Typography.Text
-                          type="secondary"
-                          delete
-                          style={{ fontSize: 15, lineHeight: 1 }}
-                        >
-                          {vnd(priceOf(selectedType))}
-                        </Typography.Text>
-                        <Typography.Title level={3} style={{ margin: 0, color: "#dc2626" }}>
-{vnd(discountedPrice(priceOf(selectedType), discountFor(tour ?? {}, selectedType)))}
-                        </Typography.Title>
-                        <Tag color="red" style={{ alignSelf: "flex-start" }}>
-                          Save {discountFor(tour, selectedType)}%
-                        </Tag>
-                      </>
+                    {hasPromo ? (
+                      <div
+                        style={{
+                          marginTop: 4,
+                          padding: 8,
+                          borderRadius: 12,
+                          border: "1px solid rgba(220,38,38,0.22)",
+                          background:
+                            "linear-gradient(120deg, rgba(220,38,38,0.06), rgba(234,179,8,0.08))",
+                        }}
+                      >
+                        <Flex vertical gap={4}>
+                          {priceOptions.map((offer) => {
+                            const active = selectedType === offer.type;
+                            return (
+                              <div
+                                key={offer.type}
+                                onClick={() => selectTourType(offer.type)}
+                                style={{
+                                  cursor: "pointer",
+                                  padding: "6px 10px",
+                                  borderRadius: 10,
+                                  border: active
+                                    ? "1px solid rgba(220,38,38,0.35)"
+                                    : "1px solid transparent",
+                                  background: active
+                                    ? "rgba(220,38,38,0.08)"
+                                    : undefined,
+                                }}
+                              >
+                                <Flex justify="space-between" align="center" gap={8}>
+                                  <Flex align="center" gap={6}>
+                                    <Typography.Text strong style={{ fontSize: 12 }}>
+                                      {offer.label}
+                                    </Typography.Text>
+                                    {offer.promo && (
+                                      <span
+                                        style={{
+                                          padding: "0 5px",
+                                          borderRadius: 999,
+                                          background: "#dc2626",
+                                          color: "#fff",
+                                          fontSize: 9,
+                                          fontWeight: 700,
+                                          lineHeight: "16px",
+                                        }}
+                                      >
+                                        -{offer.pct}%
+                                      </span>
+                                    )}
+                                  </Flex>
+                                  {offer.promo ? (
+                                    <PromoCountdown tour={tour} compact bare />
+                                  ) : (
+                                    <Typography.Text
+                                      type="secondary"
+                                      style={{ fontSize: 11 }}
+                                    >
+                                      No discount
+                                    </Typography.Text>
+                                  )}
+                                </Flex>
+                                <Flex
+                                  justify="space-between"
+                                  align="baseline"
+                                  gap={8}
+                                  style={{ marginTop: 2 }}
+                                >
+                                  <Typography.Text
+                                    type="secondary"
+                                    delete={offer.promo}
+                                    style={{ fontSize: 11 }}
+                                  >
+                                    {offer.promo ? vnd(offer.price) : ""}
+                                  </Typography.Text>
+                                  <Typography.Text
+                                    strong
+                                    style={{
+                                      color: offer.promo ? "#dc2626" : undefined,
+                                      fontSize: offer.promo ? 16 : 14,
+                                    }}
+                                  >
+                                    {vnd(
+                                      discountedPrice(
+                                        offer.price,
+                                        offer.promo ? offer.pct : 0,
+                                      ),
+                                    )}
+                                  </Typography.Text>
+                                </Flex>
+                              </div>
+                            );
+                          })}
+                        </Flex>
+                      </div>
                     ) : (
                       <Typography.Title level={3} style={{ margin: 0 }}>
                         {vnd(priceOf(selectedType))}
                       </Typography.Title>
                     )}
-                    <PromoCountdown tour={tour} />
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                       Per person · Taxes included
                     </Typography.Text>
@@ -501,7 +610,9 @@ children: tour.insurancePolicy ? (
                         gap={8}
                         style={{ marginBottom: 8 }}
                       >
-                        <Typography.Text>Departures</Typography.Text>
+                        <Typography.Text style={{ whiteSpace: "nowrap" }}>
+                          Departures
+                        </Typography.Text>
                         <Flex gap={4} wrap justify="flex-end">
                           {(tour.departureTimes ?? []).map((time) => (
                             <Tag key={time} color="geekblue" style={{ margin: 0 }}>
@@ -569,6 +680,7 @@ children: tour.insurancePolicy ? (
                 { value: "PRIVATE_TOUR", label: "Private Tour" },
                 { value: "GROUP_TOUR", label: "Group Tour" },
               ]}
+              onChange={(value) => setSelectedType(value)}
             />
           </Form.Item>
           {(tour?.departureTimes ?? []).length > 0 && (
@@ -645,8 +757,22 @@ children: tour.insurancePolicy ? (
           >
             <Input placeholder="Your phone number" />
           </Form.Item>
-          <Form.Item name="mail" label="Email">
-            <Input placeholder="Your email (optional)" />
+          <Form.Item
+            name="mail"
+            label="Email"
+            rules={[
+              { required: true, message: "Email is required" },
+              { type: "email", message: "Please enter a valid email address" },
+            ]}
+          >
+            <Input placeholder="Your email" />
+          </Form.Item>
+          <Form.Item
+            name="paxDetail"
+            label="Pax detail"
+            rules={[{ required: true, whitespace: true, message: "Pax detail is required" }]}
+          >
+            <Input.TextArea rows={3} placeholder="e.g. 2 adults, 1 child" />
           </Form.Item>
           <Form.Item
             name="startingDate"
@@ -660,10 +786,7 @@ children: tour.insurancePolicy ? (
             label="Total pax"
             rules={[{ required: true, message: "Total pax is required" }]}
           >
-            <InputNumber min={1} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="paxDetail" label="Pax detail">
-            <Input.TextArea rows={3} placeholder="e.g. 2 adults, 1 child" />
+            <InputNumber min={1} max={12} precision={0} style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item name="tourId" hidden>
             <Input />
