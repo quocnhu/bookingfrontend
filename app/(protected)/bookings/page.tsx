@@ -560,17 +560,37 @@ export default function BookingsPage() {
       key: "tourInfo",
       width: 220,
       render: (_: any, r: any) => {
-        const name = r.tourName ?? r.tour?.name;
+        const systemName = r.tour?.name;
+        const externalName = r.tourName;
+        const name = systemName ?? externalName;
         const type = r.tour?.type ?? r.tourType;
         const days = r.tour?.durationDays ?? r.durationDays;
+        const unmatched = Boolean(externalName) && !r.tour;
         return (
           <Flex vertical gap={2}>
-            <Typography.Text
-              style={{ fontSize: 12 }}
-              ellipsis={{ tooltip: name ?? "—" }}
-            >
-              {name ?? "—"}
-            </Typography.Text>
+            <Flex align="center" gap={4} style={{ minWidth: 0 }}>
+              <Typography.Text
+                strong
+                style={{ fontSize: 12 }}
+                ellipsis={{ tooltip: name ?? "—" }}
+              >
+                {name ?? "—"}
+              </Typography.Text>
+              {unmatched && (
+                <Tag color="orange" style={{ margin: 0, fontSize: 10 }}>
+                  Unmatched
+                </Tag>
+              )}
+            </Flex>
+            {systemName && externalName && systemName !== externalName && (
+              <Typography.Text
+                type="secondary"
+                style={{ fontSize: 10 }}
+                ellipsis={{ tooltip: externalName }}
+              >
+                OTA: {externalName}
+              </Typography.Text>
+            )}
             <Space size={4} wrap>
               {type && (
                 <Tag
@@ -589,7 +609,10 @@ export default function BookingsPage() {
           </Flex>
         );
       },
-      onFilter: (v: any, r: any) => ((r.tourName ?? r.tour?.name) ?? "").toLowerCase().includes(v.toLowerCase()),
+      onFilter: (v: any, r: any) =>
+        [r.tour?.name, r.tourName]
+          .filter(Boolean)
+          .some((name: string) => name.toLowerCase().includes(v.toLowerCase())),
     },
     {
       title: "Date",
@@ -1447,6 +1470,11 @@ extra={
               { key: "mail", label: "Email", children: bookingDetail.mail ?? "—" },
               { key: "hotel", label: "Hotel", children: bookingDetail.hotelName ?? "—" },
               { key: "tour", label: "Tour", children: bookingDetail.tour?.name ?? bookingDetail.tourName ?? "—" },
+              ...(bookingDetail.tour?.name &&
+              bookingDetail.tourName &&
+              bookingDetail.tour.name !== bookingDetail.tourName
+                ? [{ key: "otaTour", label: "OTA tour name", children: bookingDetail.tourName }]
+                : []),
               { key: "tourType", label: "Tour type", children: bookingDetail.tourType ?? "—" },
               { key: "duration", label: "Duration", children: bookingDetail.tour?.durationDays ? `${bookingDetail.tour.durationDays} ${bookingDetail.tour.durationDays === 1 ? 'Day' : 'Days'}` : "—" },
               { key: "start", label: "Start date", children: bookingDetail.startingDate ? new Date(bookingDetail.startingDate).toLocaleString() : "—" },

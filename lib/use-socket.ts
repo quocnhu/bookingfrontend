@@ -17,7 +17,10 @@ export function useSocket() {
     }
 
     if (!socket) {
-      const wsUrl = `${window.location.protocol}//${window.location.hostname}:4000/ws`;
+      const socketBase =
+        process.env.NEXT_PUBLIC_SOCKET_URL?.replace(/\/+$/, "") ||
+        window.location.origin;
+      const wsUrl = `${socketBase}/ws`;
       console.log('[useSocket] Connecting to:', wsUrl);
       socket = io(wsUrl, { auth: { userId: user.id }, transports: ["websocket", "polling"] });
 
