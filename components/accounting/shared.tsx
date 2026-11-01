@@ -203,6 +203,10 @@ export interface QueueItem {
 
 export interface HistoryRow {
   direction: Direction;
+  paidAt?: string | null;
+  paidByName?: string | null;
+  paymentMethod?: string | null;
+  paymentReference?: string | null;
   totalNet: number;
   id: string;
   voidedAt?: string | null;
@@ -1521,7 +1525,15 @@ return (
 }
 
 // ── Payment history ─────────────────────────────────────────────────
-export function HistoryTab({ people, canVoid }: { people: Person[]; canVoid: boolean }) {
+export function HistoryTab({
+  people,
+  canVoid,
+  canMarkPaid,
+}: {
+  people: Person[];
+  canVoid: boolean;
+  canMarkPaid: boolean;
+}) {
   const { modal } = App.useApp();
   const [payeeId, setPayeeId] = useState<string | undefined>();
   const [payeeType, setPayeeType] = useState<PayeeType | undefined>();
@@ -1564,6 +1576,42 @@ export function HistoryTab({ people, canVoid }: { people: Person[]; canVoid: boo
           load();
         } catch (e) {
           message.error(getErrorMessage(e, "Could not void period"));
+          throw e;
+        }
+      },
+    });
+  };
+
+  const markPaid = (r: HistoryRow) => {
+    let reference = "";
+    modal.confirm({
+      title: `Mark payout to ${r.person.name} as paid?`,
+      content: (
+        <>
+          <p>
+            This records the actual transfer without changing the export or its
+            trips. The period keeps its frozen figures.
+          </p>
+          <Input
+            placeholder="Bank transfer reference (optional)"
+            onChange={(e) => {
+              reference = e.target.value;
+            }}
+          />
+        </>
+      ),
+      okText: "Mark paid",
+      cancelText: "Cancel",
+      onOk: async () => {
+        try {
+          await api.post(`/accounting/period/${r.id}/mark-paid`, {
+            method: "BANK_TRANSFER",
+            reference: reference.trim() || undefined,
+          });
+          message.success("Payout marked as paid");
+          load();
+        } catch (e) {
+          message.error(getErrorMessage(e, "Could not mark the payout paid"));
           throw e;
         }
       },
@@ -1728,10 +1776,34 @@ export function HistoryTab({ people, canVoid }: { people: Person[]; canVoid: boo
             ),
           },
           {
+            title: "Payout",
+            render: (_: unknown, r: HistoryRow) =>
+              r.paidAt ? (
+                <>
+                  <Tag color="green" style={{ margin: 0 }}>
+                    PAID
+                  </Tag>
+                  <br />
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {fmtDateTime(r.paidAt)}
+                    {r.paymentMethod ? ` · ${r.paymentMethod}` : ""}
+                    {r.paymentReference ? ` · ${r.paymentReference}` : ""}
+                  </Typography.Text>
+                </>
+              ) : (
+                <Tag style={{ margin: 0 }}>UNPAID</Tag>
+              ),
+          },
+          {
             title: "Actions",
             align: "right",
             render: (_: unknown, r: HistoryRow) => (
               <Space>
+                {!r.voidedAt && !r.paidAt && canMarkPaid && (
+                  <Button size="small" type="primary" onClick={() => markPaid(r)}>
+                    Mark paid
+                  </Button>
+                )}
                 {r.voidedAt ? (
                   <Tooltip title={`Voided by ${r.voidedByName ?? "—"}: ${r.voidReason ?? ""}`}>
                     <Tag color="red" style={{ margin: 0 }}>

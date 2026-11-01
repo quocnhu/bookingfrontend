@@ -34,6 +34,11 @@ export interface GuideBooking {
   customerName?: string | null;
   totalPax?: number | null;
   notes?: string | null;
+  payment?: string | null;
+  payLater?: boolean | null;
+  paymentCollectedAt?: string | null;
+  totalAmount?: string | number | null;
+  currency?: string | null;
 }
 
 /** A money entry draft in the add form. */
@@ -69,6 +74,7 @@ export default function GuideBookingsPanel({
   const [savingNote, setSavingNote] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [collectingId, setCollectingId] = useState<string | null>(null);
 
   const { money, loading, load: loadMoney, perBooking, addMoney, deleteMoney } =
     useTourMoney(assignmentId);
@@ -106,6 +112,28 @@ export default function GuideBookingsPanel({
     } finally {
       setSavingNote(null);
     }
+  };
+
+  const recordBookingCollection = (booking: GuideBooking) => {
+    modal.confirm({
+      title: "Record cash collection?",
+      content: `Mark the pay-later amount for ${booking.customerName ?? booking.bookingRef ?? "this booking"} as collected. Accounting still has to confirm it.`,
+      okText: "Record",
+      onOk: async () => {
+        setCollectingId(booking.id);
+        try {
+          await api.post(`/bookings/${booking.id}/payment/collect`, {
+            method: "CASH",
+          });
+          message.success("Collection recorded. Accounting will confirm it.");
+          onBookingsChanged?.();
+        } catch (e) {
+          message.error(getErrorMessage(e, "Could not record the collection"));
+        } finally {
+          setCollectingId(null);
+        }
+      },
+    });
   };
 
   const openDraft = (booking: GuideBooking, direction: "COLLECT_MONEY" | "PAY_MONEY") => {
@@ -204,6 +232,31 @@ export default function GuideBookingsPanel({
             }
           />
         ),
+    },
+    {
+      title: "Booking payment",
+      width: 160,
+      render: (_, b) => {
+        if (!b.payLater) {
+          return b.payment ? <Tag color="green" style={{ margin: 0 }}>{b.payment}</Tag> : <Text type="secondary">—</Text>;
+        }
+        if (b.payment === "PAID") {
+          return <Tag color="green" style={{ margin: 0 }}>PAID</Tag>;
+        }
+        if (b.paymentCollectedAt) {
+          return <Tag color="gold" style={{ margin: 0 }}>Collected</Tag>;
+        }
+        return (
+          <Button
+            size="small"
+            loading={collectingId === b.id}
+            disabled={readOnlyNotes}
+            onClick={() => recordBookingCollection(b)}
+          >
+            Record collection
+          </Button>
+        );
+      },
     },
     {
       title: "Passenger money",

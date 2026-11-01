@@ -5,7 +5,7 @@ import { HistoryTab } from "@/components/accounting/shared";
 import { useApp } from "@/lib/app-context";
 
 export default function AccountingHistoryPage() {
-  const { hasPermission } = useApp();
+  const { hasPermission, user } = useApp();
   return (
     <AccountingShell
       title="Payment history"
@@ -15,6 +15,9 @@ export default function AccountingHistoryPage() {
         <HistoryTab
           people={people}
           canVoid={hasPermission("accounting.period.void")}
+          canMarkPaid={
+            user?.role === "ADMIN" || hasPermission("accounting.period.export")
+          }
         />
       )}
     </AccountingShell>

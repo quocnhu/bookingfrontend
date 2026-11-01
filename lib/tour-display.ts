@@ -1,3 +1,24 @@
+export type TypePriceLike = {
+  adultPrice?: number | string | null;
+  childPrice?: number | string | null;
+  infantPrice?: number | string | null;
+};
+
+export function hasTypePrice(price?: TypePriceLike | null): boolean {
+  if (!price) return false;
+  return [price.adultPrice, price.childPrice, price.infantPrice].some(
+    (value) => Number(value ?? 0) > 0,
+  );
+}
+
+export function typeDisplayPrice(price?: TypePriceLike | null): number {
+  if (!price) return 0;
+  const value = [price.adultPrice, price.childPrice, price.infantPrice]
+    .map((amount) => Number(amount ?? 0))
+    .find((amount) => Number.isFinite(amount) && amount > 0);
+  return value ?? 0;
+}
+
 export type TourTiming = {
   durationDays?: number | null;
   durationValue?: number | null;
@@ -37,7 +58,7 @@ export function formatFreeCancellation(
   if (hours <= 0) return "Free cancellation";
   if (hours % 24 === 0) {
     const days = hours / 24;
-    return `Free cancellation up to ${days} ${days === 1 ? "day" : "days"}`;
+    return `Free cancellation ${days} ${days === 1 ? "day" : "days"}`;
   }
-  return `Free cancellation up to ${hours} ${hours === 1 ? "hour" : "hours"}`;
+  return `Free cancellation ${hours} ${hours === 1 ? "hour" : "hours"}`;
 }

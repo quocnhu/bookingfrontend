@@ -1,12 +1,19 @@
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
 import Link from "next/link";
-import { fetchCompany, fetchTours, tourPath } from "@/lib/server-tours";
+import {
+  fetchCompany,
+  fetchTourCategories,
+  fetchTours,
+  tourPath,
+} from "@/lib/server-tours";
 import { buildPublicGraph, buildTourListJsonLd } from "@/lib/seo-jsonld";
 import { absoluteUrl, BRAND } from "@/lib/site";
 import PublicHeader from "@/components/public-header";
 import {
   formatDepartureTime,
   formatTourDuration,
+  typeDisplayPrice,
 } from "@/lib/tour-display";
 
 /**
@@ -25,7 +32,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Vietnam Tours — Day Trips, Cruises & Private Experiences",
   description:
-    "Browse every tour: Ha Long Bay cruises, Ninh Binh day trips, Hoi An lantern nights, Da Nang & Ba Na Hills and Ho Chi Minh City. Prices per person, free cancellation within 24 hours.",
+    "Browse every tour: Ha Long Bay cruises, Ninh Binh day trips, Hoi An lantern nights, Da Nang & Ba Na Hills and Ho Chi Minh City. Prices per person, free cancellation.",
   alternates: { canonical: "/tours" },
   openGraph: {
     type: "website",
@@ -40,18 +47,56 @@ export const metadata: Metadata = {
 const vnd = (value: unknown) =>
   `${Number(value ?? 0).toLocaleString("vi-VN", { maximumFractionDigits: 0 })} ₫`;
 
+const chipStyle = (active: boolean): CSSProperties => ({
+  padding: "6px 14px",
+  borderRadius: 999,
+  border: `1px solid ${
+    active ? "transparent" : "var(--ant-color-border)"
+  }`,
+  background: active
+    ? "var(--ant-color-primary)"
+    : "var(--ant-color-bg-container)",
+  color: active ? "#fff" : "var(--ant-color-text)",
+  fontSize: 13,
+  fontWeight: 600,
+  textDecoration: "none",
+});
+
 const fromPrice = (tour: {
   adultPrice?: number | string | null;
-  typePrices?: { type: string; adultPrice?: number | string | null }[];
+  typePrices?: {
+    type: string;
+    adultPrice?: number | string | null;
+    childPrice?: number | string | null;
+    infantPrice?: number | string | null;
+  }[];
 }) => {
   const prices = (tour.typePrices ?? [])
-    .map((p) => Number(p.adultPrice ?? 0))
+    .map((p) => typeDisplayPrice(p))
     .filter((p) => p > 0);
   return prices.length ? Math.min(...prices) : Number(tour.adultPrice ?? 0);
 };
 
-export default async function PublicToursPage() {
-  const [tours, company] = await Promise.all([fetchTours(), fetchCompany()]);
+export default async function PublicToursPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ category?: string }>;
+}) {
+  const { category } = await searchParams;
+  const [tours, categories, company] = await Promise.all([
+    fetchTours(),
+    fetchTourCategories(),
+    fetchCompany(),
+  ]);
+  const activeCategory =
+    category && categories.some((c) => c.slug === category) ? category : null;
+  const visibleTours = activeCategory
+    ? tours.filter((tour) =>
+        (tour.categories ?? []).some(
+          (link) => link.category.slug === activeCategory,
+        ),
+      )
+    : tours;
 
   const jsonLd = buildPublicGraph(company, [buildTourListJsonLd(tours)]);
 
@@ -97,10 +142,45 @@ export default async function PublicToursPage() {
               }}
             >
               Day trips, cruises and private experiences across Vietnam — book
-              directly with a local operator. Free cancellation within 24 hours.
+              directly with a local operator. Free cancellation.
             </p>
           </div>
 
+          {categories.length > 0 && (
+            <nav
+              aria-label="Tour categories"
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                marginBottom: 20,
+              }}
+            >
+              <Link href="/tours" style={chipStyle(!activeCategory)}>
+                All tours
+              </Link>
+              {categories.map((category) => (
+                <Link
+                  key={category.id}
+                  href={`/tours?category=${encodeURIComponent(category.slug)}`}
+                  style={chipStyle(activeCategory === category.slug)}
+                >
+                  {category.name}
+                </Link>
+              ))}
+            </nav>
+          )}
+
+          {visibleTours.length === 0 ? (
+            <p
+              style={{
+                color: "var(--ant-color-text-secondary)",
+                padding: "24px 0",
+              }}
+            >
+              No tours in this category yet.
+            </p>
+          ) : (
           <ul
             style={{
               listStyle: "none",
@@ -111,7 +191,7 @@ export default async function PublicToursPage() {
               gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
             }}
           >
-            {tours.map((tour) => {
+            {visibleTours.map((tour) => {
               const price = fromPrice(tour);
               return (
                 <li key={tour.id}>
@@ -260,12 +340,7 @@ export default async function PublicToursPage() {
               );
             })}
           </ul>
-
-          {tours.length === 0 ? (
-            <p style={{ color: "var(--ant-color-text-secondary)" }}>
-              No tours available right now.
-            </p>
-          ) : null}
+          )}
         </main>
 
         <footer

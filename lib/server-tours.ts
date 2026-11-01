@@ -24,6 +24,15 @@ const SERVER_API_URL = (
  * Every call is wrapped: a page must never crash because the API is down.
  */
 
+export type PublicTourCategory = {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  sortOrder?: number;
+  isActive?: boolean;
+};
+
 export type PublicTour = {
   id: string;
   code: string;
@@ -60,6 +69,10 @@ export type PublicTour = {
     adultPrice?: number | string | null;
     childPrice?: number | string | null;
     currency?: string | null;
+  }[];
+  categories?: {
+    isPrimary?: boolean;
+    category: PublicTourCategory;
   }[];
   itineraries?: {
     id?: string;
@@ -110,6 +123,12 @@ const cachedCompany = unstable_cache(
   { revalidate: DATA_TTL },
 );
 
+const cachedTourCategories = unstable_cache(
+  async () => getJson<PublicTourCategory[]>("/tour-categories"),
+  ["public-tour-categories"],
+  { revalidate: DATA_TTL },
+);
+
 const cachedTourBySlug = (slug: string) =>
   unstable_cache(
     async () => getJson<PublicTour>(`/tours/slug/${encodeURIComponent(slug)}`),
@@ -129,6 +148,12 @@ export async function fetchTourBySlug(
   slug: string,
 ): Promise<PublicTour | null> {
   return cachedTourBySlug(slug);
+}
+
+/** The active categories used by the public filters. */
+export async function fetchTourCategories(): Promise<PublicTourCategory[]> {
+  const categories = await cachedTourCategories();
+  return categories ?? [];
 }
 
 /** The company details used by the footer and the structured data. */

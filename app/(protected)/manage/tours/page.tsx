@@ -21,7 +21,7 @@ import {
   Typography,
 } from "antd";
 import { message } from "@/lib/antd-message";
-import { PlusOutlined, DeleteOutlined, EditOutlined, PictureOutlined, ScheduleOutlined, CloseCircleOutlined } from "@ant-design/icons";
+import { PlusOutlined, DeleteOutlined, EditOutlined, PictureOutlined, ScheduleOutlined, CloseCircleOutlined, TagsOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
@@ -30,11 +30,15 @@ import {
   departureLabel,
   formatDepartureTime,
   formatTourDuration,
+  hasTypePrice,
 } from "@/lib/tour-display";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
 import { useFillHeight } from "@/lib/use-fill-height";
 import ThumbnailPicker from "@/components/thumbnail-picker";
 import GalleryManager, { type GalleryImage } from "@/components/gallery-manager";
+import TourCategoryManager, {
+  type AdminTourCategory,
+} from "@/components/tour-category-manager";
 
 interface Tour {
   id: string;
@@ -46,6 +50,8 @@ interface Tour {
   durationValue?: number | null;
   durationUnit?: "HOUR" | "DAY" | null;
   freeCancellationHours?: number | null;
+  freeCancellationValue?: number | null;
+  freeCancellationUnit?: "HOUR" | "DAY" | null;
   cancellationPolicy?: string | null;
   departureTimes?: string[] | null;
   departureLocation?: string | null;
@@ -65,6 +71,11 @@ interface Tour {
     currency?: string | null;
   }[];
   gallery?: GalleryImage[];
+  categories?: {
+    categoryId: string;
+    isPrimary: boolean;
+    category: { id: string; name: string; slug: string };
+  }[];
   _count?: { bookings: number };
 }
 
@@ -107,9 +118,15 @@ function PriceField({
       }
       initialValue={0}
     >
-      <InputNumber
+      <InputNumber<number>
         style={{ width: "100%", borderColor: color }}
         min={0}
+        formatter={(value) =>
+          value === undefined || value === null || String(value).trim() === ""
+            ? ""
+            : Number(value).toLocaleString("en-US")
+        }
+        parser={(value) => Number(value?.replace(/,/g, "") ?? 0)}
       />
     </Form.Item>
   );
@@ -181,13 +198,129 @@ function promotionState(
   return { label: `-${pct}%`, color: "red" };
 }
 
+function cancellationParts(tour: Tour): {
+  value: number | null;
+  unit: "HOUR" | "DAY";
+} {
+  const unit =
+    tour.freeCancellationUnit ??
+    (tour.freeCancellationHours != null && tour.freeCancellationHours % 24 === 0
+      ? "DAY"
+      : "HOUR");
+  const value =
+    tour.freeCancellationValue ??
+    (tour.freeCancellationHours != null
+      ? unit === "DAY"
+        ? tour.freeCancellationHours / 24
+        : tour.freeCancellationHours
+      : null);
+  return { value, unit };
+}
+
+function FreeCancellationCell({
+  tour,
+  canUpdate,
+  onSaved,
+}: {
+  tour: Tour;
+  canUpdate: boolean;
+  onSaved: () => void;
+}) {
+  const initial = cancellationParts(tour);
+  const [value, setValue] = useState<number | null>(initial.value);
+  const [unit, setUnit] = useState<"HOUR" | "DAY">(initial.unit);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setValue(initial.value);
+    setUnit(initial.unit);
+  }, [initial.value, initial.unit]);
+
+  const save = async (nextValue: number | null, nextUnit: "HOUR" | "DAY") => {
+    if (!canUpdate || nextValue == null || nextValue < 0) return;
+    if (nextValue === initial.value && nextUnit === initial.unit) return;
+    setSaving(true);
+    try {
+      await api.put(`/tours/${tour.id}`, {
+        freeCancellationValue: nextValue,
+        freeCancellationUnit: nextUnit,
+      });
+      message.success("Free cancellation updated");
+      onSaved();
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to update free cancellation"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!canUpdate) {
+    return initial.value == null ? (
+      <Typography.Text type="secondary">—</Typography.Text>
+    ) : (
+      <Tag>{`Up to ${initial.value} ${initial.unit === "DAY" ? "day(s)" : "hour(s)"}`}</Tag>
+    );
+  }
+
+  return (
+    <Flex gap={4} align="center">
+      <InputNumber
+        size="small"
+        min={0}
+        value={value}
+        disabled={saving}
+        style={{ width: 72 }}
+        onChange={(v) => setValue(typeof v === "number" ? v : null)}
+        onBlur={() => save(value, unit)}
+        onPressEnter={() => save(value, unit)}
+      />
+      <Select
+        size="small"
+        value={unit}
+        disabled={saving}
+        style={{ width: 100 }}
+        options={[
+          { value: "HOUR", label: "hour(s)" },
+          { value: "DAY", label: "day(s)" },
+        ]}
+        onChange={(nextUnit: "HOUR" | "DAY") => {
+          setUnit(nextUnit);
+          void save(value, nextUnit);
+        }}
+      />
+    </Flex>
+  );
+}
+
 function promotionTags(r: Tour) {
   const tags: React.ReactNode[] = [];
   const stP = promotionState(r.privateDiscountPercent, r.promotionStartsAt, r.promotionEndsAt);
   const stG = promotionState(r.groupDiscountPercent, r.promotionStartsAt, r.promotionEndsAt);
-  if (stP) tags.push(<Tag key="private" color={stP.color}>Private {stP.label}</Tag>);
-  if (stG) tags.push(<Tag key="group" color={stG.color}>Group {stG.label}</Tag>);
-  return tags.length > 0 ? tags : null;
+  if (stP)
+    tags.push(
+      <Tag
+        key="private"
+        color={stP.color}
+        style={{ margin: 0, fontSize: 11, lineHeight: "18px" }}
+      >
+        Private {stP.label}
+      </Tag>,
+    );
+  if (stG)
+    tags.push(
+      <Tag
+        key="group"
+        color={stG.color}
+        style={{ margin: 0, fontSize: 11, lineHeight: "18px" }}
+      >
+        Group {stG.label}
+      </Tag>,
+    );
+  return tags.length > 0 ? (
+    <Flex vertical gap={2} align="flex-start">
+      {tags}
+    </Flex>
+  ) : null;
 }
 
 export default function ToursPage() {
@@ -214,6 +347,19 @@ export default function ToursPage() {
 
   const [galleryTour, setGalleryTour] = useState<Tour | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [categories, setCategories] = useState<AdminTourCategory[]>([]);
+  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
+
+  const loadCategories = async () => {
+    try {
+      const r = await api.get("/tour-categories/admin");
+      setCategories(r.data ?? []);
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to load categories"));
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -232,6 +378,10 @@ export default function ToursPage() {
     load();
   }, [page, pageSize]);
 
+  useEffect(() => {
+    if (canCreate || canUpdate) loadCategories();
+  }, [canCreate, canUpdate]);
+
   const openModal = (tour?: Tour) => {
     setEditing(tour ?? null);
     const prices = (tour?.typePrices ?? []).reduce<Record<string, any>>((acc, p) => {
@@ -246,17 +396,25 @@ export default function ToursPage() {
       durationDays: tour?.durationDays ?? 1,
       durationValue: tour?.durationValue ?? tour?.durationDays ?? 1,
       durationUnit: tour?.durationUnit ?? "DAY",
-      freeCancellationHours: tour?.freeCancellationHours ?? 24,
+      freeCancellationValue: tour
+        ? cancellationParts(tour).value
+        : 24,
+      freeCancellationUnit: tour
+        ? cancellationParts(tour).unit
+        : "HOUR",
       cancellationPolicy: tour?.cancellationPolicy ?? "",
       departureTimes: tour?.departureTimes ?? [],
       departureLocation: tour?.departureLocation ?? "",
+      categoryIds: (tour?.categories ?? []).map((link) => link.categoryId),
+      primaryCategoryId:
+        tour?.categories?.find((link) => link.isPrimary)?.categoryId ?? undefined,
       privatePricesAdult: pvt?.adultPrice ?? (tour?.type === "PRIVATE_TOUR" ? tour?.adultPrice : 0) ?? 0,
       privatePricesChild: pvt?.childPrice ?? (tour?.type === "PRIVATE_TOUR" ? tour?.childPrice : 0) ?? 0,
       privatePricesInfant: pvt?.infantPrice ?? (tour?.type === "PRIVATE_TOUR" ? tour?.infantPrice : 0) ?? 0,
       groupPricesAdult: grp?.adultPrice ?? (tour?.type === "GROUP_TOUR" ? tour?.adultPrice : 0) ?? 0,
       groupPricesChild: grp?.childPrice ?? (tour?.type === "GROUP_TOUR" ? tour?.childPrice : 0) ?? 0,
       groupPricesInfant: grp?.infantPrice ?? (tour?.type === "GROUP_TOUR" ? tour?.infantPrice : 0) ?? 0,
-      currency: tour?.currency ?? "USD",
+      currency: "VND",
       privateDiscountPercent: tour?.privateDiscountPercent ?? 0,
       groupDiscountPercent: tour?.groupDiscountPercent ?? 0,
       promotionWindow:
@@ -310,15 +468,22 @@ export default function ToursPage() {
       durationDays,
       durationValue,
       durationUnit,
-      freeCancellationHours: values.freeCancellationHours,
+      freeCancellationValue: values.freeCancellationValue ?? 0,
+      freeCancellationUnit: values.freeCancellationUnit ?? "HOUR",
       cancellationPolicy: values.cancellationPolicy,
       departureTimes: values.departureTimes,
       departureLocation: values.departureLocation,
-      currency: values.currency,
+      currency: "VND",
       privateDiscountPercent: values.privateDiscountPercent,
       groupDiscountPercent: values.groupDiscountPercent,
       promotionStartsAt: window ? window[0].toISOString() : null,
       promotionEndsAt: window ? window[1].toISOString() : null,
+      categoryIds: values.categoryIds ?? [],
+      primaryCategoryId: (values.categoryIds ?? []).includes(
+        values.primaryCategoryId,
+      )
+        ? values.primaryCategoryId
+        : undefined,
       adultPrice: primaryTypePrices.adultPrice,
       childPrice: primaryTypePrices.childPrice,
       infantPrice: primaryTypePrices.infantPrice,
@@ -339,6 +504,28 @@ export default function ToursPage() {
       message.error(getErrorMessage(e, "Failed to save tour"));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const deleteSelected = async () => {
+    setBulkDeleting(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedRowKeys.map((id) => api.delete(`/tours/${id}`)),
+      );
+      const deleted = results.filter((r) => r.status === "fulfilled").length;
+      const failed = results.length - deleted;
+      if (failed > 0) {
+        message.error(`Deleted ${deleted} of ${results.length} tours`);
+      } else {
+        message.success(
+          `Deleted ${deleted} ${deleted === 1 ? "tour" : "tours"}`,
+        );
+      }
+      setSelectedRowKeys([]);
+      load();
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -382,12 +569,31 @@ export default function ToursPage() {
         { text: "Private", value: "PRIVATE_TOUR" },
         { text: "Group", value: "GROUP_TOUR" },
       ],
-      onFilter: (v: any, r: Tour) => r.type === v,
-      render: (v: Tour["type"]) => (
-        <Tag color={v === "PRIVATE_TOUR" ? "purple" : "cyan"}>
-          {v === "PRIVATE_TOUR" ? "Private" : "Group"}
-        </Tag>
-      ),
+      onFilter: (v: any, r: Tour) => {
+        const offered = (r.typePrices ?? []).filter(hasTypePrice);
+        return offered.length
+          ? offered.some((price) => price.type === v)
+          : r.type === v;
+      },
+      render: (_: Tour["type"], r: Tour) => {
+        const offered = (r.typePrices ?? []).filter(hasTypePrice);
+        const types = offered.length
+          ? offered.map((price) => price.type)
+          : [r.type];
+        return (
+          <Flex vertical gap={2} align="flex-start">
+            {types.map((type) => (
+              <Tag
+                key={type}
+                color={type === "PRIVATE_TOUR" ? "purple" : "cyan"}
+                style={{ margin: 0, fontSize: 11, lineHeight: "18px" }}
+              >
+                {type === "PRIVATE_TOUR" ? "Private" : "Group"}
+              </Tag>
+            ))}
+          </Flex>
+        );
+      },
     },
     {
       title: "Duration",
@@ -416,6 +622,13 @@ export default function ToursPage() {
         ) : (
           <Typography.Text type="secondary">—</Typography.Text>
         ),
+    },
+    {
+      title: "Free cancellation",
+      key: "freeCancellation",
+      render: (_: any, r: Tour) => (
+        <FreeCancellationCell tour={r} canUpdate={canUpdate} onSaved={load} />
+      ),
     },
     {
       title: "Bookings",
@@ -478,6 +691,7 @@ export default function ToursPage() {
               onConfirm={async () => {
                 try {
                   await api.delete(`/tours/${r.id}`);
+                  setSelectedRowKeys((keys) => keys.filter((k) => k !== r.id));
                   message.success("Tour deleted");
                   load();
                 } catch (e) {
@@ -502,6 +716,26 @@ export default function ToursPage() {
         title="Declared tours"
         extra={
           <Flex wrap gap={8} align="center">
+            {canDelete && selectedRowKeys.length > 0 && (
+              <Popconfirm
+                title={`Delete ${selectedRowKeys.length} selected ${
+                  selectedRowKeys.length === 1 ? "tour" : "tours"
+                }?`}
+                onConfirm={deleteSelected}
+              >
+                <Button danger icon={<DeleteOutlined />} loading={bulkDeleting}>
+                  Delete selected ({selectedRowKeys.length})
+                </Button>
+              </Popconfirm>
+            )}
+            {canUpdate && (
+              <Button
+                icon={<TagsOutlined />}
+                onClick={() => setCategoryManagerOpen(true)}
+              >
+                Categories
+              </Button>
+            )}
             {canCreate && (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
                 Add Tour
@@ -517,6 +751,15 @@ export default function ToursPage() {
           columns={columns}
           dataSource={tours}
           loading={loading}
+          rowSelection={
+            canDelete
+              ? {
+                  selectedRowKeys,
+                  onChange: (keys) => setSelectedRowKeys(keys.map(String)),
+                  preserveSelectedRowKeys: true,
+                }
+              : undefined
+          }
           pagination={{
             current: page,
             pageSize,
@@ -578,13 +821,29 @@ export default function ToursPage() {
                 />
               </Form.Item>
             </Col>
-            <Col span={8}>
+          </Row>
+          <Row gutter={12}>
+            <Col span={12}>
               <Form.Item
-                name="freeCancellationHours"
-                label="Free cancellation (hours)"
+                name="freeCancellationValue"
+                label="Free cancellation"
                 initialValue={24}
               >
                 <InputNumber style={{ width: "100%" }} min={0} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="freeCancellationUnit"
+                label="Free cancellation unit"
+                initialValue="HOUR"
+              >
+                <Select
+                  options={[
+                    { value: "HOUR", label: "Hour(s)" },
+                    { value: "DAY", label: "Day(s)" },
+                  ]}
+                />
               </Form.Item>
             </Col>
           </Row>
@@ -626,6 +885,47 @@ export default function ToursPage() {
               options={[]}
             />
           </Form.Item>
+          <Form.Item
+            name="categoryIds"
+            label="Categories"
+            extra="Used by the homepage and /tours filters"
+          >
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="Select categories"
+              options={categories.map((category) => ({
+                value: category.id,
+                label: category.isActive
+                  ? category.name
+                  : `${category.name} (hidden)`,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="primaryCategoryId" label="Primary category">
+            <Select
+              allowClear
+              placeholder="Defaults to the first selected"
+              options={categories.map((category) => ({
+                value: category.id,
+                label: category.name,
+              }))}
+            />
+          </Form.Item>
+          <Button
+            type="link"
+            icon={<TagsOutlined />}
+            style={{ paddingLeft: 0, marginBottom: 12 }}
+            onClick={() => setCategoryManagerOpen(true)}
+          >
+            Manage categories
+          </Button>
+          <Typography.Text
+            type="secondary"
+            style={{ display: "block", margin: "4px 0 8px" }}
+          >
+            All prices are in VND.
+          </Typography.Text>
           <Flex vertical gap={12} style={{ marginTop: 8 }}>
             <PricingSection
               title="Private Tour pricing"
@@ -640,12 +940,6 @@ export default function ToursPage() {
               prefix="groupPrices"
             />
           </Flex>
-          <Form.Item name="currency" label="Currency" initialValue="USD">
-            <Select
-              options={["VND", "USD", "EUR"].map((c) => ({ value: c, label: c }))}
-              showSearch
-            />
-          </Form.Item>
           <Row gutter={12}>
             <Col span={12}>
               <Form.Item name="privateDiscountPercent" label="Private promotion discount (%)" initialValue={0}>
@@ -688,6 +982,11 @@ export default function ToursPage() {
           />
         )}
       </Modal>
+      <TourCategoryManager
+        open={categoryManagerOpen}
+        onClose={() => setCategoryManagerOpen(false)}
+        onChanged={loadCategories}
+      />
     </div>
   );
 }

@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import HomePage from "@/components/home-page";
-import { fetchCompany, fetchTours } from "@/lib/server-tours";
+import {
+  fetchCompany,
+  fetchTourCategories,
+  fetchTours,
+} from "@/lib/server-tours";
 import { buildPublicGraph, buildTourListJsonLd } from "@/lib/seo-jsonld";
 import { absoluteUrl, BRAND, SITE_DESCRIPTION, SITE_KEYWORDS } from "@/lib/site";
 
@@ -34,7 +38,11 @@ export const metadata: Metadata = {
 };
 
 export default async function Home() {
-  const [tours, company] = await Promise.all([fetchTours(), fetchCompany()]);
+  const [tours, categories, company] = await Promise.all([
+    fetchTours(),
+    fetchTourCategories(),
+    fetchCompany(),
+  ]);
 
   const jsonLd = buildPublicGraph(company, [buildTourListJsonLd(tours)]);
 
@@ -44,7 +52,7 @@ export default async function Home() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <HomePage tours={tours} />
+      <HomePage tours={tours} categories={categories} />
     </>
   );
 }

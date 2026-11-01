@@ -29,7 +29,6 @@ import {
   EnvironmentOutlined,
   CalendarOutlined,
   FolderOpenOutlined,
-  PrinterOutlined,
   EyeOutlined,
   CarOutlined,
   StarOutlined,
@@ -326,9 +325,6 @@ export default function TourItineraryEditorPage() {
                 ]}
               />
             )}
-            <Button icon={<PrinterOutlined />} onClick={() => window.print()}>
-              Print Itinerary
-            </Button>
             {canEdit && (
               <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={onSave}>
                 Save

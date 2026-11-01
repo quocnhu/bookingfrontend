@@ -1,6 +1,7 @@
 import type { PublicTour } from "./server-tours";
 import type { CompanyInfo } from "./site";
 import { absoluteUrl, BRAND, SITE_DESCRIPTION } from "./site";
+import { typeDisplayPrice } from "./tour-display";
 
 /**
  * The structured data (JSON-LD) that Google reads.
@@ -27,7 +28,7 @@ const number = (value: unknown): number => {
 /** The cheapest adult price of a tour — the "from" price. */
 export function tourFromPrice(tour: PublicTour): number {
   const typePrices = (tour.typePrices ?? [])
-    .map((p) => number(p.adultPrice))
+    .map((p) => typeDisplayPrice(p))
     .filter((p) => p > 0);
   if (typePrices.length) return Math.min(...typePrices);
   return number(tour.adultPrice);

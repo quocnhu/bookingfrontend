@@ -15,8 +15,10 @@ import {
   Input,
   InputNumber,
   Modal,
+  Radio,
   Row,
   Select,
+  Spin,
   Tabs,
   Tag,
   Typography,
@@ -42,8 +44,11 @@ import {
   formatDepartureTime,
   formatFreeCancellation,
   formatTourDuration,
+  hasTypePrice,
+  typeDisplayPrice,
 } from "@/lib/tour-display";
 import PromoCountdown from "@/components/promo-countdown";
+import PayPalCheckout from "@/components/paypal-checkout";
 import PublicHeader from "@/components/public-header";
 import TourSlideshow from "@/components/tour-slideshow";
 import DayTimeline from "@/components/day-timeline";
@@ -73,21 +78,25 @@ export default function PublicTourDetail({
   const [bookingForm] = Form.useForm();
   const [savingBooking, setSavingBooking] = useState(false);
   const [coordinates, setCoordinates] = useState<any[]>([]);
+  const [payChoice, setPayChoice] = useState<"paynow" | "paylater">("paynow");
+  const [quote, setQuote] = useState<any>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [createdBookingId, setCreatedBookingId] = useState<string | null>(null);
+  const [paypalEnabled, setPaypalEnabled] = useState<boolean | null>(null);
+  const [paypalRate, setPaypalRate] = useState(25000);
+  const [paypalCurrency, setPaypalCurrency] = useState("USD");
+  const watchedPax = Form.useWatch("totalPax", bookingForm);
 
   const canEdit = hasPermission("tour.itinerary.edit") || hasPermission("tour.update");
 
-  const [selectedType, setSelectedType] = useState<string>(
-    tour?.type ?? "PRIVATE_TOUR",
-  );
-
-  const selectTourType = (type: string) => {
-    setSelectedType(type);
-    bookingForm.setFieldsValue({ tourType: type });
-  };
-
+  const typePrices = tour?.typePrices ?? [];
   const priceOf = (type?: string) => {
-    const p = tour?.typePrices?.find((x) => x.type === type);
-    return Number(p?.adultPrice ?? tour?.adultPrice ?? 0) || 0;
+    const match = typePrices.find((x) => x.type === type);
+    if (match) return hasTypePrice(match) ? typeDisplayPrice(match) : 0;
+    if (typePrices.length === 0 && type === tour?.type) {
+      return Number(tour?.adultPrice ?? 0) || 0;
+    }
+    return 0;
   };
 
   const priceOptions = (["PRIVATE_TOUR", "GROUP_TOUR"] as const)
@@ -111,6 +120,28 @@ export default function PublicTourDetail({
     });
   }
 
+  const offeredTypes: string[] = priceOptions.map((o) => o.type);
+  const offeredKey = offeredTypes.join(",");
+
+  const initialType =
+    tour?.type && offeredTypes.includes(tour.type)
+      ? tour.type
+      : offeredTypes[0] ?? tour?.type ?? "PRIVATE_TOUR";
+
+  const [selectedType, setSelectedType] = useState<string>(initialType);
+
+  useEffect(() => {
+    if (!offeredTypes.includes(selectedType)) {
+      setSelectedType(offeredTypes[0] ?? tour?.type ?? "PRIVATE_TOUR");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tour?.id, offeredKey, selectedType]);
+
+  const selectTourType = (type: string) => {
+    setSelectedType(type);
+    bookingForm.setFieldsValue({ tourType: type });
+  };
+
   const hasPromo = priceOptions.some((o) => o.promo);
 
   useEffect(() => {
@@ -120,30 +151,98 @@ export default function PublicTourDetail({
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    api
+      .get("/payments/paypal/config")
+      .then((r) => {
+        setPaypalEnabled(!!r.data?.enabled);
+        setPaypalRate(Number(r.data?.vndPerUsd) || 25000);
+        setPaypalCurrency(String(r.data?.currency || "USD"));
+      })
+      .catch(() => setPaypalEnabled(false));
+  }, []);
+
+  useEffect(() => {
+    if (paypalEnabled === false && payChoice === "paynow" && !createdBookingId) {
+      setPayChoice("paylater");
+    }
+  }, [paypalEnabled, payChoice, createdBookingId]);
+
+  useEffect(() => {
+    if (!bookingOpen || !tour?.id || !selectedType || !watchedPax) {
+      setQuote(null);
+      return;
+    }
+    let active = true;
+    setQuoteLoading(true);
+    api
+      .post("/bookings/website/quote", {
+        tourId: tour.id,
+        tourType: selectedType,
+        totalPax: Number(watchedPax),
+      })
+      .then((r) => active && setQuote(r.data))
+      .catch(() => active && setQuote(null))
+      .finally(() => active && setQuoteLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [bookingOpen, tour?.id, selectedType, watchedPax]);
+
   const openBooking = () => {
+    if (!user) {
+      router.push(
+        `/login?redirect=${encodeURIComponent(window.location.pathname)}`,
+      );
+      return;
+    }
     const tourType = selectedType ?? tour?.type ?? "PRIVATE_TOUR";
+    setCreatedBookingId(null);
+    setQuote(null);
+    setPayChoice(paypalEnabled === false ? "paylater" : "paynow");
     bookingForm.resetFields();
     bookingForm.setFieldsValue({
       tourType,
       tourId: tour?.id,
       departureTime: tour?.departureTimes?.[0],
+      customerName: user.name ?? "",
+      mail: user.email ?? "",
     });
     setBookingOpen(true);
   };
 
   const saveBooking = async () => {
+    if (createdBookingId) {
+      setBookingOpen(false);
+      return;
+    }
     const values = await bookingForm.validateFields();
     setSavingBooking(true);
     try {
-      await api.post("/bookings", {
+      if (payChoice === "paynow" && paypalEnabled === false) {
+        message.error("PayPal is not configured yet. Please choose Pay later.");
+        return;
+      }
+      const payload = {
         ...values,
         tourId: tour?.id,
-        channel: "WEBSITE",
-        source: "website",
         startingDate: values.startingDate?.format("YYYY-MM-DD"),
-      });
-      message.success("Booking submitted. We will contact you to confirm.");
-      setBookingOpen(false);
+        payLater: payChoice === "paylater",
+        paymentNote:
+          payChoice === "paylater"
+            ? "Customer selected pay later on the website."
+            : undefined,
+      };
+      const res = await api.post("/bookings/website", payload);
+      if (payChoice === "paylater") {
+        message.success(
+          `Booking ${res.data.booking?.bookingRef ?? ""} submitted. Payment is due at the end of the tour.`,
+        );
+        setBookingOpen(false);
+      } else {
+        setCreatedBookingId(res.data.booking?.id ?? null);
+        message.success("Booking created. Complete the PayPal payment below.");
+      }
     } catch (e) {
       message.error(getErrorMessage(e, "Failed to submit booking"));
     } finally {
@@ -178,9 +277,14 @@ export default function PublicTourDetail({
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {tour.code}
                 </Typography.Text>
-                <Tag color={tour.type === "PRIVATE_TOUR" ? "purple" : "cyan"}>
-                  {tour.type.replace("_", " ")}
-                </Tag>
+                {offeredTypes.map((type) => (
+                  <Tag
+                    key={type}
+                    color={type === "PRIVATE_TOUR" ? "purple" : "cyan"}
+                  >
+                    {type === "PRIVATE_TOUR" ? "PRIVATE TOUR" : "GROUP TOUR"}
+                  </Tag>
+                ))}
                 <Typography.Title level={1} style={{ margin: 0, fontSize: 26 }}>
                   {tour.name}
                 </Typography.Title>
@@ -474,16 +578,16 @@ children: tour.insurancePolicy ? (
                       TOUR TYPE
                     </Typography.Text>
                     <Flex gap={8}>
-                      {["PRIVATE_TOUR", "GROUP_TOUR"].map((t) => (
+                      {priceOptions.map((offer) => (
                         <Button
-                          key={t}
+                          key={offer.type}
                           shape="round"
                           size="small"
-                          type={selectedType === t ? "primary" : "default"}
-                          onClick={() => selectTourType(t)}
+                          type={selectedType === offer.type ? "primary" : "default"}
+                          onClick={() => selectTourType(offer.type)}
                           style={{ fontWeight: 600 }}
                         >
-                          {t === "PRIVATE_TOUR" ? "Private" : "Group"}
+                          {offer.label}
                         </Button>
                       ))}
                     </Flex>
@@ -666,20 +770,32 @@ children: tour.insurancePolicy ? (
         onCancel={() => setBookingOpen(false)}
         onOk={saveBooking}
         confirmLoading={savingBooking}
-        okText="Submit booking"
+        okText={payChoice === "paylater" ? "Submit booking" : "Continue to PayPal"}
         width={520}
+        footer={
+          createdBookingId
+            ? [
+                <Button
+                  key="close"
+                  onClick={() => setBookingOpen(false)}
+                >
+                  Close
+                </Button>,
+              ]
+            : undefined
+        }
       >
-        <Form form={bookingForm} layout="vertical">
+        <Form form={bookingForm} layout="vertical" disabled={!!createdBookingId}>
           <Form.Item
             name="tourType"
             label="Tour type"
             rules={[{ required: true, message: "Please choose a tour type" }]}
           >
             <Select
-              options={[
-                { value: "PRIVATE_TOUR", label: "Private Tour" },
-                { value: "GROUP_TOUR", label: "Group Tour" },
-              ]}
+              options={priceOptions.map((offer) => ({
+                value: offer.type,
+                label: `${offer.label} Tour`,
+              }))}
               onChange={(value) => setSelectedType(value)}
             />
           </Form.Item>
@@ -788,6 +904,54 @@ children: tour.insurancePolicy ? (
           >
             <InputNumber min={1} max={12} precision={0} style={{ width: "100%" }} />
           </Form.Item>
+          <Form.Item label="Payment" style={{ marginBottom: 12 }}>
+            <Radio.Group
+              value={payChoice}
+              onChange={(e) => setPayChoice(e.target.value)}
+              disabled={!!createdBookingId}
+            >
+              <Radio.Button value="paynow" disabled={paypalEnabled === false}>
+                Pay now with PayPal
+              </Radio.Button>
+              <Radio.Button value="paylater">Pay later</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+          <Card size="small" style={{ marginBottom: 12, background: "#fafafa" }}>
+            {quoteLoading ? (
+              <Spin size="small" />
+            ) : (
+              <Flex justify="space-between" align="baseline">
+                <Typography.Text type="secondary">
+                  Total {quote?.totalPax ?? watchedPax ?? 0} pax
+                </Typography.Text>
+                <Typography.Title level={4} style={{ margin: 0 }}>
+                  {vnd(quote?.totalAmount ?? 0)}
+                </Typography.Title>
+              </Flex>
+            )}
+            {payChoice === "paynow" && paypalEnabled && quote?.totalAmount ? (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                PayPal charges approximately {paypalCurrency}{" "}
+                {(Number(quote.totalAmount) / paypalRate).toFixed(2)} (rate{" "}
+                {paypalRate.toLocaleString("vi-VN")} VND/{paypalCurrency}).
+              </Typography.Text>
+            ) : null}
+            {payChoice === "paynow" && paypalEnabled === false && (
+              <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                PayPal is not configured. Choose Pay later or contact us.
+              </Typography.Text>
+            )}
+          </Card>
+          {createdBookingId && (
+            <PayPalCheckout
+              bookingId={createdBookingId}
+              onPaid={() => {
+                message.success("Payment received. Your booking is confirmed.");
+                setBookingOpen(false);
+              }}
+              onError={(text) => message.error(text)}
+            />
+          )}
           <Form.Item name="tourId" hidden>
             <Input />
           </Form.Item>

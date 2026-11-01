@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { Button, Card, Col, Empty, Flex, Row, Tag, Typography } from "antd";
 import {
   CompassOutlined,
@@ -18,6 +19,8 @@ import {
   formatDepartureTime,
   formatFreeCancellation,
   formatTourDuration,
+  hasTypePrice,
+  typeDisplayPrice,
 } from "@/lib/tour-display";
 
 interface HomepageTour {
@@ -43,12 +46,34 @@ interface HomepageTour {
   typePrices?: {
     type: "PRIVATE_TOUR" | "GROUP_TOUR";
     adultPrice?: string | number | null;
+    childPrice?: string | number | null;
+    infantPrice?: string | number | null;
+  }[];
+  categories?: {
+    isPrimary?: boolean;
+    category: {
+      id: string;
+      name: string;
+      slug: string;
+    };
   }[];
 }
+
+type HomepageCategory = {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+};
 
 const TYPE_COLOR: Record<string, string> = {
   PRIVATE_TOUR: "purple",
   GROUP_TOUR: "cyan",
+};
+
+const TYPE_TEXT_COLOR: Record<string, string> = {
+  PRIVATE_TOUR: "#722ed1",
+  GROUP_TOUR: "#08979c",
 };
 
 const vnd = (value: string | number | null | undefined) =>
@@ -63,12 +88,23 @@ const vnd = (value: string | number | null | undefined) =>
  */
 export default function HomePage({
   tours: initialTours,
+  categories = [],
 }: {
   tours: HomepageTour[];
+  categories?: HomepageCategory[];
 }) {
   const router = useRouter();
   const { user, loading: authLoading } = useApp();
   const tours = initialTours;
+  const [activeCategory, setActiveCategory] = useState("all");
+  const visibleTours =
+    activeCategory === "all"
+      ? tours
+      : tours.filter((tour) =>
+          (tour.categories ?? []).some(
+            (link) => link.category?.slug === activeCategory,
+          ),
+        );
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
@@ -127,22 +163,70 @@ export default function HomePage({
         </Typography.Text>
       </Flex>
 
+      {categories.length > 0 && (
+        <Flex
+          wrap
+          gap={8}
+          justify="center"
+          style={{
+            padding: "0 24px 24px",
+            width: "100%",
+            maxWidth: 1280,
+            margin: "0 auto",
+          }}
+        >
+          <Button
+            shape="round"
+            type={activeCategory === "all" ? "primary" : "default"}
+            onClick={() => setActiveCategory("all")}
+          >
+            All tours
+          </Button>
+          {categories.map((category) => (
+            <Button
+              key={category.id}
+              shape="round"
+              type={activeCategory === category.slug ? "primary" : "default"}
+              onClick={() => setActiveCategory(category.slug)}
+            >
+              {category.name}
+            </Button>
+          ))}
+        </Flex>
+      )}
+
       <Flex
         flex="1"
         justify="center"
         style={{ padding: "0 24px 56px", width: "100%", maxWidth: 1280, margin: "0 auto" }}
       >
-        {tours.length === 0 ? (
-          <Empty description="No tours available right now." />
+        {visibleTours.length === 0 ? (
+          <Empty
+            description={
+              activeCategory === "all"
+                ? "No tours available right now."
+                : "No tours in this category yet."
+            }
+          />
         ) : (
-          <Row gutter={[16, 16]} align="top">
-            {tours.map((tour) => {
+          <Row
+            gutter={[16, 16]}
+            align="top"
+            style={{ width: "100%" }}
+          >
+            {visibleTours.map((tour) => {
               const typePrices = tour.typePrices ?? [];
-              const priceOf = (type: string) =>
-                Number(typePrices.find((p) => p.type === type)?.adultPrice ?? 0) || 0;
+              const priceOf = (type: string) => {
+                const match = typePrices.find((p) => p.type === type);
+                if (match) {
+                  return hasTypePrice(match) ? typeDisplayPrice(match) : 0;
+                }
+                return typePrices.length === 0 && type === tour.type
+                  ? Number(tour.adultPrice ?? 0) || 0
+                  : 0;
+              };
               const privatePrice = priceOf("PRIVATE_TOUR");
               const groupPrice = priceOf("GROUP_TOUR");
-              const bothTypes = privatePrice > 0 && groupPrice > 0;
               const fallbackType = tour.type ?? "PRIVATE_TOUR";
               const offers = [
                 {
@@ -171,15 +255,6 @@ export default function HomePage({
               }
               const promoOffers = offers.filter((o) => o.promo);
               const promo = promoOffers.length > 0;
-              const cheapest = [...offers]
-                .filter((o) => o.price > 0)
-                .sort((a, b) => a.price - b.price)[0];
-              const fromPrice = cheapest ? cheapest.price : Number(tour.adultPrice ?? 0);
-              const price = vnd(fromPrice);
-              const typeLabel = bothTypes
-                ? "Private · Group"
-                : (tour.type ?? "").replace("_", " ");
-              const typeColor = bothTypes ? "blue" : TYPE_COLOR[tour.type] ?? "blue";
               return (
                 <Col
                   xs={24}
@@ -304,13 +379,25 @@ export default function HomePage({
                       gap={8}
                       style={{ height: 24, overflow: "hidden" }}
                     >
-                      <Tag
-                        color={typeColor}
-                        style={{ borderRadius: 999, fontWeight: 600 }}
+                      <Flex gap={4} align="center" style={{ minWidth: 0 }}>
+                        {offers.map((offer) => (
+                          <Tag
+                            key={offer.type}
+                            color={TYPE_COLOR[offer.type] ?? "blue"}
+                            style={{
+                              margin: 0,
+                              borderRadius: 999,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {offer.label}
+                          </Tag>
+                        ))}
+                      </Flex>
+                      <Typography.Text
+                        type="secondary"
+                        style={{ fontSize: 12, whiteSpace: "nowrap" }}
                       >
-                        {typeLabel}
-                      </Tag>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                         {tour.code}
                       </Typography.Text>
                     </Flex>
@@ -336,31 +423,45 @@ export default function HomePage({
                       </Link>
                     </h2>
 
-                    {promo ? (
-                      <div
-                        style={{
-                          marginTop: 2,
-                          padding: "8px 10px",
-                          borderRadius: 12,
-                          border: "1px solid rgba(220,38,38,0.22)",
-                          background:
-                            "linear-gradient(120deg, rgba(220,38,38,0.06), rgba(234,179,8,0.08))",
-                        }}
-                      >
-                        <Flex vertical gap={6}>
-                          {promoOffers.map((offer, index) => (
-                            <div
-                              key={offer.type}
-                              style={
-                                index > 0
-                                  ? {
-                                      paddingTop: 6,
-                                      borderTop:
-                                        "1px dashed rgba(220,38,38,0.22)",
-                                    }
-                                  : undefined
-                              }
-                            >
+                    <div
+                      style={
+                        promo
+                          ? {
+                              marginTop: 2,
+                              padding: "8px 10px",
+                              borderRadius: 12,
+                              border: "1px solid rgba(220,38,38,0.22)",
+                              background:
+                                "linear-gradient(120deg, rgba(220,38,38,0.06), rgba(234,179,8,0.08))",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 6,
+                            }
+                          : {
+                              height: 44,
+                              paddingTop: 4,
+                              display: "flex",
+                              flexDirection: "column",
+                              justifyContent: "space-between",
+                              overflow: "hidden",
+                            }
+                      }
+                    >
+                      {offers.map((offer, index) => (
+                        <div
+                          key={offer.type}
+                          style={
+                            promo && index > 0
+                              ? {
+                                  paddingTop: 6,
+                                  borderTop:
+                                    "1px dashed rgba(220,38,38,0.22)",
+                                }
+                              : undefined
+                          }
+                        >
+                          {promo ? (
+                            <>
                               <Flex
                                 justify="space-between"
                                 align="center"
@@ -374,55 +475,70 @@ export default function HomePage({
                                       fontWeight: 800,
                                       letterSpacing: 0.4,
                                       textTransform: "uppercase",
-                                      color: "#b91c1c",
+                                      color:
+                                        TYPE_TEXT_COLOR[offer.type] ??
+                                        "var(--ant-color-text-secondary)",
                                     }}
                                   >
                                     {offer.label}
                                   </span>
-                                  <span
-                                    style={{
-                                      padding: "0 5px",
-                                      borderRadius: 999,
-                                      background: "#dc2626",
-                                      color: "#fff",
-                                      fontSize: 9,
-                                      fontWeight: 700,
-                                      lineHeight: "14px",
-                                    }}
-                                  >
-                                    -{offer.pct}%
-                                  </span>
+                                  {offer.promo && (
+                                    <span
+                                      style={{
+                                        padding: "0 5px",
+                                        borderRadius: 999,
+                                        background: "#dc2626",
+                                        color: "#fff",
+                                        fontSize: 9,
+                                        fontWeight: 700,
+                                        lineHeight: "14px",
+                                      }}
+                                    >
+                                      -{offer.pct}%
+                                    </span>
+                                  )}
                                 </Flex>
-                                <PromoCountdown
-                                  tour={tour}
-                                  compact
-                                  bare
-                                  showLabel={false}
-                                />
+                                {offer.promo && (
+                                  <PromoCountdown
+                                    tour={tour}
+                                    compact
+                                    bare
+                                    showLabel={false}
+                                  />
+                                )}
                               </Flex>
                               <Flex
                                 align="baseline"
                                 gap={5}
                                 style={{ minWidth: 0, marginTop: 1 }}
                               >
-                                <Typography.Text
-                                  type="secondary"
-                                  delete
-                                  style={{ fontSize: 10, whiteSpace: "nowrap" }}
-                                >
-                                  {vnd(offer.price)}
-                                </Typography.Text>
+                                {offer.promo && (
+                                  <Typography.Text
+                                    type="secondary"
+                                    delete
+                                    style={{
+                                      fontSize: 10,
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {vnd(offer.price)}
+                                  </Typography.Text>
+                                )}
                                 <Typography.Text
                                   strong
                                   style={{
-                                    color: "#dc2626",
+                                    color: offer.promo
+                                      ? "#dc2626"
+                                      : "var(--ant-color-primary)",
                                     fontWeight: 800,
                                     fontSize: 14,
                                     whiteSpace: "nowrap",
                                   }}
                                 >
                                   {vnd(
-                                    discountedPrice(offer.price, offer.pct),
+                                    offer.promo
+                                      ? discountedPrice(offer.price, offer.pct)
+                                      : offer.price,
                                   )}
                                 </Typography.Text>
                                 <Typography.Text
@@ -432,36 +548,60 @@ export default function HomePage({
                                   / person
                                 </Typography.Text>
                               </Flex>
-                            </div>
-                          ))}
-                        </Flex>
-                      </div>
-                    ) : (
-                      <div
-                        style={{
-                          height: 44,
-                          display: "flex",
-                          alignItems: "flex-end",
-                          overflow: "hidden",
-                        }}
-                      >
-                        <Typography.Title
-                          level={4}
-                          style={{
-                            margin: "4px 0 0",
-                            color: "var(--ant-color-primary)",
-                            fontSize: 18,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          From {price}
-                          <Typography.Text type="secondary" style={{ fontSize: 13, fontWeight: 400 }}>
-                            {" "}
-                            / person
-                          </Typography.Text>
-                        </Typography.Title>
-                      </div>
-                    )}
+                            </>
+                          ) : (
+                            <Flex
+                              justify="space-between"
+                              align="baseline"
+                              gap={8}
+                              style={{ minWidth: 0 }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 800,
+                                  letterSpacing: 0.4,
+                                  textTransform: "uppercase",
+                                  color:
+                                    TYPE_TEXT_COLOR[offer.type] ??
+                                    "var(--ant-color-text-secondary)",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {offer.label}
+                              </span>
+                              <span
+                                style={{
+                                  display: "flex",
+                                  alignItems: "baseline",
+                                  gap: 4,
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                <Typography.Text
+                                  strong
+                                  style={{
+                                    color:
+                                      TYPE_TEXT_COLOR[offer.type] ??
+                                      "var(--ant-color-primary)",
+                                    fontSize: 14,
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {vnd(offer.price)}
+                                </Typography.Text>
+                                <Typography.Text
+                                  type="secondary"
+                                  style={{ fontSize: 10, whiteSpace: "nowrap" }}
+                                >
+                                  / person
+                                </Typography.Text>
+                              </span>
+                            </Flex>
+                          )}
+                        </div>
+                      ))}
+                    </div>
 
                     <Flex gap={12} wrap align="center" style={{ marginTop: "auto", paddingTop: 8 }}>
                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -484,7 +624,13 @@ export default function HomePage({
                       ))}
                     </Flex>
                     <Link
-                      href={`/tour/${tour.slug || tour.id}`}
+                      href={
+                        user
+                          ? `/tour/${tour.slug || tour.id}`
+                          : `/login?redirect=${encodeURIComponent(
+                              `/tour/${tour.slug || tour.id}`,
+                            )}`
+                      }
                       style={{ display: "block", marginTop: 4 }}
                     >
                       <Button

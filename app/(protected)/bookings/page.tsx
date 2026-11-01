@@ -13,6 +13,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Table,
@@ -75,6 +76,9 @@ export default function BookingsPage() {
   const canUpdateAssignment = hasPermission("assignment.update");
   const canManageMailbox = hasPermission("gmail.manage");
   const isAdmin = user?.role === "ADMIN";
+  const canCollectPayment = isAdmin || hasPermission("accounting.read");
+  const canConfirmPayment =
+    isAdmin || hasPermission("accounting.money.verify");
 
   const [bookings, setBookings] = useState<any[]>([]);
   const [bookingsTotal, setBookingsTotal] = useState(0);
@@ -106,6 +110,11 @@ export default function BookingsPage() {
   const [savingLink, setSavingLink] = useState(false);
 
   const [bookingDetail, setBookingDetail] = useState<any>(null);
+  const [paymentBusy, setPaymentBusy] = useState(false);
+  const [otaOpen, setOtaOpen] = useState(false);
+  const [otaSaving, setOtaSaving] = useState(false);
+  const [otaBooking, setOtaBooking] = useState<any>(null);
+  const [otaForm] = Form.useForm();
 
   const [rawData, setRawData] = useState<any[]>([]);
   const [rawDataTotal, setRawDataTotal] = useState(0);
@@ -291,6 +300,90 @@ export default function BookingsPage() {
       ),
     },
   ]);
+
+  const openBookingDetail = async (record: any) => {
+    setBookingDetail(record);
+    if (!record?.id) return;
+    try {
+      const res = await api.get(`/bookings/${record.id}`);
+      setBookingDetail(res.data);
+    } catch {
+      // Keep the row snapshot when the detail endpoint is unavailable.
+    }
+  };
+
+  const reloadBookingDetail = async (id: string) => {
+    try {
+      const res = await api.get(`/bookings/${id}`);
+      setBookingDetail(res.data);
+      loadBookings();
+    } catch (e) {
+      message.error(getErrorMessage(e, "Could not reload booking"));
+    }
+  };
+
+  const collectBookingPayment = async () => {
+    if (!bookingDetail?.id) return;
+    setPaymentBusy(true);
+    try {
+      await api.post(`/bookings/${bookingDetail.id}/payment/collect`, {
+        method: "CASH",
+      });
+      message.success("Cash collection recorded. Accounting must confirm it.");
+      await reloadBookingDetail(bookingDetail.id);
+    } catch (e) {
+      message.error(getErrorMessage(e, "Could not record the collection"));
+    } finally {
+      setPaymentBusy(false);
+    }
+  };
+
+  const confirmBookingPayment = async () => {
+    if (!bookingDetail?.id) return;
+    setPaymentBusy(true);
+    try {
+      await api.post(`/bookings/${bookingDetail.id}/payment/confirm`, {
+        method: bookingDetail.paymentMethod === "BANK_TRANSFER" ? "BANK_TRANSFER" : "CASH",
+      });
+      message.success("Payment confirmed");
+      await reloadBookingDetail(bookingDetail.id);
+    } catch (e) {
+      message.error(getErrorMessage(e, "Could not confirm the payment"));
+    } finally {
+      setPaymentBusy(false);
+    }
+  };
+
+  const openOtaRemittance = (booking: any) => {
+    setOtaBooking(booking);
+    otaForm.resetFields();
+    otaForm.setFieldsValue({ netAmount: undefined });
+    setOtaOpen(true);
+  };
+
+  const saveOtaRemittance = async () => {
+    const values = await otaForm.validateFields();
+    if (!otaBooking?.id) return;
+    setOtaSaving(true);
+    try {
+      await api.post("/payments/ota/remittance", {
+        bookingId: otaBooking.id,
+        netAmount: values.netAmount,
+        grossAmount: values.grossAmount,
+        commissionAmount: values.commissionAmount,
+        paidAt: values.paidAt?.format("YYYY-MM-DD"),
+        reference: values.reference,
+        note: values.note,
+      });
+      message.success("OTA remittance recorded");
+      setOtaOpen(false);
+      await reloadBookingDetail(otaBooking.id);
+    } catch (e) {
+      message.error(getErrorMessage(e, "Could not record the remittance"));
+    } finally {
+      setOtaSaving(false);
+    }
+  };
 
   const loadBookings = () => {
     setBookingsLoading(true);
@@ -1128,7 +1221,7 @@ export default function BookingsPage() {
                   scroll={{ x: 1660, y: bodyY(bookingsPageSize) }}
                   onRow={(record) => ({
                     style: { cursor: "pointer" },
-                    onClick: () => setBookingDetail(record),
+                    onClick: () => void openBookingDetail(record),
                   })}
                   pagination={{
                     current: bookingsPage,
@@ -1486,13 +1579,125 @@ extra={
               { key: "location", label: "Location (lat/lng)", children: bookingDetail.latitude != null ? `${bookingDetail.latitude}, ${bookingDetail.longitude ?? ""}` : "—" },
               { key: "status", label: "Status", children: bookingDetail.status ?? "—" },
               { key: "payment", label: "Payment", children: bookingDetail.payment ?? "—" },
+              ...(bookingDetail.channel === "WEBSITE" || bookingDetail.totalAmount
+                ? [
+                    { key: "totalAmount", label: "Total", children: bookingDetail.totalAmount != null ? `${Number(bookingDetail.totalAmount).toLocaleString("vi-VN", { maximumFractionDigits: 0 })} ${bookingDetail.currency ?? "VND"}` : "—" },
+                    { key: "paymentMethod", label: "Method", children: bookingDetail.paymentMethod ?? (bookingDetail.payLater ? "Pay later" : "—") },
+                    { key: "payLater", label: "Pay later", children: bookingDetail.payLater ? "Yes" : "No" },
+                    { key: "paymentDue", label: "Payment due", children: bookingDetail.paymentDueAt ? new Date(bookingDetail.paymentDueAt).toLocaleString() : "—" },
+                    { key: "collected", label: "Collected", children: bookingDetail.paymentCollectedAt ? `${new Date(bookingDetail.paymentCollectedAt).toLocaleString()}${bookingDetail.paymentCollectedByName ? ` · ${bookingDetail.paymentCollectedByName}` : ""}` : "—" },
+                    { key: "confirmed", label: "Confirmed", children: bookingDetail.paymentConfirmedAt ? `${new Date(bookingDetail.paymentConfirmedAt).toLocaleString()}${bookingDetail.paymentConfirmedByName ? ` · ${bookingDetail.paymentConfirmedByName}` : ""}` : "—" },
+                    { key: "paymentNote", label: "Payment note", children: bookingDetail.paymentNote ?? "—" },
+                  ]
+                : []),
               { key: "noShow", label: "No-show", children: bookingDetail.isNoShow ? (bookingDetail.noShowReason ?? "Yes") : "No" },
               { key: "assignment", label: "Assignment", children: bookingDetail.assignmentId ?? "—" },
               { key: "created", label: "Created", children: new Date(bookingDetail.createdAt).toLocaleString() },
             ]}
           />
         )}
+        {bookingDetail?.payLater && bookingDetail?.payment === "PENDING" && (
+          <Flex gap={8} style={{ marginTop: 16 }} wrap>
+            {canCollectPayment && !bookingDetail.paymentCollectedAt && (
+              <Popconfirm
+                title="Record cash collected?"
+                description="This does not mark the booking paid. Accounting must confirm it."
+                onConfirm={collectBookingPayment}
+                okText="Record"
+              >
+                <Button loading={paymentBusy}>Mark cash collected</Button>
+              </Popconfirm>
+            )}
+            {canConfirmPayment && (
+              <Popconfirm
+                title="Confirm payment received?"
+                description="This marks the booking PAID and writes the receipt."
+                onConfirm={confirmBookingPayment}
+                okText="Confirm"
+              >
+                <Button type="primary" loading={paymentBusy}>
+                  Confirm payment
+                </Button>
+              </Popconfirm>
+            )}
+          </Flex>
+        )}
+        {Array.isArray(bookingDetail?.payments) && bookingDetail.payments.length > 0 && (
+          <Card size="small" title="Payment records" style={{ marginTop: 16 }}>
+            {bookingDetail.payments.map((p: any) => (
+              <Flex key={p.id} justify="space-between" gap={8} style={{ marginBottom: 8 }}>
+                <Typography.Text style={{ fontSize: 12 }}>
+                  {p.method} · {p.payerType} · {p.provider ?? "internal"}
+                </Typography.Text>
+                <Typography.Text style={{ fontSize: 12 }}>
+                  {Number(p.amount).toLocaleString("vi-VN", { maximumFractionDigits: 0 })}{" "}
+                  {p.currency} · <Tag style={{ margin: 0 }}>{p.status}</Tag>
+                </Typography.Text>
+              </Flex>
+            ))}
+          </Card>
+        )}
+        {bookingDetail &&
+          !["WEBSITE", "MANUAL"].includes(bookingDetail.channel) &&
+          (isAdmin || hasPermission("accounting.money.verify")) && (
+            <Button
+              style={{ marginTop: 16 }}
+              block
+              onClick={() => openOtaRemittance(bookingDetail)}
+            >
+              Record OTA remittance
+            </Button>
+          )}
       </Drawer>
+
+      <Modal
+        title={`Record OTA remittance · ${otaBooking?.bookingRef ?? ""}`}
+        open={otaOpen}
+        onCancel={() => setOtaOpen(false)}
+        onOk={saveOtaRemittance}
+        confirmLoading={otaSaving}
+        okText="Record remittance"
+        width={460}
+      >
+        <Form form={otaForm} layout="vertical">
+          <Form.Item
+            name="netAmount"
+            label="Net received (VND)"
+            rules={[{ required: true, message: "Net amount is required" }]}
+          >
+            <InputNumber<number>
+              min={1}
+              precision={0}
+              style={{ width: "100%" }}
+              formatter={(v) =>
+                `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+              }
+              parser={(v) => Number(String(v ?? "").replace(/,/g, ""))}
+            />
+          </Form.Item>
+          <Flex gap={8}>
+            <Form.Item name="grossAmount" label="Gross (optional)" style={{ flex: 1 }}>
+              <InputNumber min={0} precision={0} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              name="commissionAmount"
+              label="Commission (optional)"
+              style={{ flex: 1 }}
+            >
+              <InputNumber min={0} precision={0} style={{ width: "100%" }} />
+            </Form.Item>
+          </Flex>
+          <Form.Item name="paidAt" label="Received date">
+            <DatePicker style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item name="reference" label="Reference">
+            <Input placeholder="Bank / OTA remittance reference" />
+          </Form.Item>
+          <Form.Item name="note" label="Note">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }
