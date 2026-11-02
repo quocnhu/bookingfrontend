@@ -47,7 +47,8 @@ export default function PayPalCheckout({ bookingId, onPaid, onError }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [config, setConfig] = useState<PayPalConfig | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [fatalError, setFatalError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const paidRef = useRef(false);
   const paidCbRef = useRef(onPaid);
   const errorCbRef = useRef(onError);
@@ -62,10 +63,14 @@ export default function PayPalCheckout({ bookingId, onPaid, onError }: Props) {
         if (!active) return;
         setConfig(res.data);
         if (!res.data.enabled) {
-          setError("PayPal is not configured yet. Please choose Pay later.");
+          setFatalError("PayPal is not configured yet. Please choose Pay later.");
         }
       })
-      .catch((e) => active && setError(getErrorMessage(e, "Could not load PayPal")))
+      .catch(
+        (e) =>
+          active &&
+          setFatalError(getErrorMessage(e, "Could not load PayPal")),
+      )
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
@@ -73,6 +78,7 @@ export default function PayPalCheckout({ bookingId, onPaid, onError }: Props) {
   }, []);
 
   useEffect(() => {
+    if (loading) return;
     if (!config?.enabled || !config.clientId || !hostRef.current) return;
     let cancelled = false;
     let buttons: any = null;
@@ -85,6 +91,7 @@ export default function PayPalCheckout({ bookingId, onPaid, onError }: Props) {
         buttons = (window as any).paypal.Buttons({
           style: { layout: "vertical", shape: "rect", label: "paypal", height: 45 },
           createOrder: async () => {
+            setNotice(null);
             const res = await api.post("/payments/paypal/orders", { bookingId });
             return res.data.orderId as string;
           },
@@ -99,17 +106,22 @@ export default function PayPalCheckout({ bookingId, onPaid, onError }: Props) {
               paidCbRef.current();
             } catch (e) {
               const text = getErrorMessage(e, "PayPal payment failed");
-              setError(text);
+              setNotice(`${text} You can try again below.`);
               errorCbRef.current?.(text);
             }
           },
           onCancel: () => {
-            setError("PayPal payment was cancelled. Your booking is still unpaid.");
+            void api
+              .post("/payments/paypal/cancel", { bookingId })
+              .catch(() => undefined);
+            setNotice(
+              "PayPal payment was cancelled. Your booking is still unpaid — you can try again below.",
+            );
           },
           onError: (e: unknown) => {
             const text =
               e instanceof Error ? e.message : "PayPal could not complete the payment";
-            setError(text);
+            setNotice(`${text} You can try again below.`);
             errorCbRef.current?.(text);
           },
         });
@@ -118,7 +130,7 @@ export default function PayPalCheckout({ bookingId, onPaid, onError }: Props) {
       .catch((e) => {
         if (!cancelled) {
           const text = getErrorMessage(e, "Could not load PayPal");
-          setError(text);
+          setFatalError(text);
           errorCbRef.current?.(text);
         }
       });
@@ -131,7 +143,7 @@ export default function PayPalCheckout({ bookingId, onPaid, onError }: Props) {
         // ignore SDK cleanup errors
       }
     };
-  }, [config, bookingId]);
+  }, [config, bookingId, loading]);
 
   if (loading) {
     return (
@@ -140,8 +152,10 @@ export default function PayPalCheckout({ bookingId, onPaid, onError }: Props) {
       </Flex>
     );
   }
-  if (error) {
-    return <Alert type="warning" showIcon message={error} style={{ marginTop: 12 }} />;
+  if (fatalError) {
+    return (
+      <Alert type="warning" showIcon message={fatalError} style={{ marginTop: 12 }} />
+    );
   }
   return (
     <div style={{ marginTop: 12 }}>
@@ -149,6 +163,14 @@ export default function PayPalCheckout({ bookingId, onPaid, onError }: Props) {
         Secure payment processed by PayPal. Your booking is confirmed only after
         PayPal captures the payment.
       </Typography.Text>
+      {notice && (
+        <Alert
+          type="warning"
+          showIcon
+          message={notice}
+          style={{ marginTop: 8 }}
+        />
+      )}
       <div ref={hostRef} style={{ marginTop: 8 }} />
     </div>
   );

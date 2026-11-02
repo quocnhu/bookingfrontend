@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  Alert,
   AutoComplete,
   Button,
   Card,
   Col,
   DatePicker,
+  Descriptions,
   Divider,
   Empty,
   Flex,
@@ -19,11 +22,13 @@ import {
   Row,
   Select,
   Spin,
+  Steps,
   Tabs,
   Tag,
   Typography,
 } from "antd";
 import { message } from "@/lib/antd-message";
+import dayjs from "dayjs";
 import {
   PrinterOutlined,
   EnvironmentOutlined,
@@ -77,6 +82,7 @@ export default function PublicTourDetail({
   const [bookingOpen, setBookingOpen] = useState(false);
   const [bookingForm] = Form.useForm();
   const [savingBooking, setSavingBooking] = useState(false);
+  const [currentStep, setCurrentStep] = useState(0);
   const [coordinates, setCoordinates] = useState<any[]>([]);
   const [payChoice, setPayChoice] = useState<"paynow" | "paylater">("paynow");
   const [quote, setQuote] = useState<any>(null);
@@ -86,6 +92,8 @@ export default function PublicTourDetail({
   const [paypalRate, setPaypalRate] = useState(25000);
   const [paypalCurrency, setPaypalCurrency] = useState("USD");
   const watchedPax = Form.useWatch("totalPax", bookingForm);
+  const watchedDate = Form.useWatch("startingDate", bookingForm);
+  const watchedHotel = Form.useWatch("hotelName", bookingForm);
 
   const canEdit = hasPermission("tour.itinerary.edit") || hasPermission("tour.update");
 
@@ -123,12 +131,40 @@ export default function PublicTourDetail({
   const offeredTypes: string[] = priceOptions.map((o) => o.type);
   const offeredKey = offeredTypes.join(",");
 
+  const categories = useMemo(
+    () =>
+      [...(tour?.categories ?? [])]
+        .filter((link) => link.category?.isActive !== false)
+        .sort(
+          (a, b) =>
+            Number(Boolean(b.isPrimary)) - Number(Boolean(a.isPrimary)) ||
+            (a.category.sortOrder ?? 0) - (b.category.sortOrder ?? 0) ||
+            a.category.name.localeCompare(b.category.name),
+        ),
+    [tour],
+  );
+
   const initialType =
     tour?.type && offeredTypes.includes(tour.type)
       ? tour.type
       : offeredTypes[0] ?? tour?.type ?? "PRIVATE_TOUR";
 
   const [selectedType, setSelectedType] = useState<string>(initialType);
+  const privatePaxOptions = useMemo(
+    () =>
+      (tour?.privatePaxPrices ?? [])
+        .filter((row) => Number(row.pricePerPerson ?? 0) > 0)
+        .map((row) => row.pax)
+        .sort((a, b) => a - b),
+    [tour],
+  );
+  const privateMaxPax = privatePaxOptions.length
+    ? Math.max(...privatePaxOptions)
+    : 12;
+  const maxSelectablePax =
+    selectedType === "PRIVATE_TOUR" && privatePaxOptions.length
+      ? privateMaxPax
+      : 12;
 
   useEffect(() => {
     if (!offeredTypes.includes(selectedType)) {
@@ -139,7 +175,15 @@ export default function PublicTourDetail({
 
   const selectTourType = (type: string) => {
     setSelectedType(type);
-    bookingForm.setFieldsValue({ tourType: type });
+    const nextMax =
+      type === "PRIVATE_TOUR" && privatePaxOptions.length
+        ? privateMaxPax
+        : 12;
+    const currentPax = Number(bookingForm.getFieldValue("totalPax") ?? 1);
+    bookingForm.setFieldsValue({
+      tourType: type,
+      ...(currentPax > nextMax ? { totalPax: nextMax } : {}),
+    });
   };
 
   const hasPromo = priceOptions.some((o) => o.promo);
@@ -169,6 +213,7 @@ export default function PublicTourDetail({
   }, [paypalEnabled, payChoice, createdBookingId]);
 
   useEffect(() => {
+    if (createdBookingId) return;
     if (!bookingOpen || !tour?.id || !selectedType || !watchedPax) {
       setQuote(null);
       return;
@@ -187,7 +232,7 @@ export default function PublicTourDetail({
     return () => {
       active = false;
     };
-  }, [bookingOpen, tour?.id, selectedType, watchedPax]);
+  }, [bookingOpen, tour?.id, selectedType, watchedPax, createdBookingId]);
 
   const openBooking = () => {
     if (!user) {
@@ -199,6 +244,7 @@ export default function PublicTourDetail({
     const tourType = selectedType ?? tour?.type ?? "PRIVATE_TOUR";
     setCreatedBookingId(null);
     setQuote(null);
+    setCurrentStep(0);
     setPayChoice(paypalEnabled === false ? "paylater" : "paynow");
     bookingForm.resetFields();
     bookingForm.setFieldsValue({
@@ -207,8 +253,35 @@ export default function PublicTourDetail({
       departureTime: tour?.departureTimes?.[0],
       customerName: user.name ?? "",
       mail: user.email ?? "",
+      totalPax: 1,
+      startingDate: dayjs().add(1, "day").startOf("day"),
     });
     setBookingOpen(true);
+  };
+
+  const stepFields = (step: number) => {
+    if (step === 0) {
+      return [
+        "tourType",
+        ...((tour?.departureTimes ?? []).length ? ["departureTime"] : []),
+        "startingDate",
+        "totalPax",
+        "paxDetail",
+      ];
+    }
+    if (step === 1) {
+      return ["customerName", "phone", "mail", "hotelName", "address"];
+    }
+    return [];
+  };
+
+  const goToNextStep = async () => {
+    try {
+      await bookingForm.validateFields(stepFields(currentStep));
+      setCurrentStep((step) => Math.min(2, step + 1));
+    } catch {
+      // Ant Design renders the field errors; the user can correct them here.
+    }
   };
 
   const saveBooking = async () => {
@@ -216,7 +289,12 @@ export default function PublicTourDetail({
       setBookingOpen(false);
       return;
     }
-    const values = await bookingForm.validateFields();
+    let values: any;
+    try {
+      values = await bookingForm.validateFields();
+    } catch {
+      return;
+    }
     setSavingBooking(true);
     try {
       if (payChoice === "paynow" && paypalEnabled === false) {
@@ -273,7 +351,7 @@ export default function PublicTourDetail({
           <Flex vertical gap={16} style={{ width: "100%", maxWidth: 1360 }}>
             {/* ─── PUBLIC VIEW TOP BAR ─── */}
             <Flex justify="space-between" align="center" wrap gap={12}>
-              <Flex align="center" gap={8}>
+              <Flex align="center" gap={8} wrap>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {tour.code}
                 </Typography.Text>
@@ -288,6 +366,19 @@ export default function PublicTourDetail({
                 <Typography.Title level={1} style={{ margin: 0, fontSize: 26 }}>
                   {tour.name}
                 </Typography.Title>
+                {categories.map(({ category, isPrimary }) => (
+                  <Link
+                    key={category.id}
+                    href={`/tours?category=${encodeURIComponent(category.slug)}`}
+                  >
+                    <Tag
+                      color={isPrimary ? "blue" : "default"}
+                      style={{ cursor: "pointer", marginInlineEnd: 0 }}
+                    >
+                      {category.name}
+                    </Tag>
+                  </Link>
+                ))}
               </Flex>
               <Flex gap={8} className="no-print">
                 {user && canEdit && (
@@ -593,7 +684,8 @@ children: tour.insurancePolicy ? (
                     </Flex>
 
                     <Typography.Text type="secondary" style={{ fontSize: 12, marginTop: 12 }}>
-                      TOTAL PRICE ({(selectedType ?? "").replace("_", " ").toUpperCase()})
+                      {selectedType === "PRIVATE_TOUR" ? "FROM PRICE" : "TOTAL PRICE"} (
+                      {(selectedType ?? "").replace("_", " ").toUpperCase()})
                     </Typography.Text>
                     {hasPromo ? (
                       <div
@@ -696,7 +788,9 @@ children: tour.insurancePolicy ? (
                       </Typography.Title>
                     )}
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      Per person · Taxes included
+                      {selectedType === "PRIVATE_TOUR"
+                        ? "Per person · price depends on group size"
+                        : "Per person · Taxes included"}
                     </Typography.Text>
 
                     <Divider style={{ margin: "16px 0" }} />
@@ -768,158 +862,74 @@ children: tour.insurancePolicy ? (
         title={tour ? `Book · ${tour.name}` : "Book this tour"}
         open={bookingOpen}
         onCancel={() => setBookingOpen(false)}
-        onOk={saveBooking}
-        confirmLoading={savingBooking}
-        okText={payChoice === "paylater" ? "Submit booking" : "Continue to PayPal"}
-        width={520}
+        width={640}
         footer={
           createdBookingId
             ? [
-                <Button
-                  key="close"
-                  onClick={() => setBookingOpen(false)}
-                >
+                <Button key="close" onClick={() => setBookingOpen(false)}>
                   Close
                 </Button>,
               ]
-            : undefined
+            : [
+                currentStep > 0 ? (
+                  <Button key="back" onClick={() => setCurrentStep((step) => step - 1)}>
+                    Back
+                  </Button>
+                ) : null,
+                <Button
+                  key="next"
+                  type="primary"
+                  loading={currentStep === 2 && savingBooking}
+                  disabled={
+                    currentStep === 2 &&
+                    (quoteLoading ||
+                      !quote?.totalAmount ||
+                      (payChoice === "paynow" && paypalEnabled === false))
+                  }
+                  onClick={() => {
+                    if (currentStep < 2) {
+                      void goToNextStep();
+                    } else {
+                      void saveBooking();
+                    }
+                  }}
+                >
+                  {currentStep < 2
+                    ? "Continue"
+                    : payChoice === "paylater"
+                      ? "Confirm pay-later booking"
+                      : "Create booking & pay"}
+                </Button>,
+              ]
         }
+        styles={{
+          body: {
+            maxHeight: "calc(100vh - 300px)",
+            overflowY: "auto",
+            paddingRight: 4,
+          },
+        }}
       >
-        <Form form={bookingForm} layout="vertical" disabled={!!createdBookingId}>
-          <Form.Item
-            name="tourType"
-            label="Tour type"
-            rules={[{ required: true, message: "Please choose a tour type" }]}
-          >
-            <Select
-              options={priceOptions.map((offer) => ({
-                value: offer.type,
-                label: `${offer.label} Tour`,
-              }))}
-              onChange={(value) => setSelectedType(value)}
+        <Steps
+          size="small"
+          current={createdBookingId ? 2 : currentStep}
+          items={[
+            { title: "Trip" },
+            { title: "Contact" },
+            { title: "Payment" },
+          ]}
+          style={{ marginBottom: 20 }}
+        />
+
+        {createdBookingId ? (
+          <Flex vertical gap={12}>
+            <Alert
+              type="success"
+              showIcon
+              message="Booking created — payment is the last step"
+              description="Complete the PayPal payment below. The booking stays unpaid until PayPal confirms the capture."
             />
-          </Form.Item>
-          {(tour?.departureTimes ?? []).length > 0 && (
-            <Form.Item
-              name="departureTime"
-              label="Departure time"
-              rules={[
-                { required: true, message: "Please choose a departure time" },
-              ]}
-            >
-              <Select
-                placeholder="Choose a departure time"
-                options={(tour?.departureTimes ?? []).map((time) => ({
-                  value: time,
-                  label: formatDepartureTime(time),
-                }))}
-              />
-            </Form.Item>
-          )}
-          <Form.Item label="Price" style={{ marginBottom: 8 }}>
-            <Typography.Text strong>
-              {vnd(discountedPrice(priceOf(selectedType), discountFor(tour ?? {}, selectedType)))}{" "}
-              <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-                / person
-              </Typography.Text>
-            </Typography.Text>
-          </Form.Item>
-          <Form.Item
-            name="customerName"
-            label="Customer name"
-            rules={[{ required: true, message: "Customer name is required" }]}
-          >
-            <Input placeholder="Your full name" />
-          </Form.Item>
-          <Form.Item
-            name="hotelName"
-            label="Hotel"
-            rules={[{ required: true, message: "Please pick a hotel from the list or type a new one" }]}
-            required
-          >
-            <AutoComplete
-              options={coordinates.map((c: any) => ({ value: c.hotelName }))}
-              filterOption={(input, option) =>
-                String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())
-              }
-              onChange={(value) => {
-                const c = coordinates.find(
-                  (x: any) => x.hotelName.toLowerCase() === String(value ?? "").trim().toLowerCase(),
-                );
-                if (c) {
-                  bookingForm.setFieldsValue({
-                    address: c.address,
-                    latitude: c.latitude,
-                    longitude: c.longitude,
-                  });
-                } else {
-                  bookingForm.setFieldsValue({
-                    address: undefined,
-                    latitude: undefined,
-                    longitude: undefined,
-                  });
-                }
-              }}
-              placeholder="Type to search hotels, or enter a new one"
-            />
-          </Form.Item>
-          <Form.Item name="address" label="Address" rules={[{ required: true, message: "Address is required" }]}>
-            <Input placeholder="Auto-filled when the hotel is picked from the list" />
-          </Form.Item>
-          <Form.Item
-            name="phone"
-            label="Phone"
-            rules={[{ required: true, message: "Phone is required" }]}
-          >
-            <Input placeholder="Your phone number" />
-          </Form.Item>
-          <Form.Item
-            name="mail"
-            label="Email"
-            rules={[
-              { required: true, message: "Email is required" },
-              { type: "email", message: "Please enter a valid email address" },
-            ]}
-          >
-            <Input placeholder="Your email" />
-          </Form.Item>
-          <Form.Item
-            name="paxDetail"
-            label="Pax detail"
-            rules={[{ required: true, whitespace: true, message: "Pax detail is required" }]}
-          >
-            <Input.TextArea rows={3} placeholder="e.g. 2 adults, 1 child" />
-          </Form.Item>
-          <Form.Item
-            name="startingDate"
-            label="Start date"
-            rules={[{ required: true, message: "Start date is required" }]}
-          >
-            <DatePicker style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item
-            name="totalPax"
-            label="Total pax"
-            rules={[{ required: true, message: "Total pax is required" }]}
-          >
-            <InputNumber min={1} max={12} precision={0} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item label="Payment" style={{ marginBottom: 12 }}>
-            <Radio.Group
-              value={payChoice}
-              onChange={(e) => setPayChoice(e.target.value)}
-              disabled={!!createdBookingId}
-            >
-              <Radio.Button value="paynow" disabled={paypalEnabled === false}>
-                Pay now with PayPal
-              </Radio.Button>
-              <Radio.Button value="paylater">Pay later</Radio.Button>
-            </Radio.Group>
-          </Form.Item>
-          <Card size="small" style={{ marginBottom: 12, background: "#fafafa" }}>
-            {quoteLoading ? (
-              <Spin size="small" />
-            ) : (
+            <Card size="small" style={{ background: "#fafafa" }}>
               <Flex justify="space-between" align="baseline">
                 <Typography.Text type="secondary">
                   Total {quote?.totalPax ?? watchedPax ?? 0} pax
@@ -928,21 +938,14 @@ children: tour.insurancePolicy ? (
                   {vnd(quote?.totalAmount ?? 0)}
                 </Typography.Title>
               </Flex>
-            )}
-            {payChoice === "paynow" && paypalEnabled && quote?.totalAmount ? (
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                PayPal charges approximately {paypalCurrency}{" "}
-                {(Number(quote.totalAmount) / paypalRate).toFixed(2)} (rate{" "}
-                {paypalRate.toLocaleString("vi-VN")} VND/{paypalCurrency}).
-              </Typography.Text>
-            ) : null}
-            {payChoice === "paynow" && paypalEnabled === false && (
-              <Typography.Text type="warning" style={{ fontSize: 12 }}>
-                PayPal is not configured. Choose Pay later or contact us.
-              </Typography.Text>
-            )}
-          </Card>
-          {createdBookingId && (
+              {paypalEnabled && quote?.totalAmount ? (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  PayPal charges approximately {paypalCurrency}{" "}
+                  {(Number(quote.totalAmount) / paypalRate).toFixed(2)} (rate{" "}
+                  {paypalRate.toLocaleString("vi-VN")} VND/{paypalCurrency}).
+                </Typography.Text>
+              ) : null}
+            </Card>
             <PayPalCheckout
               bookingId={createdBookingId}
               onPaid={() => {
@@ -951,17 +954,290 @@ children: tour.insurancePolicy ? (
               }}
               onError={(text) => message.error(text)}
             />
-          )}
-          <Form.Item name="tourId" hidden>
-            <Input />
-          </Form.Item>
-          <Form.Item name="latitude" hidden>
-            <InputNumber />
-          </Form.Item>
-          <Form.Item name="longitude" hidden>
-            <InputNumber />
-          </Form.Item>
-        </Form>
+          </Flex>
+        ) : (
+          <Form form={bookingForm} layout="vertical">
+            <div style={{ display: currentStep === 0 ? "block" : "none" }}>
+              <Typography.Text strong style={{ display: "block", marginBottom: 12 }}>
+                Step 1 of 3 · Choose your trip
+              </Typography.Text>
+              <Row gutter={12}>
+                <Col span={14}>
+                  <Form.Item
+                    name="tourType"
+                    label="Tour type"
+                    rules={[{ required: true, message: "Please choose a tour type" }]}
+                  >
+                    <Select
+                      options={priceOptions.map((offer) => ({
+                        value: offer.type,
+                        label: `${offer.label} Tour`,
+                      }))}
+                      onChange={(value) => selectTourType(value)}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={10}>
+                  {(tour?.departureTimes ?? []).length > 0 && (
+                    <Form.Item
+                      name="departureTime"
+                      label="Departure"
+                      rules={[
+                        { required: true, message: "Please choose a departure time" },
+                      ]}
+                    >
+                      <Select
+                        placeholder="Choose"
+                        options={(tour?.departureTimes ?? []).map((time) => ({
+                          value: time,
+                          label: formatDepartureTime(time),
+                        }))}
+                      />
+                    </Form.Item>
+                  )}
+                </Col>
+              </Row>
+              <Row gutter={12}>
+                <Col span={12}>
+                  <Form.Item
+                    name="startingDate"
+                    label="Start date"
+                    rules={[{ required: true, message: "Start date is required" }]}
+                  >
+                    <DatePicker
+                      style={{ width: "100%" }}
+                      format="DD MMM YYYY"
+                      disabledDate={(date) => date.isBefore(dayjs().startOf("day"))}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    name="totalPax"
+                    label="Total pax"
+                    extra={
+                      selectedType === "PRIVATE_TOUR" && privatePaxOptions.length
+                        ? `Available: ${privatePaxOptions.join(", ")} people`
+                        : undefined
+                    }
+                    rules={[{ required: true, message: "Total pax is required" }]}
+                  >
+                    <InputNumber
+                      min={1}
+                      max={maxSelectablePax}
+                      precision={0}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Form.Item
+                name="paxDetail"
+                label="Pax detail"
+                rules={[
+                  { required: true, whitespace: true, message: "Pax detail is required" },
+                ]}
+              >
+                <Input placeholder="e.g. 1 adult, 1 child" />
+              </Form.Item>
+              <Card size="small" style={{ background: "#fafafa" }}>
+                <Flex justify="space-between" align="baseline">
+                  <Typography.Text type="secondary">
+                    {quoteLoading ? "Checking price…" : "Price per person"}
+                  </Typography.Text>
+                  <Typography.Text strong>
+                    {vnd(
+                      quote?.unitPrice ??
+                        discountedPrice(
+                          priceOf(selectedType),
+                          discountFor(tour ?? {}, selectedType),
+                        ),
+                    )}
+                  </Typography.Text>
+                </Flex>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {selectedType === "PRIVATE_TOUR"
+                    ? "Private price depends on the number of people."
+                    : "Group price is per person. The final total is shown in the payment step."}
+                </Typography.Text>
+              </Card>
+            </div>
+
+            <div style={{ display: currentStep === 1 ? "block" : "none" }}>
+              <Typography.Text strong style={{ display: "block", marginBottom: 12 }}>
+                Step 2 of 3 · Contact & pickup
+              </Typography.Text>
+              <Row gutter={12}>
+                <Col span={12}>
+                  <Form.Item
+                    name="customerName"
+                    label="Customer name"
+                    rules={[{ required: true, message: "Customer name is required" }]}
+                  >
+                    <Input placeholder="Your full name" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    name="phone"
+                    label="Phone"
+                    rules={[{ required: true, message: "Phone is required" }]}
+                  >
+                    <Input placeholder="Your phone number" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Form.Item
+                name="mail"
+                label="Email"
+                rules={[
+                  { required: true, message: "Email is required" },
+                  { type: "email", message: "Please enter a valid email address" },
+                ]}
+              >
+                <Input placeholder="Your email" />
+              </Form.Item>
+              <Form.Item
+                name="hotelName"
+                label="Hotel"
+                rules={[
+                  {
+                    required: true,
+                    message: "Please pick a hotel from the list or type a new one",
+                  },
+                ]}
+                required
+              >
+                <AutoComplete
+                  options={coordinates.map((c: any) => ({ value: c.hotelName }))}
+                  filterOption={(input, option) =>
+                    String(option?.value ?? "")
+                      .toLowerCase()
+                      .includes(input.toLowerCase())
+                  }
+                  onChange={(value) => {
+                    const c = coordinates.find(
+                      (x: any) =>
+                        x.hotelName.toLowerCase() ===
+                        String(value ?? "").trim().toLowerCase(),
+                    );
+                    if (c) {
+                      bookingForm.setFieldsValue({
+                        address: c.address,
+                        latitude: c.latitude,
+                        longitude: c.longitude,
+                      });
+                    } else {
+                      bookingForm.setFieldsValue({
+                        address: undefined,
+                        latitude: undefined,
+                        longitude: undefined,
+                      });
+                    }
+                  }}
+                  placeholder="Type to search hotels, or enter a new one"
+                />
+              </Form.Item>
+              <Form.Item
+                name="address"
+                label="Pickup address"
+                rules={[{ required: true, message: "Address is required" }]}
+              >
+                <Input placeholder="Auto-filled when the hotel is picked from the list" />
+              </Form.Item>
+            </div>
+
+            <div style={{ display: currentStep === 2 ? "block" : "none" }}>
+              <Typography.Text strong style={{ display: "block", marginBottom: 12 }}>
+                Step 3 of 3 · Review & payment
+              </Typography.Text>
+              <Descriptions
+                size="small"
+                column={2}
+                bordered
+                style={{ marginBottom: 12 }}
+                items={[
+                  {
+                    key: "tour",
+                    label: "Tour",
+                    children: tour?.name ?? "—",
+                    span: 2,
+                  },
+                  {
+                    key: "date",
+                    label: "Date",
+                    children: watchedDate
+                      ? watchedDate.format("DD MMM YYYY")
+                      : "—",
+                  },
+                  {
+                    key: "pax",
+                    label: "Pax",
+                    children: quote?.totalPax ?? watchedPax ?? 0,
+                  },
+                  {
+                    key: "pickup",
+                    label: "Pickup",
+                    children: watchedHotel || "—",
+                    span: 2,
+                  },
+                ]}
+              />
+              <Form.Item label="Payment method" style={{ marginBottom: 12 }}>
+                <Radio.Group
+                  value={payChoice}
+                  onChange={(e) => setPayChoice(e.target.value)}
+                >
+                  <Radio.Button value="paynow" disabled={paypalEnabled === false}>
+                    Pay now with PayPal
+                  </Radio.Button>
+                  <Radio.Button value="paylater">Pay later</Radio.Button>
+                </Radio.Group>
+              </Form.Item>
+              <Card size="small" style={{ background: "#fafafa" }}>
+                {quoteLoading ? (
+                  <Spin size="small" />
+                ) : (
+                  <Flex justify="space-between" align="baseline">
+                    <Typography.Text type="secondary">
+                      Total {quote?.totalPax ?? watchedPax ?? 0} pax
+                    </Typography.Text>
+                    <Typography.Title level={4} style={{ margin: 0 }}>
+                      {vnd(quote?.totalAmount ?? 0)}
+                    </Typography.Title>
+                  </Flex>
+                )}
+                {payChoice === "paynow" && paypalEnabled && quote?.totalAmount ? (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    PayPal charges approximately {paypalCurrency}{" "}
+                    {(Number(quote.totalAmount) / paypalRate).toFixed(2)} (rate{" "}
+                    {paypalRate.toLocaleString("vi-VN")} VND/{paypalCurrency}).
+                  </Typography.Text>
+                ) : null}
+                {payChoice === "paynow" && paypalEnabled === false && (
+                  <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                    PayPal is not configured. Choose Pay later or contact us.
+                  </Typography.Text>
+                )}
+                {!quoteLoading && !quote?.totalAmount && (
+                  <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                    Go back and check the date and pax so the total can be calculated.
+                  </Typography.Text>
+                )}
+              </Card>
+            </div>
+
+            <Form.Item name="tourId" hidden>
+              <Input />
+            </Form.Item>
+            <Form.Item name="latitude" hidden>
+              <InputNumber />
+            </Form.Item>
+            <Form.Item name="longitude" hidden>
+              <InputNumber />
+            </Form.Item>
+          </Form>
+        )}
       </Modal>
     </div>
   );

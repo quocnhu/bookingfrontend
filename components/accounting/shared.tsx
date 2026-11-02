@@ -70,13 +70,15 @@ export type PayeeType =
   | "TRANSPORT_PROVIDER"
   | "COMPANY_GUIDE"
   | "COMPANY_DRIVER"
-  | "FREELANCE";
+  | "FREELANCE"
+  | "PARTNER";
 
 export const PAYEE_GROUP_LABELS: Record<PayeeType, string> = {
   TRANSPORT_PROVIDER: "Transportation Provider",
   COMPANY_GUIDE: "Company Tour Guide",
   COMPANY_DRIVER: "Company Driver",
   FREELANCE: "Freelance (driver & guide)",
+  PARTNER: "Partner agency",
 };
 
 export interface Person {
@@ -186,13 +188,23 @@ export interface QueueItem {
   tourType?: string | null;
   submittedAt: string | null;
   reportStatus?: string | null;
+  sourceType?: "GUIDE_REPORT" | "DRIVER_ONLY_DIRECT" | "OUTSOURCED_PARTNER";
   moneyVerifiedAt?: string | null;
   guide?: { id: string; name: string } | null;
   driver?: { id: string; name: string } | null;
+  partner?: { id: string; name: string } | null;
+  partnerStatus?: string | null;
+  partnerAmount?: number | string | null;
+  partnerCurrency?: string | null;
+  partnerMoneyFlow?:
+    | "PARTNER_COLLECTS_AND_REMITS"
+    | "COMPANY_PAYS_PARTNER"
+    | null;
   suggestedPayableTo?: {
     id: string;
     name: string;
-    basis?: "ASSIGNMENT_GUIDE";
+    basis?: "ASSIGNMENT_GUIDE" | "ASSIGNMENT_DRIVER" | "PARTNER_HANDOFF";
+    kind?: "PERSON" | "PARTNER";
   } | null;
   plateNumber?: string | null;
   collected: number;
@@ -202,6 +214,7 @@ export interface QueueItem {
 }
 
 export interface HistoryRow {
+  recordType?: "CREW" | "PARTNER";
   direction: Direction;
   paidAt?: string | null;
   paidByName?: string | null;
@@ -258,11 +271,25 @@ export interface Settlement {
 }
 
 // ── Shared bits ──────────────────────────────────────────────────────
-const DirectionTag = ({ direction }: { direction: string }) => {
+const DirectionTag = ({
+  direction,
+  partner,
+}: {
+  direction: string;
+  partner?: boolean;
+}) => {
   if (direction === "PERSON_TO_COMPANY")
-    return <Tag color="orange">Guide/driver pays company</Tag>;
+    return (
+      <Tag color="orange">
+        {partner ? "Partner pays company" : "Guide/driver pays company"}
+      </Tag>
+    );
   if (direction === "COMPANY_TO_PERSON")
-    return <Tag color="blue">Company pays guide/driver</Tag>;
+    return (
+      <Tag color="blue">
+        {partner ? "Company pays partner" : "Company pays guide/driver"}
+      </Tag>
+    );
   if (direction === "COMPANY_TO_PROVIDER")
     return <Tag color="blue">Company pays transport provider</Tag>;
   return <Tag color="green">Balanced</Tag>;
@@ -987,7 +1014,8 @@ export function QueueTab({
           r.code?.toLowerCase().includes(s) ||
           r.tourName?.toLowerCase().includes(s) ||
           r.guide?.name?.toLowerCase().includes(s) ||
-          r.driver?.name?.toLowerCase().includes(s)
+          r.driver?.name?.toLowerCase().includes(s) ||
+          r.partner?.name?.toLowerCase().includes(s)
         );
       })
       .sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
@@ -995,14 +1023,26 @@ export function QueueTab({
 
   const moneyLabel = (r: QueueItem) => {
     const abs = vnd(Math.abs(r.net));
+    const partner = r.partner?.name ?? "Partner";
+    const who =
+      r.sourceType === "OUTSOURCED_PARTNER"
+        ? partner
+        : r.sourceType === "DRIVER_ONLY_DIRECT"
+          ? "Driver"
+          : "Tour guide";
+    if (r.sourceType === "OUTSOURCED_PARTNER") {
+      return r.partnerMoneyFlow === "COMPANY_PAYS_PARTNER"
+        ? `Company pays ${who}: ${abs} ₫`
+        : `${who} remits to company: ${abs} ₫`;
+    }
     if (r.flow === "COLLECT_MONEY") {
       return r.net >= 0
-        ? `Tour guide returns to company: ${abs} ₫`
-        : `Company returns to tour guide: ${abs} ₫`;
+        ? `${who} returns to company: ${abs} ₫`
+        : `Company returns to ${who.toLowerCase()}: ${abs} ₫`;
     }
     return r.net >= 0
-      ? `Company pays tour guide: ${abs} ₫`
-      : `Tour guide pays company: ${abs} ₫`;
+      ? `Company pays ${who.toLowerCase()}: ${abs} ₫`
+      : `${who} pays company: ${abs} ₫`;
   };
 
   return (
@@ -1075,18 +1115,39 @@ export function QueueTab({
                 <Typography.Text type="secondary" style={{ fontSize: 11 }}>
                   Submitted: {fmtDateTime(r.submittedAt)}
                 </Typography.Text>
+                <br />
+                <Tag
+                  color={
+                    r.sourceType === "OUTSOURCED_PARTNER"
+                      ? "purple"
+                      : r.sourceType === "DRIVER_ONLY_DIRECT"
+                        ? "cyan"
+                        : "blue"
+                  }
+                  style={{ marginTop: 4, fontSize: 10 }}
+                >
+                  {r.sourceType === "OUTSOURCED_PARTNER"
+                    ? "PARTNER"
+                    : r.sourceType === "DRIVER_ONLY_DIRECT"
+                      ? "DRIVER ONLY"
+                      : "GUIDE"}
+                </Tag>
               </>
             ),
           },
           {
-            title: "Guide / Driver",
+            title: "Payee / crew",
             align: "center",
             render: (_: unknown, r: QueueItem) => (
               <>
-                {r.guide?.name ?? "—"}
+                {r.partner?.name ?? r.guide?.name ?? r.driver?.name ?? "—"}
                 <br />
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {r.driver?.name ?? "—"}
+                  {r.partner
+                    ? "Partner agency"
+                    : r.sourceType === "DRIVER_ONLY_DIRECT"
+                      ? "Driver only"
+                      : (r.driver?.name ?? "—")}
                 </Typography.Text>
               </>
             ),
@@ -1201,6 +1262,19 @@ export function TourMoneyDrawer({
   const [verifyNote, setVerifyNote] = useState("");
   const [tourReport, setTourReport] = useState<TourReportData | null>(null);
   const [showTemplate, setShowTemplate] = useState(false);
+  const isPartner =
+    item.sourceType === "OUTSOURCED_PARTNER" ||
+    item.partnerStatus === "HANDED_OFF";
+  const isDriverOnly =
+    !isPartner && item.sourceType === "DRIVER_ONLY_DIRECT";
+  const payeeLabel = isPartner
+    ? (item.partner?.name ?? "partner agency")
+    : isDriverOnly
+      ? (item.driver?.name ?? "driver")
+      : (item.guide?.name ?? "tour guide");
+  const canLock = isPartner
+    ? Number(item.partnerAmount ?? 0) > 0
+    : rows.length > 0 && !!(item.guide || (isDriverOnly && item.driver));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1271,7 +1345,17 @@ export function TourMoneyDrawer({
             Admin.
           </p>
           <p>
-            The trip becomes eligible for period export for <b>{item.guide?.name}</b>.
+            {isPartner ? (
+              <>
+                The partner trip is locked with <b>{payeeLabel}</b> as payee and is
+                not added to crew payroll export.
+              </>
+            ) : (
+              <>
+                The trip becomes eligible for period export for{" "}
+                <b>{payeeLabel}</b>.
+              </>
+            )}
           </p>
           <Input.TextArea
             rows={2}
@@ -1364,7 +1448,7 @@ return (
               <Button
                 type="primary"
                 icon={<CheckCircleOutlined />}
-                disabled={rows.length === 0 || !item.guide}
+                disabled={!canLock}
                 onClick={verify}
               >
                 Verify & lock money
@@ -1385,15 +1469,19 @@ return (
         />
       )}
       <Divider style={{ margin: "16px 0" }} />
-      {(rows.length === 0 || !item.guide) && (
+      {!canLock && (
         <Alert
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message="Before verifying: add at least one Collect/Expense entry below as needed — a trip with no money entries cannot be locked."
+          message={
+            isPartner
+              ? "The partner amount is missing — return and confirm the handoff again."
+              : "Before verifying: add at least one Collect/Expense entry below as needed — a trip with no money entries cannot be locked."
+          }
           description={
-            !item.guide
-              ? "This trip also has no guide assigned yet. The payee is the guide, so assign one on the dispatch board first."
+            !isPartner && !item.guide && !item.driver
+              ? "This trip has no payee (guide or driver) yet. Assign one on the dispatch board first."
               : undefined
           }
         />
@@ -1403,9 +1491,26 @@ return (
         <Descriptions.Item label="Submitted at">{fmtDateTime(item.submittedAt)}</Descriptions.Item>
         <Descriptions.Item label="Guide">{item.guide?.name ?? "—"}</Descriptions.Item>
         <Descriptions.Item label="Driver">{item.driver?.name ?? "—"}</Descriptions.Item>
+        {isPartner && (
+          <>
+            <Descriptions.Item label="Partner">
+              {item.partner?.name ?? "—"}
+            </Descriptions.Item>
+            <Descriptions.Item label="Partner amount">
+              {item.partnerAmount != null
+                ? `${vnd(Number(item.partnerAmount))} ${item.partnerCurrency ?? "VND"}`
+                : "—"}
+            </Descriptions.Item>
+            <Descriptions.Item label="Money flow" span={2}>
+              {item.partnerMoneyFlow === "COMPANY_PAYS_PARTNER"
+                ? "Company pays the partner agency"
+                : "Partner collects and remits to the company"}
+            </Descriptions.Item>
+          </>
+        )}
       </Descriptions>
 
-      {canSettle && (
+      {canSettle && !isPartner && (
         <Card size="small" title="Add entry" style={{ marginBottom: 16 }}>
           <Space wrap>
             <InputNumber
@@ -1496,26 +1601,48 @@ return (
       {canVerify && (
         <Card size="small" style={{ marginTop: 16 }} title="Payee for this trip">
           <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 8 }}>
-            Taken from the guide on the assignment template. Each trip has exactly one payee
-            within a payment period.
+            {isPartner
+              ? "Taken from the partner handoff on the assignment. Partner trips are tracked separately from crew payroll export."
+              : isDriverOnly
+                ? "Driver-only trips pay the assigned driver. Each trip has exactly one payee within a payment period."
+                : "Taken from the guide on the assignment template. Each trip has exactly one payee within a payment period."}
           </Typography.Text>
-          {item.guide ? (
+          {canLock ? (
             <Alert
               type="success"
               showIcon
               message={
                 <span>
-                  <b>Guide: {item.guide.name}</b>
+                  <b>
+                    {isPartner
+                      ? "Partner"
+                      : isDriverOnly
+                        ? "Driver"
+                        : "Guide"}
+                    : {payeeLabel}
+                  </b>
                 </span>
               }
-              description="This trip's collected/paid amounts will be settled with the person above."
+              description={
+                isPartner
+                  ? "The partner trip will be locked and closed in Accounting."
+                  : "This trip's collected/paid amounts will be settled with the person above."
+              }
             />
           ) : (
             <Alert
               type="error"
               showIcon
-              message="This trip has no guide"
-              description="The payee could not be determined — a guide must be assigned to the trip before verification."
+              message={
+                isPartner
+                  ? "The partner amount is missing"
+                  : "This trip has no payee"
+              }
+              description={
+                isPartner
+                  ? "Return and confirm the partner handoff again."
+                  : "Assign a guide or driver on the dispatch board before verification."
+              }
             />
           )}
         </Card>
@@ -1584,13 +1711,15 @@ export function HistoryTab({
 
   const markPaid = (r: HistoryRow) => {
     let reference = "";
+    const isPartner = r.recordType === "PARTNER";
     modal.confirm({
       title: `Mark payout to ${r.person.name} as paid?`,
       content: (
         <>
           <p>
-            This records the actual transfer without changing the export or its
-            trips. The period keeps its frozen figures.
+            {isPartner
+              ? "This records the actual partner payout; the locked partner amount and trip stay unchanged."
+              : "This records the actual transfer without changing the export or its trips. The period keeps its frozen figures."}
           </p>
           <Input
             placeholder="Bank transfer reference (optional)"
@@ -1604,10 +1733,15 @@ export function HistoryTab({
       cancelText: "Cancel",
       onOk: async () => {
         try {
-          await api.post(`/accounting/period/${r.id}/mark-paid`, {
-            method: "BANK_TRANSFER",
-            reference: reference.trim() || undefined,
-          });
+          await api.post(
+            isPartner
+              ? `/accounting/partner-payments/${r.id}/mark-paid`
+              : `/accounting/period/${r.id}/mark-paid`,
+            {
+              method: "BANK_TRANSFER",
+              reference: reference.trim() || undefined,
+            },
+          );
           message.success("Payout marked as paid");
           load();
         } catch (e) {
@@ -1728,9 +1862,11 @@ export function HistoryTab({
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {r.person.role === "TRANSPORT_PROVIDER"
                     ? "External transport provider"
-                    : r.person.role === "DRIVER"
-                      ? "Driver"
-                      : "Guide"}
+                    : r.person.role === "PARTNER"
+                      ? "Partner agency"
+                      : r.person.role === "DRIVER"
+                        ? "Driver"
+                        : "Guide"}
                   {" · "}
                   {r.payeeType ? PAYEE_GROUP_LABELS[r.payeeType as PayeeType] : "—"}
                 </Typography.Text>
@@ -1761,7 +1897,12 @@ export function HistoryTab({
           },
           {
             title: "Direction",
-            render: (_: unknown, r: HistoryRow) => <DirectionTag direction={r.direction} />,
+            render: (_: unknown, r: HistoryRow) => (
+              <DirectionTag
+                direction={r.direction}
+                partner={r.recordType === "PARTNER"}
+              />
+            ),
           },
           {
             title: "Exported by",
@@ -1804,29 +1945,34 @@ export function HistoryTab({
                     Mark paid
                   </Button>
                 )}
-                {r.voidedAt ? (
-                  <Tooltip title={`Voided by ${r.voidedByName ?? "—"}: ${r.voidReason ?? ""}`}>
-                    <Tag color="red" style={{ margin: 0 }}>
-                      Voided
-                    </Tag>
-                  </Tooltip>
-                ) : (
-                  canVoid && (
-                    <Button size="small" danger onClick={() => voidPeriod(r)}>
-                      Void
+                {r.recordType !== "PARTNER" &&
+                  (r.voidedAt ? (
+                    <Tooltip title={`Voided by ${r.voidedByName ?? "—"}: ${r.voidReason ?? ""}`}>
+                      <Tag color="red" style={{ margin: 0 }}>
+                        Voided
+                      </Tag>
+                    </Tooltip>
+                  ) : (
+                    canVoid && (
+                      <Button size="small" danger onClick={() => voidPeriod(r)}>
+                        Void
+                      </Button>
+                    )
+                  ))}
+                {r.recordType !== "PARTNER" && (
+                  <>
+                    <Button size="small" onClick={() => setOpen(r)}>
+                      Export copy
                     </Button>
-                  )
+                    <Button
+                      size="small"
+                      icon={<PrinterOutlined />}
+                      onClick={() => setVoucherRow(r)}
+                    >
+                      Template
+                    </Button>
+                  </>
                 )}
-                <Button size="small" onClick={() => setOpen(r)}>
-                  Export copy
-                </Button>
-                <Button
-                  size="small"
-                  icon={<PrinterOutlined />}
-                  onClick={() => setVoucherRow(r)}
-                >
-                  Template
-                </Button>
               </Space>
             ),
           },

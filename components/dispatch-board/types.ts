@@ -27,6 +27,31 @@ export interface PickupInfoItem {
   longitude?: number | null;
 }
 
+export type AssignmentExecutionMode =
+  | "COMPANY_GUIDED"
+  | "COMPANY_DRIVER_ONLY"
+  | "OUTSOURCED_PARTNER";
+
+export type PartnerHandoffStatus =
+  | "DRAFT"
+  | "HANDED_OFF"
+  | "RETURNED"
+  | "CLOSED";
+
+export type PartnerMoneyFlow =
+  | "PARTNER_COLLECTS_AND_REMITS"
+  | "COMPANY_PAYS_PARTNER";
+
+export interface PartnerAgency {
+  id: string;
+  name: string;
+  contactName?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  isActive?: boolean;
+  _count?: { assignments: number };
+}
+
 export interface BoardItem {
   id: string;
   code: string;
@@ -36,6 +61,18 @@ export interface BoardItem {
   endDate: string;
   durationDays: number;
   status: string;
+  executionMode?: AssignmentExecutionMode;
+  partnerStatus?: PartnerHandoffStatus | null;
+  partnerId?: string | null;
+  partner?: PartnerAgency | null;
+  partnerContractRef?: string | null;
+  partnerAmount?: number | string | null;
+  partnerCurrency?: string | null;
+  partnerMoneyFlow?: PartnerMoneyFlow | null;
+  partnerConfirmedByName?: string | null;
+  partnerConfirmedAt?: string | null;
+  partnerReturnedAt?: string | null;
+  partnerReturnNote?: string | null;
   origin?: "MANUAL" | "AUTO_ASSIGN";
   totalPax: number;
   latitude?: number | null;

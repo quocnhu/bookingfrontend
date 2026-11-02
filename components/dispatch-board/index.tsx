@@ -44,6 +44,10 @@ import ConfirmFinishedModal from "./ConfirmFinishedModal";
 import CrewAvailabilityDrawer from "./CrewAvailabilityDrawer";
 import TourTemplateModal from "./TourTemplateModal";
 import VerifyReportModal from "./VerifyReportModal";
+import {
+  PartnerHandoffModal,
+  PartnerReturnModal,
+} from "./PartnerHandoffModal";
 import { useSocket } from "@/lib/use-socket";
 
 const { Text } = Typography;
@@ -101,6 +105,9 @@ export default function DispatchBoard({
   const [verifyTarget, setVerifyTarget] = useState<BoardItem | null>(null);
   const [filterDate, setFilterDate] = useState<Dayjs>(() => dayjs().add(7, "hour").startOf("day"));
   const [additionsTarget, setAdditionsTarget] = useState<BoardItem | null>(null);
+  const [partnerTarget, setPartnerTarget] = useState<BoardItem | null>(null);
+  const [partnerReturnTarget, setPartnerReturnTarget] =
+    useState<BoardItem | null>(null);
   const [crewAvailOpen, setCrewAvailOpen] = useState(false);
   const [autoAssign, setAutoAssign] = useState(false);
 
@@ -752,6 +759,8 @@ export default function DispatchBoard({
                 onVerify={openVerify}
                 onReject={openReject}
                 onAdditions={setAdditionsTarget}
+                onPartnerHandoff={setPartnerTarget}
+                onPartnerReturn={setPartnerReturnTarget}
                 crew={crew}
                 onCrewChange={canUpdateAssignment ? changeCrew : undefined}
               />
@@ -771,6 +780,8 @@ export default function DispatchBoard({
                 onVerify={openVerify}
                 onReject={openReject}
                 onAdditions={setAdditionsTarget}
+                onPartnerHandoff={setPartnerTarget}
+                onPartnerReturn={setPartnerReturnTarget}
                 crew={crew}
                 onCrewChange={canUpdateAssignment ? changeCrew : undefined}
               />
@@ -791,6 +802,8 @@ export default function DispatchBoard({
                   onVerify={openVerify}
                   onReject={openReject}
                   onAdditions={setAdditionsTarget}
+                  onPartnerHandoff={setPartnerTarget}
+                  onPartnerReturn={setPartnerReturnTarget}
                   crew={crew}
                   onCrewChange={canUpdateAssignment ? changeCrew : undefined}
                 />
@@ -895,6 +908,30 @@ export default function DispatchBoard({
           onChanged?.();
         }}
       />
+      {partnerTarget && (
+        <PartnerHandoffModal
+          assignment={partnerTarget}
+          open
+          onClose={() => setPartnerTarget(null)}
+          onDone={() => {
+            setPartnerTarget(null);
+            loadBoard(true);
+            onChanged?.();
+          }}
+        />
+      )}
+      {partnerReturnTarget && (
+        <PartnerReturnModal
+          assignment={partnerReturnTarget}
+          open
+          onClose={() => setPartnerReturnTarget(null)}
+          onDone={() => {
+            setPartnerReturnTarget(null);
+            loadBoard(true);
+            onChanged?.();
+          }}
+        />
+      )}
       <CrewAvailabilityDrawer
         open={crewAvailOpen}
         onClose={() => setCrewAvailOpen(false)}

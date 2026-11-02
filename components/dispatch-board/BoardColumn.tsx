@@ -22,6 +22,8 @@ export default function BoardColumn({
   onVerify,
   onReject,
   onAdditions,
+  onPartnerHandoff,
+  onPartnerReturn,
   crew,
   onCrewChange,
 }: {
@@ -45,6 +47,8 @@ export default function BoardColumn({
   onVerify?: (assignment: BoardItem) => void;
   onReject?: (assignment: BoardItem) => void;
   onAdditions?: (assignment: BoardItem) => void;
+  onPartnerHandoff?: (assignment: BoardItem) => void;
+  onPartnerReturn?: (assignment: BoardItem) => void;
   crew?: BoardCrew;
   onCrewChange?: (
     assignment: BoardItem,
@@ -106,9 +110,11 @@ export default function BoardColumn({
             onTemplate={onTemplate}
             onVerify={onVerify}
             onReject={onReject}
-              onAdditions={onAdditions}
-              crew={crew}
-              onCrewChange={onCrewChange}
+            onAdditions={onAdditions}
+            onPartnerHandoff={onPartnerHandoff}
+            onPartnerReturn={onPartnerReturn}
+            crew={crew}
+            onCrewChange={onCrewChange}
           />
         ))
       ) : (

@@ -39,6 +39,7 @@ import {
   SafetyCertificateOutlined,
   DownloadOutlined,
   LockOutlined,
+  CreditCardOutlined,
 } from "@ant-design/icons";
 import { useApp } from "@/lib/app-context";
 import NotificationCenter from "@/components/notification-center";
@@ -59,6 +60,7 @@ const menuItems = [
     icon: <SafetyCertificateOutlined />,
     label: <MenuLabel text="Accounting Room" />,
     children: [
+      { key: "/accounting/payments", icon: <CreditCardOutlined />, label: <MenuLabel text="Customer payments" /> },
       { key: "/accounting/period", icon: <DownloadOutlined />, label: <MenuLabel text="Period check & export" /> },
       { key: "/accounting/queue", icon: <LockOutlined />, label: <MenuLabel text="Verification queue" /> },
       { key: "/accounting/history", icon: <HistoryOutlined />, label: <MenuLabel text="Payment history" /> },

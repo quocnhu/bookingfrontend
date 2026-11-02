@@ -70,6 +70,11 @@ export type PublicTour = {
     childPrice?: number | string | null;
     currency?: string | null;
   }[];
+  privatePaxPrices?: {
+    pax: number;
+    pricePerPerson?: number | string | null;
+    currency?: string | null;
+  }[];
   categories?: {
     isPrimary?: boolean;
     category: PublicTourCategory;

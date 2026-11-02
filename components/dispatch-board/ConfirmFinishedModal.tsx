@@ -371,11 +371,19 @@ export default function ConfirmFinishedModal({
 
   return (
     <Modal
-      title={`Confirm finished — ${assignment?.tourName ?? assignment?.code ?? ""}`}
+      title={
+        assignment?.executionMode === "COMPANY_DRIVER_ONLY"
+          ? `Send driver-only trip to Accounting — ${assignment?.tourName ?? assignment?.code ?? ""}`
+          : `Confirm finished — ${assignment?.tourName ?? assignment?.code ?? ""}`
+      }
       open={open}
       onCancel={onClose}
       onOk={submit}
-      okText="Confirm finished"
+      okText={
+        assignment?.executionMode === "COMPANY_DRIVER_ONLY"
+          ? "Send to Accounting"
+          : "Confirm finished"
+      }
       cancelText="Cancel"
       confirmLoading={submitting}
       okButtonProps={{ disabled: noEntries }}

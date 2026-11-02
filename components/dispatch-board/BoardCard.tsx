@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   Button,
   Card,
   Flex,
@@ -461,6 +462,8 @@ export default function BoardCard({
   onVerify,
   onReject,
   onAdditions,
+  onPartnerHandoff,
+  onPartnerReturn,
   crew,
   onCrewChange,
 }: {
@@ -486,6 +489,8 @@ export default function BoardCard({
   onVerify?: (assignment: BoardItem) => void;
   onReject?: (assignment: BoardItem) => void;
   onAdditions?: (assignment: BoardItem) => void;
+  onPartnerHandoff?: (assignment: BoardItem) => void;
+  onPartnerReturn?: (assignment: BoardItem) => void;
   crew?: BoardCrew;
   onCrewChange?: (
     assignment: BoardItem,
@@ -529,6 +534,12 @@ export default function BoardCard({
   const isRejected = a.tourReport?.status === "REJECTED";
   const procStatus = isRejected ? "REJECTED" : a.status;
   const procColor = isRejected ? "red" : STATUS_COLORS[a.status];
+  const isOutsourced =
+    a.executionMode === "OUTSOURCED_PARTNER" ||
+    a.partnerStatus === "HANDED_OFF";
+  const isDriverOnly =
+    !isOutsourced && a.executionMode === "COMPANY_DRIVER_ONLY";
+  const needsGuide = !isOutsourced && !isDriverOnly;
   // A trip that has already ended (endDate < today) counts as done: it cannot
   // be dragged/dropped, even if someone forgot to press Complete so the status
   // is still PENDING.
@@ -537,6 +548,7 @@ export default function BoardCard({
   );
   const interactive =
     canConfirm &&
+    !isOutsourced &&
     a.status !== "COMPLETED" &&
     a.status !== "CANCELED" &&
     !isPastTour;
@@ -1068,37 +1080,68 @@ export default function BoardCard({
             {a.origin === "AUTO_ASSIGN" ? "Automatic System" : "Manual"}
           </Tag>
         )}
+        {isOutsourced && (
+          <Tag color="purple" style={{ marginInlineEnd: 0, fontSize: 10 }}>
+            OUTSOURCED · {a.partner?.name ?? "Partner"}
+          </Tag>
+        )}
+        {isDriverOnly && (
+          <Tag color="cyan" style={{ marginInlineEnd: 0, fontSize: 10 }}>
+            DRIVER ONLY
+          </Tag>
+        )}
+        {a.partnerStatus === "RETURNED" && (
+          <Tag color="volcano" style={{ marginInlineEnd: 0, fontSize: 10 }}>
+            RETURNED BY PARTNER
+          </Tag>
+        )}
       </Flex>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          marginBottom: 10,
-          flexWrap: "wrap",
-        }}
-      >
-        <PersonSelect
-          label="Guide"
-          icon={<UserOutlined />}
-          boxColor={guideBoxColor}
-          currentId={a.guide?.id}
-          currentName={a.guide?.name}
-          options={guidMembers}
-          canEdit={a.status === "PENDING" && !!onCrewChange}
-          onChange={(id) => onCrewChange?.(a, "guideId", id)}
+      {isOutsourced ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 10 }}
+          message={`Handled by ${a.partner?.name ?? "partner agency"}`}
+          description={
+            a.partnerMoneyFlow === "COMPANY_PAYS_PARTNER"
+              ? "We pay the partner agency. Dispatched directly to Accounting."
+              : "The partner collects from customers and remits to us. Dispatched directly to Accounting."
+          }
         />
-        <PersonSelect
-          label="Driver"
-          icon={<CarOutlined />}
-          boxColor={driverBoxColor}
-          currentId={a.driver?.id}
-          currentName={a.driver?.name}
-          options={driverMembers}
-          canEdit={a.status === "PENDING" && !!onCrewChange}
-          onChange={(id) => onCrewChange?.(a, "driverId", id)}
-        />
-      </div>
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            marginBottom: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          {needsGuide && (
+            <PersonSelect
+              label="Guide"
+              icon={<UserOutlined />}
+              boxColor={guideBoxColor}
+              currentId={a.guide?.id}
+              currentName={a.guide?.name}
+              options={guidMembers}
+              canEdit={a.status === "PENDING" && !!onCrewChange}
+              onChange={(id) => onCrewChange?.(a, "guideId", id)}
+            />
+          )}
+          <PersonSelect
+            label="Driver"
+            icon={<CarOutlined />}
+            boxColor={driverBoxColor}
+            currentId={a.driver?.id}
+            currentName={a.driver?.name}
+            options={driverMembers}
+            canEdit={a.status === "PENDING" && !!onCrewChange}
+            onChange={(id) => onCrewChange?.(a, "driverId", id)}
+          />
+        </div>
+      )}
       <Text
         type="secondary"
         style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.4 }}
@@ -1559,8 +1602,10 @@ export default function BoardCard({
         <Flex gap={8} style={{ marginTop: 12 }}>
           <Tooltip
             title={
-              !a.guide?.id || !a.driver?.id
-                ? "Assign a tour guide and a driver first — a bus cannot depart without crew."
+              (needsGuide && !a.guide?.id) || !a.driver?.id
+                ? needsGuide
+                  ? "Assign a tour guide and a driver first — a bus cannot depart without crew."
+                  : "Assign a driver first — driver-only trips do not need a guide."
                 : !isActiveToday
                   ? "Only tours active today can be dispatched — future departures wait until their tour day."
                   : undefined
@@ -1572,7 +1617,9 @@ export default function BoardCard({
               style={{ flex: 1 }}
               icon={<SendOutlined />}
               loading={dispatching}
-              disabled={!isActiveToday || !a.guide?.id || !a.driver?.id}
+              disabled={
+                !isActiveToday || (needsGuide && !a.guide?.id) || !a.driver?.id
+              }
               onClick={() => onDispatch(a)}
             >
               Dispatch bus
@@ -1590,6 +1637,52 @@ export default function BoardCard({
             </Button>
           </Tooltip>
         </Flex>
+      ) : isOutsourced && a.partnerStatus === "HANDED_OFF" ? (
+        <div
+          style={{
+            marginTop: 12,
+            padding: "10px 12px",
+            borderRadius: 8,
+            background: "rgba(114, 46, 209, 0.08)",
+            border: "1px solid rgba(114, 46, 209, 0.25)",
+          }}
+        >
+          <Flex justify="space-between" align="center" style={{ marginBottom: 6 }}>
+            <Text strong style={{ fontSize: 12 }}>
+              Handed off to {a.partner?.name ?? "partner agency"}
+            </Text>
+            <Tag color="purple" style={{ margin: 0, fontSize: 10 }}>
+              IN ACCOUNTING
+            </Tag>
+          </Flex>
+          <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+            {a.partnerMoneyFlow === "COMPANY_PAYS_PARTNER"
+              ? "Company pays the partner"
+              : "Partner collects and remits to the company"}
+            {a.partnerAmount != null
+              ? ` · ${new Intl.NumberFormat("vi-VN", {
+                  maximumFractionDigits: 0,
+                }).format(Number(a.partnerAmount))} ${a.partnerCurrency ?? "VND"}`
+              : ""}
+          </Text>
+          {a.partnerContractRef && (
+            <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+              Contract: {a.partnerContractRef}
+            </Text>
+          )}
+          {canConfirm && (
+            <Button
+              size="small"
+              danger
+              block
+              icon={<UndoOutlined />}
+              style={{ marginTop: 8 }}
+              onClick={() => onPartnerReturn?.(a)}
+            >
+              Return from partner
+            </Button>
+          )}
+        </div>
       ) : a.status === "VERIFYING" ? (
         <div
           style={{
@@ -1607,7 +1700,7 @@ export default function BoardCard({
           <Flex justify="space-between" align="center" style={{ marginBottom: 6 }}>
             <Text strong style={{ fontSize: 12 }}>
               {a.tourReport?.status === "REJECTED"
-                ? "⚠️ Report rejected. The guide must submit again."
+                ? "⚠️ Report rejected. The submitter must submit again."
                 : a.tourReport?.status === "VERIFIED" && !a.tourReport?.moneyVerifiedAt
                   ? "✅ Report verified — waiting for Accounting to lock money"
                   : a.tourReport?.moneyVerifiedAt
@@ -1630,12 +1723,12 @@ export default function BoardCard({
           />
           <Text type="secondary" style={{ fontSize: 11 }}>
             {a.tourReport?.status === "REJECTED"
-              ? "The guide must resend the report and its evidence on the Submit Report page."
+              ? "The submitter must resend the report and its evidence."
               : a.tourReport?.status === "VERIFIED" && !a.tourReport?.moneyVerifiedAt
                 ? "Admin confirmed the report. Accounting must now verify & lock the money before the trip can complete."
                 : a.tourReport?.moneyVerifiedAt
                   ? "Accounting locked the money. An administrator still needs to verify the report to complete the trip."
-                  : "The guide has submitted the report. Waiting for an administrator to verify it…"}
+                  : "The report has been submitted. Waiting for an administrator to verify it…"}
           </Text>
           {canConfirm && a.tourReport?.status !== "VERIFIED" && (
             <Space wrap style={{ marginTop: 8 }}>
@@ -1668,12 +1761,12 @@ export default function BoardCard({
             loading={confirming}
             onClick={() => onConfirm(a)}
           >
-            Confirm tour finished
+            {isDriverOnly ? "Send to Accounting" : "Confirm tour finished"}
           </Button>
           <Tooltip
             title={
               recallLocked
-                ? "Recall is locked — the 06:30 cutoff has passed. The guide may already have seen the assignment."
+                ? "Recall is locked — the 06:30 cutoff has passed. The crew may already have seen the assignment."
                 : undefined
             }
           >
@@ -1692,6 +1785,27 @@ export default function BoardCard({
           </Tooltip>
         </Space.Compact>
       ) : null}
+      {canConfirm &&
+        !isOutsourced &&
+        (a.status === "PENDING" ||
+          a.status === "DRAFT_ASSIGNED" ||
+          a.status === "TRANSFERRED") && (
+          <Button
+            type="dashed"
+            size="small"
+            block
+            icon={<SendOutlined />}
+            style={{
+              marginTop: 12,
+              borderRadius: 8,
+              color: "#722ed1",
+              borderColor: "#b37feb",
+            }}
+            onClick={() => onPartnerHandoff?.(a)}
+          >
+            Outsource to partner agency
+          </Button>
+        )}
       {canConfirm && (!a.tourReport?.locked || isAdmin) && (
         <Button
           type="dashed"

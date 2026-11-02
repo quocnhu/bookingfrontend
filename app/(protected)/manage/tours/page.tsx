@@ -16,6 +16,7 @@ import {
   Popconfirm,
   Row,
   Select,
+  Switch,
   Table,
   Tag,
   Typography,
@@ -45,6 +46,7 @@ interface Tour {
   code?: string;
   name: string;
   type: "PRIVATE_TOUR" | "GROUP_TOUR";
+  requiresGuide?: boolean;
   thumbnailUrl?: string | null;
   durationDays?: number | null;
   durationValue?: number | null;
@@ -68,6 +70,11 @@ interface Tour {
     adultPrice?: string | number | null;
     childPrice?: string | number | null;
     infantPrice?: string | number | null;
+    currency?: string | null;
+  }[];
+  privatePaxPrices?: {
+    pax: number;
+    pricePerPerson?: string | number | null;
     currency?: string | null;
   }[];
   gallery?: GalleryImage[];
@@ -180,6 +187,84 @@ function PricingSection({
           />
         </Col>
       </Row>
+    </Flex>
+  );
+}
+
+function PrivatePaxPricingSection({
+  color,
+  background,
+}: {
+  color: string;
+  background: string;
+}) {
+  return (
+    <Flex
+      vertical
+      gap={8}
+      style={{
+        padding: 12,
+        borderRadius: 10,
+        border: `1px solid ${color}`,
+        background,
+      }}
+    >
+      <Tag color={color} style={{ alignSelf: "flex-start", margin: 0 }}>
+        Private Tour pricing · per person
+      </Tag>
+      <Form.List name="privatePaxPrices">
+        {(fields, { add, remove }) => (
+          <Flex vertical gap={8}>
+            {fields.map((field, index) => (
+              <Row key={field.key} gutter={8} align="middle" wrap={false}>
+                <Col flex="none" style={{ width: 110 }}>
+                  <Tag color={PERSON_COLORS.adult} style={{ margin: 0 }}>
+                    {index + 1} {index === 0 ? "person" : "people"}
+                  </Tag>
+                </Col>
+                <Col flex="auto">
+                  <Form.Item
+                    name={[field.name, "pricePerPerson"]}
+                    style={{ marginBottom: 0 }}
+                  >
+                    <InputNumber<number>
+                      style={{ width: "100%" }}
+                      min={0}
+                      placeholder="Price per person (VND)"
+                      formatter={(v) =>
+                        v == null ? "" : `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+                      }
+                      parser={(v) => Number((v ?? "").replace(/,/g, ""))}
+                      addonAfter="₫ / person"
+                    />
+                  </Form.Item>
+                </Col>
+                <Col flex="none">
+                  <Button
+                    type="text"
+                    danger
+                    icon={<DeleteOutlined />}
+                    disabled={fields.length <= 1}
+                    onClick={() => remove(field.name)}
+                  />
+                </Col>
+              </Row>
+            ))}
+            <Button
+              type="dashed"
+              icon={<PlusOutlined />}
+              onClick={() => add({ pricePerPerson: 0 })}
+              style={{ alignSelf: "flex-start" }}
+            >
+              Add person
+            </Button>
+          </Flex>
+        )}
+      </Form.List>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        Add one row for each group size. The customer pays the row matching their
+        total pax.
+      </Typography.Text>
     </Flex>
   );
 }
@@ -390,8 +475,15 @@ export default function ToursPage() {
     }, {});
     const pvt = prices["PRIVATE_TOUR"];
     const grp = prices["GROUP_TOUR"];
+    const privatePaxValues =
+      tour?.privatePaxPrices && tour.privatePaxPrices.length > 0
+        ? [...tour.privatePaxPrices]
+            .sort((a, b) => a.pax - b.pax)
+            .map((row) => ({ pricePerPerson: Number(row.pricePerPerson ?? 0) }))
+        : [{ pricePerPerson: Number(pvt?.adultPrice ?? 0) }];
     form.setFieldsValue({
       name: tour?.name ?? "",
+      requiresGuide: tour?.requiresGuide ?? true,
       thumbnailUrl: tour?.thumbnailUrl ?? null,
       durationDays: tour?.durationDays ?? 1,
       durationValue: tour?.durationValue ?? tour?.durationDays ?? 1,
@@ -408,9 +500,7 @@ export default function ToursPage() {
       categoryIds: (tour?.categories ?? []).map((link) => link.categoryId),
       primaryCategoryId:
         tour?.categories?.find((link) => link.isPrimary)?.categoryId ?? undefined,
-      privatePricesAdult: pvt?.adultPrice ?? (tour?.type === "PRIVATE_TOUR" ? tour?.adultPrice : 0) ?? 0,
-      privatePricesChild: pvt?.childPrice ?? (tour?.type === "PRIVATE_TOUR" ? tour?.childPrice : 0) ?? 0,
-      privatePricesInfant: pvt?.infantPrice ?? (tour?.type === "PRIVATE_TOUR" ? tour?.infantPrice : 0) ?? 0,
+      privatePaxPrices: privatePaxValues,
       groupPricesAdult: grp?.adultPrice ?? (tour?.type === "GROUP_TOUR" ? tour?.adultPrice : 0) ?? 0,
       groupPricesChild: grp?.childPrice ?? (tour?.type === "GROUP_TOUR" ? tour?.childPrice : 0) ?? 0,
       groupPricesInfant: grp?.infantPrice ?? (tour?.type === "GROUP_TOUR" ? tour?.infantPrice : 0) ?? 0,
@@ -438,12 +528,18 @@ export default function ToursPage() {
   const save = async () => {
     const values = await form.validateFields();
     const window = values.promotionWindow as [Dayjs, Dayjs] | null | undefined;
+    const privatePaxPrices = ((values.privatePaxPrices ?? []) as {
+      pricePerPerson?: number;
+    }[]).map((row, index) => ({
+      pax: index + 1,
+      pricePerPerson: Number(row?.pricePerPerson ?? 0),
+    }));
     const typePrices = [
       {
         type: "PRIVATE_TOUR",
-        adultPrice: values.privatePricesAdult,
-        childPrice: values.privatePricesChild,
-        infantPrice: values.privatePricesInfant,
+        adultPrice: privatePaxPrices[0]?.pricePerPerson ?? 0,
+        childPrice: 0,
+        infantPrice: 0,
       },
       {
         type: "GROUP_TOUR",
@@ -464,10 +560,12 @@ export default function ToursPage() {
     const payload: any = {
       name: values.name,
       type: tourType,
+      requiresGuide: values.requiresGuide ?? true,
       thumbnailUrl: values.thumbnailUrl,
       durationDays,
       durationValue,
       durationUnit,
+      privatePaxPrices,
       freeCancellationValue: values.freeCancellationValue ?? 0,
       freeCancellationUnit: values.freeCancellationUnit ?? "HOUR",
       cancellationPolicy: values.cancellationPolicy,
@@ -848,6 +946,17 @@ export default function ToursPage() {
             </Col>
           </Row>
           <Form.Item
+            name="requiresGuide"
+            label="Crew requirement"
+            valuePropName="checked"
+            extra="Driver only skips the guide and sends the driver's money straight to Accounting."
+          >
+            <Switch
+              checkedChildren="Guide + driver"
+              unCheckedChildren="Driver only"
+            />
+          </Form.Item>
+          <Form.Item
             name="departureLocation"
             label="Pickup / meeting point"
           >
@@ -927,11 +1036,9 @@ export default function ToursPage() {
             All prices are in VND.
           </Typography.Text>
           <Flex vertical gap={12} style={{ marginTop: 8 }}>
-            <PricingSection
-              title="Private Tour pricing"
+            <PrivatePaxPricingSection
               color={PRIVATE_COLOR}
               background="rgba(114, 46, 209, 0.06)"
-              prefix="privatePrices"
             />
             <PricingSection
               title="Group Tour pricing"
