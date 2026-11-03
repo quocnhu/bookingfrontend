@@ -315,7 +315,7 @@ export default function SubmitReportPage() {
                 type="primary"
                 icon={<SendOutlined />}
                 loading={submitting}
-                disabled={entryCount === 0}
+                disabled={entryCount === 0 && !detail?.groupRef}
                 onClick={() => submit(detail.id)}
                 block={isMobile}
               >
@@ -329,11 +329,19 @@ export default function SubmitReportPage() {
           <>
             {canEditReport(detail) && entryCount === 0 && (
               <Alert
-                type="warning"
+                type={detail.groupRef ? "info" : "warning"}
                 showIcon
                 style={{ marginBottom: 16 }}
-                message="At least one money entry is required"
-                description="Record what you collected or spent (Booking & Money on My Trips) before submitting — Accounting cannot verify an empty money sheet."
+                message={
+                  detail.groupRef
+                    ? "Customer paid on the parent booking"
+                    : "At least one money entry is required"
+                }
+                description={
+                  detail.groupRef
+                    ? "You can submit with no money entries — Accounting will lock this bus at net 0. Add expenses or extra cash only if they happened on this bus."
+                    : "Record what you collected or spent (Booking & Money on My Trips) before submitting — Accounting cannot verify an empty money sheet."
+                }
               />
             )}
             <Descriptions column={1} size="small" bordered style={{ marginBottom: 24 }}>

@@ -41,7 +41,6 @@ import type { ReactNode } from "react";
 import dayjs, { Dayjs } from "dayjs";
 import type { BoardCrew, BoardItem, BookingItem, TourMeta } from "./types";
 import MarqueeText from "@/components/MarqueeText";
-import StatementVoucherModal from "@/components/accounting/StatementVoucherModal";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { STATUS_COLORS, LEAVE_COLOR } from "./types";
@@ -451,6 +450,7 @@ export default function BoardCard({
   today,
   confirming,
   canConfirm,
+  recallCutoff = "06:30",
   readOnly,
   onConfirm,
   onDispatch,
@@ -473,6 +473,7 @@ export default function BoardCard({
   today: Dayjs;
   confirming: boolean;
   canConfirm: boolean;
+  recallCutoff?: string;
   readOnly?: boolean;
   onConfirm: (assignment: BoardItem) => void;
   onDispatch: (assignment: BoardItem) => void;
@@ -485,7 +486,7 @@ export default function BoardCard({
     beforeBookingId?: string | null,
     position?: "before" | "after",
   ) => void;
-  onTemplate: (assignment: BoardItem) => void;
+  onTemplate?: (assignment: BoardItem) => void;
   onVerify?: (assignment: BoardItem) => void;
   onReject?: (assignment: BoardItem) => void;
   onAdditions?: (assignment: BoardItem) => void;
@@ -502,7 +503,6 @@ export default function BoardCard({
   const { user } = useApp();
   const isAdmin = user?.role === "ADMIN";
   const [dragOver, setDragOver] = useState(false);
-  const [voucherOpen, setVoucherOpen] = useState(false);
   // The insertion position is shown (above/below the hovered row) instead of
   // highlighting the whole row, which was misleading - it looked like that
   // booking would be replaced. rowId + pos live in one state so they can
@@ -523,9 +523,14 @@ export default function BoardCard({
   const startDayMs = dayjs(a.startDate).startOf("day").valueOf();
   const endDayMs = dayjs(a.endDate ?? a.startDate).startOf("day").valueOf();
   const isActiveToday = startDayMs <= activeTodayMs && endDayMs >= activeTodayMs;
+  const [recallHours, recallMinutes] = recallCutoff.split(":").map(Number);
   const recallLocked =
     Date.now() >
-    dayjs(a.startDate).startOf("day").add(6, "hour").add(30, "minute").valueOf();
+    dayjs(a.startDate)
+      .startOf("day")
+      .add(recallHours || 0, "hour")
+      .add(recallMinutes || 0, "minute")
+      .valueOf();
   const isEven = index % 2 === 0;
   const tint = isEven ? `${accent}12` : `${accent}1c`;
   const tintStrong = `${accent}2e`;
@@ -885,13 +890,7 @@ export default function BoardCard({
             Today
           </Tag>
         )}
-        <Tag
-          color={color === "blue" ? "geekblue" : "magenta"}
-          style={{ margin: 0 }}
-        >
-          {a.totalPax}/{capacity} pax
-        </Tag>
-        {!readOnly && (
+        {onTemplate && (
           <Tooltip title="Print the tour manifest (stamp for year-end audit)">
             <Button
               type="text"
@@ -902,6 +901,12 @@ export default function BoardCard({
             />
           </Tooltip>
         )}
+        <Tag
+          color={color === "blue" ? "geekblue" : "magenta"}
+          style={{ margin: 0 }}
+        >
+          {a.totalPax}/{capacity} pax
+        </Tag>
         <Tag
           color={procColor ?? "default"}
           style={{ fontSize: 10, margin: 0 }}
@@ -991,78 +996,8 @@ export default function BoardCard({
               </Tag>
             </Tooltip>
           )}
-          {(a.tourReport?.moneyVerifiedAt || (a.paymentLines && a.paymentLines.length > 0)) && (
-            <Tooltip title="Open the payment statement for this trip (A4, totals + signatures)">
-              <Button
-                size="small"
-                icon={<PrinterOutlined />}
-                onClick={() => setVoucherOpen(true)}
-                style={{ margin: 0, height: 24, fontSize: 11 }}
-              >
-                Statement
-              </Button>
-            </Tooltip>
-          )}
         </div>
       )}
-      {voucherOpen && (
-        <StatementVoucherModal
-          open
-          onClose={() => setVoucherOpen(false)}
-          payee={{
-            name:
-              a.paymentLines?.[0]?.payableTo?.name ??
-              a.guide?.name ??
-              a.driver?.name ??
-              "—",
-            role:
-              a.paymentLines?.[0]?.payableTo?.id && a.guide?.id
-                ? a.paymentLines[0].payableTo?.id === a.guide.id
-                  ? "GUIDE"
-                  : "DRIVER"
-                : a.guide
-                  ? "GUIDE"
-                  : "DRIVER",
-            groupLabel: null,
-            providerName: a.provider?.name ?? null,
-          }}
-          fromDate={dayjs(a.startDate).format("YYYY-MM-DD")}
-          toDate={dayjs(a.endDate).format("YYYY-MM-DD")}
-          mode="SETTLEMENT"
-          rows={[
-            {
-              assignmentId: a.id,
-              code: a.code,
-              tourName: a.tourName,
-              tourDate: a.startDate,
-              endDate: a.endDate,
-              status: a.status,
-              plateNumber: a.vehicle?.plateNumber ?? null,
-              providerName: a.provider?.name ?? null,
-              guideName: a.guide?.name ?? null,
-              driverName: a.driver?.name ?? null,
-              myRole:
-                a.paymentLines?.[0]?.payableTo?.id && a.guide?.id
-                  ? a.paymentLines[0].payableTo?.id === a.guide.id
-                    ? "GUIDE"
-                    : "DRIVER"
-                  : "GUIDE",
-              netAmount:
-                a.tourReport?.netAmount != null
-                  ? Number(a.tourReport.netAmount)
-                  : null,
-              flow: a.tourReport?.settlementFlow ?? null,
-              locked: !!a.tourReport?.moneyVerifiedAt,
-              paid: (a.paymentLines?.length ?? 0) > 0,
-              paidToName: a.paymentLines?.[0]?.payableTo?.name ?? null,
-              periodToDate: null,
-              exportable: false,
-              settlesWith: null,
-            },
-          ]}
-        />
-      )}
-
       <Flex wrap gap={6} align="center" style={{ marginBottom: 10 }}>
         <Tag icon={<CalendarOutlined />} style={{ marginInlineEnd: 0 }}>
           {day} · {a.durationDays} day{a.durationDays > 1 ? "s" : ""}
@@ -1083,6 +1018,11 @@ export default function BoardCard({
         {isOutsourced && (
           <Tag color="purple" style={{ marginInlineEnd: 0, fontSize: 10 }}>
             OUTSOURCED · {a.partner?.name ?? "Partner"}
+          </Tag>
+        )}
+        {a.groupRef && (
+          <Tag color="purple" style={{ marginInlineEnd: 0, fontSize: 10 }}>
+            GROUP · {a.groupRef}
           </Tag>
         )}
         {isDriverOnly && (
@@ -1766,7 +1706,7 @@ export default function BoardCard({
           <Tooltip
             title={
               recallLocked
-                ? "Recall is locked — the 06:30 cutoff has passed. The crew may already have seen the assignment."
+                ? `Recall is locked — the ${recallCutoff} cutoff has passed. The crew may already have seen the assignment.`
                 : undefined
             }
           >

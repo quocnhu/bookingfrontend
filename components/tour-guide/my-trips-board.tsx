@@ -24,6 +24,7 @@ import {
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import BoardColumn from "@/components/dispatch-board/BoardColumn";
+import TourTemplateModal from "@/components/dispatch-board/TourTemplateModal";
 import type { BoardItem } from "@/components/dispatch-board/types";
 import { TYPE_META, sortByDate } from "@/components/dispatch-board/types";
 
@@ -44,6 +45,7 @@ export default function MyTripsBoard({
   const { token } = antdTheme.useToken();
   const today = dayjs().add(7, "hour").startOf("day");
   const [filterDate, setFilterDate] = useState<Dayjs>(() => today);
+  const [templateTarget, setTemplateTarget] = useState<BoardItem | null>(null);
 
   const filtered = useMemo(
     () => assignments.filter((a) => tripDay(a.startDate).isSame(filterDate, "day")),
@@ -254,7 +256,7 @@ export default function MyTripsBoard({
                 onDispatch={() => {}}
                 onRecall={() => {}}
                 onMoveBooking={() => {}}
-                onTemplate={() => {}}
+                onTemplate={setTemplateTarget}
               />
               <BoardColumn
                 meta={TYPE_META.PRIVATE_TOUR}
@@ -269,7 +271,7 @@ export default function MyTripsBoard({
                 onDispatch={() => {}}
                 onRecall={() => {}}
                 onMoveBooking={() => {}}
-                onTemplate={() => {}}
+                onTemplate={setTemplateTarget}
               />
               {otherItems.length > 0 && (
                 <BoardColumn
@@ -285,7 +287,7 @@ export default function MyTripsBoard({
                   onDispatch={() => {}}
                   onRecall={() => {}}
                   onMoveBooking={() => {}}
-                  onTemplate={() => {}}
+                  onTemplate={setTemplateTarget}
                 />
               )}
             </Row>
@@ -346,6 +348,12 @@ export default function MyTripsBoard({
           read-only — admin or operations manage dispatch changes.
         </Text>
       </Flex>
+
+      <TourTemplateModal
+        assignment={templateTarget}
+        open={!!templateTarget}
+        onClose={() => setTemplateTarget(null)}
+      />
     </div>
   );
 }

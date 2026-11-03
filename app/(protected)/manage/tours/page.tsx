@@ -41,6 +41,8 @@ import TourCategoryManager, {
   type AdminTourCategory,
 } from "@/components/tour-category-manager";
 
+const MAX_PRIVATE_PRICE_ROWS = 45;
+
 interface Tour {
   id: string;
   code?: string;
@@ -254,6 +256,7 @@ function PrivatePaxPricingSection({
               type="dashed"
               icon={<PlusOutlined />}
               onClick={() => add({ pricePerPerson: 0 })}
+              disabled={fields.length >= MAX_PRIVATE_PRICE_ROWS}
               style={{ alignSelf: "flex-start" }}
             >
               Add person

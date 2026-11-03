@@ -15,6 +15,8 @@ import {
   Statistic,
   Switch,
   Tag,
+  TimePicker,
+  Tooltip,
   Typography,
   theme as antdTheme,
 } from "antd";
@@ -23,6 +25,7 @@ import type { DatePickerProps } from "antd";
 import {
   CalendarOutlined,
   CheckCircleOutlined,
+  ClockCircleOutlined,
   LoadingOutlined,
   SendOutlined,
   ScheduleOutlined,
@@ -42,7 +45,6 @@ import BoardColumn from "./BoardColumn";
 import BookingAdditionsModal from "./BookingAdditionsModal";
 import ConfirmFinishedModal from "./ConfirmFinishedModal";
 import CrewAvailabilityDrawer from "./CrewAvailabilityDrawer";
-import TourTemplateModal from "./TourTemplateModal";
 import VerifyReportModal from "./VerifyReportModal";
 import {
   PartnerHandoffModal,
@@ -51,6 +53,30 @@ import {
 import { useSocket } from "@/lib/use-socket";
 
 const { Text } = Typography;
+
+type AutoDispatchSettings = {
+  enabled: boolean;
+  cron: string;
+  timezone: string;
+  nextRun: string | null;
+};
+
+const DAILY_CRON = /^\s*(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+\*\s*$/;
+
+function cronToTime(cron: string): Dayjs | null {
+  const match = DAILY_CRON.exec(cron);
+  if (!match) return null;
+  return dayjs().hour(Number(match[2])).minute(Number(match[1])).second(0);
+}
+
+function timeToCron(time: Dayjs): string {
+  return `${time.minute()} ${time.hour()} * * *`;
+}
+
+function hhmmToTime(value: string): Dayjs {
+  const [hours, minutes] = value.split(":").map(Number);
+  return dayjs().hour(hours).minute(minutes).second(0);
+}
 
 function BoardLoadingOverlay({ text }: { text: string }) {
   const { token } = antdTheme.useToken();
@@ -101,7 +127,6 @@ export default function DispatchBoard({
   const [confirmingId] = useState<string | null>(null);
   const [dispatchingId, setDispatchingId] = useState<string | null>(null);
   const [finishing, setFinishing] = useState<BoardItem | null>(null);
-  const [templateTarget, setTemplateTarget] = useState<BoardItem | null>(null);
   const [verifyTarget, setVerifyTarget] = useState<BoardItem | null>(null);
   const [filterDate, setFilterDate] = useState<Dayjs>(() => dayjs().add(7, "hour").startOf("day"));
   const [additionsTarget, setAdditionsTarget] = useState<BoardItem | null>(null);
@@ -110,6 +135,11 @@ export default function DispatchBoard({
     useState<BoardItem | null>(null);
   const [crewAvailOpen, setCrewAvailOpen] = useState(false);
   const [autoAssign, setAutoAssign] = useState(false);
+  const [autoDispatch, setAutoDispatch] =
+    useState<AutoDispatchSettings | null>(null);
+  const [autoDispatchSaving, setAutoDispatchSaving] = useState(false);
+  const [recallCutoff, setRecallCutoff] = useState("06:30");
+  const [recallCutoffSaving, setRecallCutoffSaving] = useState(false);
 
   const loadBoard = useCallback((background = false) => {
     if (background) setRefreshing(true);
@@ -162,8 +192,50 @@ export default function DispatchBoard({
         .get("/assignments/board/crew")
         .then((r) => setCrew(r.data ?? { guides: [], drivers: [] }))
         .catch(() => setCrew({ guides: [], drivers: [] }));
+      api
+        .get("/assignments/board/auto-dispatch")
+        .then((r) => setAutoDispatch(r.data ?? null))
+        .catch(() => setAutoDispatch(null));
+      api
+        .get("/assignments/board/recall-cutoff")
+        .then((r) => setRecallCutoff(r.data?.time ?? "06:30"))
+        .catch(() => setRecallCutoff("06:30"));
     }
   }, [open, loadBoard]);
+
+  const saveAutoDispatch = async (patch: {
+    enabled?: boolean;
+    cron?: string;
+  }) => {
+    if (!canUpdateAssignment) return;
+    setAutoDispatchSaving(true);
+    try {
+      const r = await api.put("/assignments/board/auto-dispatch", patch);
+      setAutoDispatch(r.data ?? null);
+      message.success("Scheduled auto-dispatch updated");
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to update auto-dispatch"));
+    } finally {
+      setAutoDispatchSaving(false);
+    }
+  };
+
+  const saveRecallCutoff = async (time: Dayjs) => {
+    if (!canUpdateAssignment) return;
+    const value = time.format("HH:mm");
+    setRecallCutoffSaving(true);
+    try {
+      const r = await api.put("/assignments/board/recall-cutoff", {
+        time: value,
+      });
+      setRecallCutoff(r.data?.time ?? value);
+      message.success("Recall cutoff updated");
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to update recall cutoff"));
+    } finally {
+      setRecallCutoffSaving(false);
+    }
+  };
 
   const changeCrew = async (
     assignment: BoardItem,
@@ -188,10 +260,6 @@ export default function DispatchBoard({
 
   const confirmTour = (assignment: BoardItem) => {
     setFinishing(assignment);
-  };
-
-  const openTemplate = (assignment: BoardItem) => {
-    setTemplateTarget(assignment);
   };
 
   const openVerify = (assignment: BoardItem) => {
@@ -264,7 +332,7 @@ export default function DispatchBoard({
   };
 
   const onRecall = (assignment: BoardItem) => {
-    // Server-enforced: recall is blocked after the 06:30 cutoff on the
+    // Server-enforced: recall is blocked after the configured cutoff on the
     // departure day. Before that we recall immediately.
     recallAssignment(assignment);
   };
@@ -735,6 +803,86 @@ export default function DispatchBoard({
                 </Flex>
               </Col>
             </Row>
+
+            {autoDispatch && (
+              <Flex
+                wrap
+                gap={10}
+                align="center"
+                justify="space-between"
+                style={{
+                  marginTop: 12,
+                  paddingTop: 10,
+                  borderTop: `1px solid ${token.colorSplit}`,
+                }}
+              >
+                <Space wrap size={8} align="center">
+                  <Tooltip title="Automatic dispatch — at this time it fills missing crew, then dispatches all pending trips that start today.">
+                    <ScheduleOutlined style={{ color: token.colorPrimary }} />
+                  </Tooltip>
+                  <Text strong style={{ fontSize: 12 }}>
+                    Auto-dispatch
+                  </Text>
+                  <Switch
+                    size="small"
+                    checked={autoDispatch.enabled}
+                    loading={autoDispatchSaving}
+                    disabled={!canUpdateAssignment}
+                    onChange={(enabled) => saveAutoDispatch({ enabled })}
+                  />
+                  <TimePicker
+                    size="small"
+                    value={cronToTime(autoDispatch.cron)}
+                    format="HH:mm"
+                    minuteStep={5}
+                    allowClear={false}
+                    disabled={!canUpdateAssignment}
+                    onChange={(time) => {
+                      if (time) saveAutoDispatch({ cron: timeToCron(time) });
+                    }}
+                    style={{ width: 78 }}
+                  />
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {autoDispatch.timezone}
+                  </Text>
+                  {autoDispatch.enabled ? (
+                    autoDispatch.nextRun ? (
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        · Next{" "}
+                        {dayjs(autoDispatch.nextRun).format("DD MMM, HH:mm")}
+                      </Text>
+                    ) : null
+                  ) : (
+                    <Tooltip title="Automatic dispatch is off — scheduled crew fill + dispatch are paused.">
+                      <Tag style={{ margin: 0, fontSize: 11 }}>Off</Tag>
+                    </Tooltip>
+                  )}
+                </Space>
+
+                <Space wrap size={8} align="center">
+                  <Tooltip title="Recall cutoff — after this time on the departure day, a dispatched trip can no longer be recalled to PENDING.">
+                    <ClockCircleOutlined
+                      style={{ color: token.colorPrimary }}
+                    />
+                  </Tooltip>
+                  <Text strong style={{ fontSize: 12 }}>
+                    Recall cutoff
+                  </Text>
+                  <TimePicker
+                    size="small"
+                    value={hhmmToTime(recallCutoff)}
+                    format="HH:mm"
+                    minuteStep={5}
+                    allowClear={false}
+                    disabled={!canUpdateAssignment || recallCutoffSaving}
+                    onChange={(time) => {
+                      if (time) saveRecallCutoff(time);
+                    }}
+                    style={{ width: 78 }}
+                  />
+                </Space>
+              </Flex>
+            )}
           </Card>
 
           <Card
@@ -751,11 +899,11 @@ export default function DispatchBoard({
                 dispatchingId={dispatchingId}
                 recallingId={recallingId}
                 canConfirm={canUpdateAssignment}
+                recallCutoff={recallCutoff}
                 onConfirm={confirmTour}
                 onDispatch={dispatchAssignment}
                 onRecall={onRecall}
                 onMoveBooking={moveBooking}
-                onTemplate={openTemplate}
                 onVerify={openVerify}
                 onReject={openReject}
                 onAdditions={setAdditionsTarget}
@@ -772,11 +920,11 @@ export default function DispatchBoard({
                 dispatchingId={dispatchingId}
                 recallingId={recallingId}
                 canConfirm={canUpdateAssignment}
+                recallCutoff={recallCutoff}
                 onConfirm={confirmTour}
                 onDispatch={dispatchAssignment}
                 onRecall={onRecall}
                 onMoveBooking={moveBooking}
-                onTemplate={openTemplate}
                 onVerify={openVerify}
                 onReject={openReject}
                 onAdditions={setAdditionsTarget}
@@ -794,11 +942,11 @@ export default function DispatchBoard({
                   dispatchingId={dispatchingId}
                   recallingId={recallingId}
                   canConfirm={canUpdateAssignment}
+                  recallCutoff={recallCutoff}
                   onConfirm={confirmTour}
                   onDispatch={dispatchAssignment}
                   onRecall={onRecall}
                   onMoveBooking={moveBooking}
-                  onTemplate={openTemplate}
                   onVerify={openVerify}
                   onReject={openReject}
                   onAdditions={setAdditionsTarget}
@@ -817,54 +965,54 @@ export default function DispatchBoard({
             icon={<CheckCircleOutlined />}
             message={<Text strong>Summary</Text>}
             description={
-              <Row gutter={[12, 8]} style={{ marginTop: 8 }}>
-                <Col xs={12} sm={4}>
+              <Row gutter={[8, 8]} style={{ marginTop: 6 }}>
+                <Col flex="1 1 0" style={{ minWidth: 86, textAlign: "center" }}>
                   <Statistic
                     title="Pending"
                     value={stats.pending}
-                    styles={{ content: { fontSize: 18, color: "#faad14" } }}
+                    styles={{ title: { fontSize: 12 }, content: { fontSize: 16, color: "#faad14" } }}
                   />
                 </Col>
-                <Col xs={12} sm={4}>
+                <Col flex="1 1 0" style={{ minWidth: 86, textAlign: "center" }}>
                   <Statistic
                     title="Dispatched"
                     value={stats.dispatched}
-                    styles={{ content: { fontSize: 18, color: "#1677ff" } }}
+                    styles={{ title: { fontSize: 12 }, content: { fontSize: 16, color: "#1677ff" } }}
                   />
                 </Col>
-                <Col xs={12} sm={4}>
+                <Col flex="1 1 0" style={{ minWidth: 86, textAlign: "center" }}>
                   <Statistic
                     title="Verifying"
                     value={stats.verifying}
-                    styles={{ content: { fontSize: 18, color: "#722ed1" } }}
+                    styles={{ title: { fontSize: 12 }, content: { fontSize: 16, color: "#722ed1" } }}
                   />
                 </Col>
-                <Col xs={12} sm={4}>
+                <Col flex="1 1 0" style={{ minWidth: 86, textAlign: "center" }}>
                   <Statistic
                     title="Group Tours"
                     value={stats.group}
-                    styles={{ content: { fontSize: 18, color: "#1677ff" } }}
+                    styles={{ title: { fontSize: 12 }, content: { fontSize: 16, color: "#1677ff" } }}
                   />
                 </Col>
-                <Col xs={12} sm={4}>
+                <Col flex="1 1 0" style={{ minWidth: 86, textAlign: "center" }}>
                   <Statistic
                     title="Private Tours"
                     value={stats.private}
-                    styles={{ content: { fontSize: 18, color: "#722ed1" } }}
+                    styles={{ title: { fontSize: 12 }, content: { fontSize: 16, color: "#722ed1" } }}
                   />
                 </Col>
-                <Col xs={12} sm={4}>
+                <Col flex="1 1 0" style={{ minWidth: 86, textAlign: "center" }}>
                   <Statistic
                     title="Other"
                     value={stats.other}
-                    styles={{ content: { fontSize: 18, color: "#8c8c8c" } }}
+                    styles={{ title: { fontSize: 12 }, content: { fontSize: 16, color: "#8c8c8c" } }}
                   />
                 </Col>
-                <Col xs={12} sm={4}>
+                <Col flex="1 1 0" style={{ minWidth: 86, textAlign: "center" }}>
                   <Statistic
                     title="Total"
                     value={stats.total}
-                    styles={{ content: { fontSize: 18, color: token.colorPrimary } }}
+                    styles={{ title: { fontSize: 12 }, content: { fontSize: 16, color: token.colorPrimary } }}
                   />
                 </Col>
               </Row>
@@ -884,11 +1032,6 @@ export default function DispatchBoard({
           loadBoard(true);
           onChanged?.();
         }}
-      />
-      <TourTemplateModal
-        assignment={templateTarget}
-        open={!!templateTarget}
-        onClose={() => setTemplateTarget(null)}
       />
       <VerifyReportModal
         assignment={verifyTarget}

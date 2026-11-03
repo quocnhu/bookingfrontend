@@ -189,6 +189,7 @@ export interface QueueItem {
   submittedAt: string | null;
   reportStatus?: string | null;
   sourceType?: "GUIDE_REPORT" | "DRIVER_ONLY_DIRECT" | "OUTSOURCED_PARTNER";
+  groupRef?: string | null;
   moneyVerifiedAt?: string | null;
   guide?: { id: string; name: string } | null;
   driver?: { id: string; name: string } | null;
@@ -1132,6 +1133,11 @@ export function QueueTab({
                       ? "DRIVER ONLY"
                       : "GUIDE"}
                 </Tag>
+                {r.groupRef && (
+                  <Tag color="purple" style={{ marginTop: 4, marginLeft: 4, fontSize: 10 }}>
+                    GROUP · {r.groupRef}
+                  </Tag>
+                )}
               </>
             ),
           },
@@ -1274,7 +1280,8 @@ export function TourMoneyDrawer({
       : (item.guide?.name ?? "tour guide");
   const canLock = isPartner
     ? Number(item.partnerAmount ?? 0) > 0
-    : rows.length > 0 && !!(item.guide || (isDriverOnly && item.driver));
+    : (rows.length > 0 || !!item.groupRef) &&
+      !!(item.guide || (isDriverOnly && item.driver));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1433,12 +1440,14 @@ return (
         <Flex justify="space-between" gap={8} wrap>
           <Button onClick={onClose}>Close</Button>
           <Space>
-            <Button
-              icon={<FileTextOutlined />}
-              onClick={() => setShowTemplate((v) => !v)}
-            >
-              {showTemplate ? "Hide Template" : "View Template"}
-            </Button>
+            {!isPartner && (
+              <Button
+                icon={<FileTextOutlined />}
+                onClick={() => setShowTemplate((v) => !v)}
+              >
+                {showTemplate ? "Hide Template" : "View Template"}
+              </Button>
+            )}
             {canReject && (
               <Button danger icon={<CloseCircleOutlined />} onClick={reject}>
                 Return
@@ -1458,7 +1467,7 @@ return (
         </Flex>
       }
     >
-      {showTemplate && (
+      {showTemplate && !isPartner && (
         <TourTemplateModal
           // Pass the real assignment id so the modal fetches the FULL trip
           // (bookings, crew, vehicle, tour report) — the exact same template
@@ -1477,7 +1486,9 @@ return (
           message={
             isPartner
               ? "The partner amount is missing — return and confirm the handoff again."
-              : "Before verifying: add at least one Collect/Expense entry below as needed — a trip with no money entries cannot be locked."
+              : item.groupRef
+                ? "This group bus can be locked at net 0. Add entries only if there were expenses or extra cash."
+                : "Before verifying: add at least one Collect/Expense entry below as needed — a trip with no money entries cannot be locked."
           }
           description={
             !isPartner && !item.guide && !item.driver

@@ -166,16 +166,13 @@ export default function BookingPaymentsTab() {
     (row.payments ?? []).find((p) => p.provider === "PAYPAL") ?? null;
 
   return (
-    <Card size="small">
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 12 }}
-        message="Customer payments"
-        description="Website/PayPal receipts are checked here. Guide and driver money is handled in Verification queue / Payment history."
-      />
-      <Row gutter={8} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={10}>
+    <Card
+      size="small"
+      styles={{ body: { padding: 16 } }}
+      style={{ borderRadius: 12 }}
+    >
+      <Row gutter={[8, 8]} align="middle" style={{ marginBottom: 12 }}>
+        <Col xs={24} md={12}>
           <Input
             allowClear
             prefix={<SearchOutlined />}
@@ -187,7 +184,7 @@ export default function BookingPaymentsTab() {
             }}
           />
         </Col>
-        <Col xs={12} md={5}>
+        <Col xs={12} md={6}>
           <Select
             allowClear
             placeholder="Payment status"
@@ -203,7 +200,7 @@ export default function BookingPaymentsTab() {
             }))}
           />
         </Col>
-        <Col xs={12} md={5}>
+        <Col xs={12} md={6}>
           <Select
             allowClear
             placeholder="Channel"
@@ -220,11 +217,6 @@ export default function BookingPaymentsTab() {
             ]}
           />
         </Col>
-        <Col xs={24} md={4}>
-          <Button icon={<ReloadOutlined />} onClick={load} block>
-            Refresh
-          </Button>
-        </Col>
       </Row>
 
       <Table<BookingPaymentRow>
@@ -232,6 +224,7 @@ export default function BookingPaymentsTab() {
         size="small"
         loading={loading}
         dataSource={rows}
+        scroll={{ x: 900 }}
         pagination={{
           current: page.current,
           pageSize: page.pageSize,
@@ -243,6 +236,7 @@ export default function BookingPaymentsTab() {
         columns={[
           {
             title: "Booking",
+            align: "center",
             render: (_: unknown, r) => (
               <>
                 <Typography.Text strong>
@@ -257,6 +251,7 @@ export default function BookingPaymentsTab() {
           },
           {
             title: "Customer",
+            align: "center",
             render: (_: unknown, r) => (
               <>
                 {r.customerName ?? "—"}
@@ -269,6 +264,7 @@ export default function BookingPaymentsTab() {
           },
           {
             title: "Tour",
+            align: "center",
             render: (_: unknown, r) => (
               <>
                 {r.tour?.name ?? "—"}
@@ -281,7 +277,7 @@ export default function BookingPaymentsTab() {
           },
           {
             title: "Total",
-            align: "right",
+            align: "center",
             render: (_: unknown, r) =>
               r.totalAmount != null
                 ? `${vnd(r.totalAmount)} ${r.currency ?? ""}`
@@ -327,7 +323,7 @@ export default function BookingPaymentsTab() {
           },
           {
             title: "",
-            align: "right",
+            align: "center",
             render: (_: unknown, r) => (
               <Button size="small" onClick={() => openRow(r)}>
                 View

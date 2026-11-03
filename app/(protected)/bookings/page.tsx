@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   AutoComplete,
   Button,
   Card,
+  Col,
   DatePicker,
   Descriptions,
   Drawer,
@@ -14,8 +16,10 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Row,
   Select,
   Space,
+  Switch,
   Table,
   Tabs,
   Tag,
@@ -67,6 +71,28 @@ const endDate = (start: any, days?: number | null): Date | null => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
+const MAX_GROUP_BOOKING_PAX = 12;
+const buildGroupBuses = (total: number) => {
+  const rows: Array<{ key: string; pax: number }> = [];
+  let left = Math.max(1, Math.floor(Number(total) || 1));
+  let index = 0;
+  while (left > 0) {
+    const pax = Math.min(12, left);
+    rows.push({ key: `bus-${index}-${Date.now()}`, pax });
+    left -= pax;
+    index += 1;
+  }
+  return rows;
+};
+
+const maxPaxForTour = (tour: any, tourType?: string | null) => {
+  if (tourType !== "PRIVATE_TOUR") return MAX_GROUP_BOOKING_PAX;
+  const tiers = (tour?.privatePaxPrices ?? [])
+    .filter((row: any) => Number(row.pricePerPerson ?? 0) > 0)
+    .map((row: any) => Number(row.pax));
+  return tiers.length ? Math.max(...tiers) : MAX_GROUP_BOOKING_PAX;
+};
+
 const fmtDate = (d: Date | null) => (d ? new Date(d).toLocaleDateString() : "—");
 
 export default function BookingsPage() {
@@ -103,6 +129,44 @@ export default function BookingsPage() {
   const autoRef = useRef("");
   const [bookingForm] = Form.useForm();
   const [savingBooking, setSavingBooking] = useState(false);
+  const [groupBuses, setGroupBuses] = useState<
+    Array<{
+      key: string;
+      pax: number;
+      driverId?: string;
+      guideId?: string;
+      vehicleId?: string;
+      providerId?: string;
+      note?: string;
+    }>
+  >([]);
+  const [groupCrew, setGroupCrew] = useState<{ guides: any[]; drivers: any[] }>({
+    guides: [],
+    drivers: [],
+  });
+  const [groupProviders, setGroupProviders] = useState<any[]>([]);
+  const [groupSaving, setGroupSaving] = useState(false);
+  const [groupOptionsLoaded, setGroupOptionsLoaded] = useState(false);
+  const [newGroupEnabled, setNewGroupEnabled] = useState(false);
+  const [newGroupBuses, setNewGroupBuses] = useState<
+    Array<{
+      key: string;
+      pax: number;
+      driverId?: string;
+      guideId?: string;
+      vehicleId?: string;
+      providerId?: string;
+      note?: string;
+    }>
+  >([]);
+  const watchedTourId = Form.useWatch("tourId", bookingForm);
+  const watchedTourType = Form.useWatch("tourType", bookingForm);
+  const watchedTotalPax = Form.useWatch("totalPax", bookingForm);
+  const selectedBookingTour = tours.find((t) => t.id === watchedTourId);
+  const bookingMaxPax = maxPaxForTour(
+    selectedBookingTour,
+    watchedTourType ?? selectedBookingTour?.type,
+  );
 
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkAssignment, setLinkAssignment] = useState<any>(null);
@@ -110,6 +174,58 @@ export default function BookingsPage() {
   const [savingLink, setSavingLink] = useState(false);
 
   const [bookingDetail, setBookingDetail] = useState<any>(null);
+
+  const loadGroupOptions = () => {
+    if (groupOptionsLoaded) return;
+    Promise.all([
+      api
+        .get("/assignments/board/crew")
+        .then((r) => r.data)
+        .catch(() => ({ guides: [], drivers: [] })),
+      api
+        .get("/transportation-providers")
+        .then((r) => r.data)
+        .catch(() => []),
+    ]).then(([crew, providers]) => {
+      setGroupCrew(crew ?? { guides: [], drivers: [] });
+      setGroupProviders(Array.isArray(providers) ? providers : []);
+      setGroupOptionsLoaded(true);
+    });
+  };
+
+  useEffect(() => {
+    const b = bookingDetail;
+    if (!b) {
+      setGroupBuses([]);
+      return;
+    }
+    const isPrivate =
+      (b.tourType ?? b.tour?.type) === "PRIVATE_TOUR";
+    const removableAssignment =
+      Boolean(b.assignment) &&
+      (b.assignment._count?.bookings ?? 0) === 1 &&
+      ["PENDING", "DRAFT_ASSIGNED", "TRANSFERRED"].includes(
+        b.assignment.status,
+      );
+    const canSplit =
+      isPrivate &&
+      !b.parentBookingId &&
+      (b.childBookings?.length ?? 0) === 0 &&
+      (!b.assignmentId || removableAssignment);
+    if (!canSplit) {
+      setGroupBuses([]);
+      return;
+    }
+    setGroupBuses(buildGroupBuses(Number(b.totalPax ?? 1)));
+    loadGroupOptions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    bookingDetail?.id,
+    bookingDetail?.assignmentId,
+    bookingDetail?.parentBookingId,
+    bookingDetail?.childBookings?.length,
+  ]);
+
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [otaOpen, setOtaOpen] = useState(false);
   const [otaSaving, setOtaSaving] = useState(false);
@@ -515,6 +631,9 @@ export default function BookingsPage() {
   const openBooking = () => {
     bookingForm.resetFields();
     autoRef.current = "";
+    setNewGroupEnabled(false);
+    setNewGroupBuses([]);
+    loadGroupOptions();
     setBookingOpen(true);
     void fillBookingRef();
   };
@@ -527,20 +646,120 @@ export default function BookingsPage() {
       /* if it has not rendered yet, skip it */
     }
     const values = await bookingForm.validateFields();
+    if (newGroupEnabled) {
+      if (newGroupBuses.some((bus) => Number(bus.pax ?? 0) < 1)) {
+        message.warning("Each group bus needs at least 1 pax");
+        return;
+      }
+      const busPaxTotal = newGroupBuses.reduce(
+        (sum, bus) => sum + Number(bus.pax ?? 0),
+        0,
+      );
+      if (busPaxTotal !== Number(values.totalPax ?? 0)) {
+        message.warning(
+          `Bus pax total (${busPaxTotal}) must equal the booking total pax (${values.totalPax})`,
+        );
+        return;
+      }
+    }
     setSavingBooking(true);
     try {
-      await api.post("/bookings", {
+      const { data: created } = await api.post("/bookings", {
         ...values,
         startingDate: values.startingDate?.format("YYYY-MM-DD"),
         totalPax: values.totalPax,
       });
-      message.success("Booking created");
+      if (newGroupEnabled && newGroupBuses.length > 0) {
+        try {
+          await api.post(`/bookings/${created.id}/private-group`, {
+            buses: newGroupBuses.map(({ key, ...bus }) => bus),
+          });
+        } catch (e) {
+          message.warning(
+            `${created.bookingRef} was created, but the group buses failed: ${getErrorMessage(e)}`,
+          );
+          setBookingOpen(false);
+          loadBookings();
+          return;
+        }
+      }
+      message.success(
+        newGroupEnabled ? "Booking and group buses created" : "Booking created",
+      );
       setBookingOpen(false);
       loadBookings();
     } catch (e) {
       message.error(getErrorMessage(e, "Failed to create booking"));
     } finally {
       setSavingBooking(false);
+    }
+  };
+
+  const groupPaxTotal = groupBuses.reduce(
+    (sum, bus) => sum + Number(bus.pax ?? 0),
+    0,
+  );
+  const groupParentPax = Number(bookingDetail?.totalPax ?? 0);
+  const removableGroupAssignment =
+    Boolean(bookingDetail?.assignment) &&
+    (bookingDetail.assignment._count?.bookings ?? 0) === 1 &&
+    ["PENDING", "DRAFT_ASSIGNED", "TRANSFERRED"].includes(
+      bookingDetail.assignment.status,
+    );
+  const groupCanSplit =
+    Boolean(bookingDetail) &&
+    (bookingDetail.tourType ?? bookingDetail.tour?.type) === "PRIVATE_TOUR" &&
+    !bookingDetail.parentBookingId &&
+    (bookingDetail.childBookings?.length ?? 0) === 0 &&
+    (!bookingDetail.assignmentId || removableGroupAssignment);
+  const updateGroupBus = (
+    key: string,
+    patch: Partial<(typeof groupBuses)[number]>,
+  ) => {
+    setGroupBuses((prev) =>
+      prev.map((bus) => (bus.key === key ? { ...bus, ...patch } : bus)),
+    );
+  };
+  const newGroupPaxTotal = newGroupBuses.reduce(
+    (sum, bus) => sum + Number(bus.pax ?? 0),
+    0,
+  );
+  const newGroupParentPax = Number(watchedTotalPax ?? 0);
+  const updateNewGroupBus = (
+    key: string,
+    patch: Partial<(typeof newGroupBuses)[number]>,
+  ) => {
+    setNewGroupBuses((prev) =>
+      prev.map((bus) => (bus.key === key ? { ...bus, ...patch } : bus)),
+    );
+  };
+  const saveGroupBuses = async () => {
+    if (!bookingDetail) return;
+    if (groupBuses.some((bus) => Number(bus.pax ?? 0) < 1)) {
+      message.warning("Each bus needs at least 1 pax");
+      return;
+    }
+    if (groupPaxTotal !== groupParentPax) {
+      message.warning(
+        `Bus pax total (${groupPaxTotal}) must equal the booking total pax (${groupParentPax})`,
+      );
+      return;
+    }
+    setGroupSaving(true);
+    try {
+      const { data } = await api.post(
+        `/bookings/${bookingDetail.id}/private-group`,
+        {
+          buses: groupBuses.map(({ key, ...bus }) => bus),
+        },
+      );
+      setBookingDetail(data);
+      loadBookings();
+      message.success("Group buses created");
+    } catch (e) {
+      message.error(getErrorMessage(e, "Could not create group buses"));
+    } finally {
+      setGroupSaving(false);
     }
   };
 
@@ -552,7 +771,11 @@ export default function BookingsPage() {
       const r = await api.get("/bookings", {
         params: { limit: 100, status: "PENDING" },
       });
-      setUnassignedBookings(r.data.items ?? []);
+      setUnassignedBookings(
+        (r.data.items ?? []).filter(
+          (booking: any) => !(booking.childBookings?.length > 0),
+        ),
+      );
     } catch (e) {
       message.error(getErrorMessage(e));
     }
@@ -696,6 +919,16 @@ export default function BookingsPage() {
               {days ? (
                 <Tag style={{ margin: 0, fontSize: 10 }}>
                   {days === 1 ? "1 Day" : `${days} Days`}
+                </Tag>
+              ) : null}
+              {r.parentBooking && (
+                <Tag color="purple" style={{ margin: 0, fontSize: 10 }}>
+                  Group child · {r.parentBooking.bookingRef}
+                </Tag>
+              )}
+              {r.childBookings?.length ? (
+                <Tag color="purple" style={{ margin: 0, fontSize: 10 }}>
+                  Group parent · {r.childBookings.length} buses
                 </Tag>
               ) : null}
             </Space>
@@ -1304,7 +1537,12 @@ extra={
               onChange={async (id) => {
                 const t = tours.find((x) => x.id === id);
                 if (t?.type) {
-                  bookingForm.setFieldValue("tourType", t.type);
+                  const max = maxPaxForTour(t, t.type);
+                  const current = Number(bookingForm.getFieldValue("totalPax") ?? 1);
+                  bookingForm.setFieldsValue({
+                    tourType: t.type,
+                    ...(current > max ? { totalPax: max } : {}),
+                  });
                   await fillBookingRef(t.type);
                 }
               }}
@@ -1323,9 +1561,202 @@ extra={
                 { value: "PRIVATE_TOUR", label: "Private Tour" },
                 { value: "GROUP_TOUR", label: "Group Tour" },
               ]}
-              onChange={(t) => fillBookingRef(t)}
+              onChange={(t) => {
+                const tour = tours.find(
+                  (x) => x.id === bookingForm.getFieldValue("tourId"),
+                );
+                const max = maxPaxForTour(tour, t);
+                const current = Number(bookingForm.getFieldValue("totalPax") ?? 1);
+                if (current > max) bookingForm.setFieldValue("totalPax", max);
+                fillBookingRef(t);
+              }}
             />
           </Form.Item>
+          {watchedTourType === "PRIVATE_TOUR" && (
+            <Form.Item label="Private group (multiple buses)">
+              <Flex align="center" gap={10}>
+                <Switch
+                  checked={newGroupEnabled}
+                  onChange={(checked) => {
+                    setNewGroupEnabled(checked);
+                    if (checked) {
+                      setNewGroupBuses(
+                        buildGroupBuses(
+                          Number(bookingForm.getFieldValue("totalPax") ?? 1),
+                        ),
+                      );
+                    }
+                  }}
+                />
+                <Typography.Text type="secondary">
+                  One representative booking, separate bus rows
+                </Typography.Text>
+              </Flex>
+            </Form.Item>
+          )}
+          {newGroupEnabled && (
+            <Card
+              size="small"
+              title="Group buses"
+              style={{ marginBottom: 16 }}
+              extra={
+                <Button
+                  size="small"
+                  icon={<PlusOutlined />}
+                  onClick={() =>
+                    setNewGroupBuses((prev) => [
+                      ...prev,
+                      { key: `new-bus-${prev.length}-${Date.now()}`, pax: 1 },
+                    ])
+                  }
+                >
+                  Add bus
+                </Button>
+              }
+            >
+              <Flex vertical gap={10}>
+                {newGroupBuses.map((bus, index) => {
+                  const provider = groupProviders.find(
+                    (p: any) => p.id === bus.providerId,
+                  );
+                  const vehicles = provider
+                    ? (provider.vehicles ?? [])
+                    : groupProviders.flatMap((p: any) => p.vehicles ?? []);
+                  return (
+                    <Card
+                      key={bus.key}
+                      size="small"
+                      styles={{ body: { padding: 10 } }}
+                    >
+                      <Flex
+                        justify="space-between"
+                        align="center"
+                        style={{ marginBottom: 8 }}
+                      >
+                        <Typography.Text strong>
+                          Bus {index + 1}
+                        </Typography.Text>
+                        <Button
+                          danger
+                          type="text"
+                          size="small"
+                          disabled={newGroupBuses.length <= 1}
+                          onClick={() =>
+                            setNewGroupBuses((prev) =>
+                              prev.filter((row) => row.key !== bus.key),
+                            )
+                          }
+                        >
+                          Remove
+                        </Button>
+                      </Flex>
+                      <Row gutter={[8, 8]}>
+                        <Col xs={24} sm={8}>
+                          <InputNumber
+                            min={1}
+                            max={45}
+                            value={bus.pax}
+                            onChange={(value) =>
+                              updateNewGroupBus(bus.key, {
+                                pax: Number(value ?? 1),
+                              })
+                            }
+                            addonAfter="pax"
+                            style={{ width: "100%" }}
+                          />
+                        </Col>
+                        <Col xs={24} sm={8}>
+                          <Select
+                            allowClear
+                            placeholder="Driver"
+                            style={{ width: "100%" }}
+                            value={bus.driverId}
+                            onChange={(value) =>
+                              updateNewGroupBus(bus.key, { driverId: value })
+                            }
+                            options={groupCrew.drivers.map((driver: any) => ({
+                              value: driver.id,
+                              label: driver.name,
+                            }))}
+                          />
+                        </Col>
+                        <Col xs={24} sm={8}>
+                          <Select
+                            allowClear
+                            placeholder="Tour guide"
+                            style={{ width: "100%" }}
+                            value={bus.guideId}
+                            onChange={(value) =>
+                              updateNewGroupBus(bus.key, { guideId: value })
+                            }
+                            options={groupCrew.guides.map((guide: any) => ({
+                              value: guide.id,
+                              label: guide.name,
+                            }))}
+                          />
+                        </Col>
+                        <Col xs={24} sm={8}>
+                          <Select
+                            allowClear
+                            placeholder="Provider"
+                            style={{ width: "100%" }}
+                            value={bus.providerId}
+                            onChange={(value) =>
+                              updateNewGroupBus(bus.key, {
+                                providerId: value,
+                                vehicleId: undefined,
+                              })
+                            }
+                            options={groupProviders.map((p: any) => ({
+                              value: p.id,
+                              label: p.name,
+                            }))}
+                          />
+                        </Col>
+                        <Col xs={24} sm={8}>
+                          <Select
+                            allowClear
+                            placeholder="Vehicle"
+                            style={{ width: "100%" }}
+                            value={bus.vehicleId}
+                            onChange={(value) =>
+                              updateNewGroupBus(bus.key, { vehicleId: value })
+                            }
+                            options={vehicles.map((vehicle: any) => ({
+                              value: vehicle.id,
+                              label: `${vehicle.plateNumber} · ${vehicle.capacity} seats`,
+                            }))}
+                          />
+                        </Col>
+                        <Col xs={24} sm={8}>
+                          <Input
+                            placeholder="Note (optional)"
+                            value={bus.note}
+                            onChange={(event) =>
+                              updateNewGroupBus(bus.key, {
+                                note: event.target.value,
+                              })
+                            }
+                          />
+                        </Col>
+                      </Row>
+                    </Card>
+                  );
+                })}
+              </Flex>
+              <Flex justify="space-between" style={{ marginTop: 10 }}>
+                <Typography.Text
+                  type={
+                    newGroupPaxTotal === newGroupParentPax
+                      ? "secondary"
+                      : "danger"
+                  }
+                >
+                  Total {newGroupPaxTotal} / {newGroupParentPax} pax
+                </Typography.Text>
+              </Flex>
+            </Card>
+          )}
           <Form.Item
             name="customerName"
             label="Customer name"
@@ -1414,12 +1845,13 @@ extra={
             name="totalPax"
             label="Total pax"
             required
+            extra={`Maximum ${bookingMaxPax} people for this tour`}
             rules={[
               { required: true, message: "Total pax is required" },
-              { validator: (_, value) => value > 0 && value <= 12 ? Promise.resolve() : Promise.reject(new Error("Total pax must be 1-12")) },
+              { validator: (_, value) => value > 0 && value <= bookingMaxPax ? Promise.resolve() : Promise.reject(new Error(`Total pax must be 1-${bookingMaxPax}`)) },
             ]}
           >
-            <InputNumber min={1} max={12} precision={0} style={{ width: "100%" }} />
+            <InputNumber min={1} max={bookingMaxPax} precision={0} style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item
             name="paxDetail"
@@ -1569,6 +2001,24 @@ extra={
                 ? [{ key: "otaTour", label: "OTA tour name", children: bookingDetail.tourName }]
                 : []),
               { key: "tourType", label: "Tour type", children: bookingDetail.tourType ?? "—" },
+              ...(bookingDetail.parentBooking
+                ? [
+                    {
+                      key: "parentBooking",
+                      label: "Group parent",
+                      children: bookingDetail.parentBooking.bookingRef,
+                    },
+                  ]
+                : []),
+              ...(bookingDetail.childBookings?.length
+                ? [
+                    {
+                      key: "groupBuses",
+                      label: "Group buses",
+                      children: `${bookingDetail.childBookings.length} bus(es)`,
+                    },
+                  ]
+                : []),
               { key: "duration", label: "Duration", children: bookingDetail.tour?.durationDays ? `${bookingDetail.tour.durationDays} ${bookingDetail.tour.durationDays === 1 ? 'Day' : 'Days'}` : "—" },
               { key: "start", label: "Start date", children: bookingDetail.startingDate ? new Date(bookingDetail.startingDate).toLocaleString() : "—" },
               { key: "departureTime", label: "Departure time", children: bookingDetail.departureTime ?? "—" },
@@ -1595,6 +2045,230 @@ extra={
               { key: "created", label: "Created", children: new Date(bookingDetail.createdAt).toLocaleString() },
             ]}
           />
+        )}
+        {bookingDetail?.parentBooking && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginTop: 16 }}
+            message={`Group child of ${bookingDetail.parentBooking.bookingRef}`}
+            description="Customer paid on the parent booking. Submit this bus's report; Accounting locks each bus separately."
+          />
+        )}
+        {bookingDetail?.childBookings?.length ? (
+          <Card
+            size="small"
+            title={`Group buses (${bookingDetail.childBookings.length})`}
+            style={{ marginTop: 16 }}
+          >
+            <Flex vertical gap={8}>
+              {bookingDetail.childBookings.map((child: any) => (
+                <Flex
+                  key={child.id}
+                  justify="space-between"
+                  align="center"
+                  gap={8}
+                >
+                  <Typography.Text strong style={{ fontSize: 12 }}>
+                    {child.bookingRef}
+                  </Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {child.assignment?.code ?? "—"}
+                  </Typography.Text>
+                  <Tag style={{ margin: 0, fontSize: 10 }}>
+                    {child.totalPax ?? 0} pax
+                  </Tag>
+                  <Tag color="blue" style={{ margin: 0, fontSize: 10 }}>
+                    {child.assignment?.status ?? "—"}
+                  </Tag>
+                </Flex>
+              ))}
+            </Flex>
+          </Card>
+        ) : null}
+        {groupCanSplit && (
+          <Card
+            size="small"
+            title="Private group buses"
+            style={{ marginTop: 16 }}
+            extra={
+              <Button
+                size="small"
+                icon={<PlusOutlined />}
+                onClick={() =>
+                  setGroupBuses((prev) => [
+                    ...prev,
+                    { key: `bus-${prev.length}-${Date.now()}`, pax: 1 },
+                  ])
+                }
+              >
+                Add bus
+              </Button>
+            }
+          >
+            <Alert
+              type="info"
+              showIcon
+              message="Customer payment stays on this parent booking"
+              description="Each bus is dispatched and settled separately. Set the pax per bus so the total matches the booking."
+            />
+            {removableGroupAssignment && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginTop: 8 }}
+                message={`This booking is currently on ${bookingDetail.assignment?.code ?? "an auto bus"}`}
+                description="Creating the group buses will remove that auto-created bus."
+              />
+            )}
+            <Flex vertical gap={10} style={{ marginTop: 12 }}>
+              {groupBuses.map((bus, index) => {
+                const provider = groupProviders.find(
+                  (p: any) => p.id === bus.providerId,
+                );
+                const vehicles = provider
+                  ? (provider.vehicles ?? [])
+                  : groupProviders.flatMap((p: any) => p.vehicles ?? []);
+                return (
+                  <Card
+                    key={bus.key}
+                    size="small"
+                    styles={{ body: { padding: 10 } }}
+                  >
+                    <Flex
+                      justify="space-between"
+                      align="center"
+                      style={{ marginBottom: 8 }}
+                    >
+                      <Typography.Text strong>Bus {index + 1}</Typography.Text>
+                      <Button
+                        danger
+                        type="text"
+                        size="small"
+                        disabled={groupBuses.length <= 1}
+                        onClick={() =>
+                          setGroupBuses((prev) =>
+                            prev.filter((row) => row.key !== bus.key),
+                          )
+                        }
+                      >
+                        Remove
+                      </Button>
+                    </Flex>
+                    <Row gutter={[8, 8]}>
+                      <Col xs={24} sm={8}>
+                        <InputNumber
+                          min={1}
+                          max={45}
+                          value={bus.pax}
+                          onChange={(value) =>
+                            updateGroupBus(bus.key, {
+                              pax: Number(value ?? 1),
+                            })
+                          }
+                          addonAfter="pax"
+                          style={{ width: "100%" }}
+                        />
+                      </Col>
+                      <Col xs={24} sm={8}>
+                        <Select
+                          allowClear
+                          placeholder="Driver"
+                          style={{ width: "100%" }}
+                          value={bus.driverId}
+                          onChange={(value) =>
+                            updateGroupBus(bus.key, { driverId: value })
+                          }
+                          options={groupCrew.drivers.map((driver: any) => ({
+                            value: driver.id,
+                            label: driver.name,
+                          }))}
+                        />
+                      </Col>
+                      <Col xs={24} sm={8}>
+                        <Select
+                          allowClear
+                          placeholder="Tour guide"
+                          style={{ width: "100%" }}
+                          value={bus.guideId}
+                          onChange={(value) =>
+                            updateGroupBus(bus.key, { guideId: value })
+                          }
+                          options={groupCrew.guides.map((guide: any) => ({
+                            value: guide.id,
+                            label: guide.name,
+                          }))}
+                        />
+                      </Col>
+                      <Col xs={24} sm={8}>
+                        <Select
+                          allowClear
+                          placeholder="Provider"
+                          style={{ width: "100%" }}
+                          value={bus.providerId}
+                          onChange={(value) =>
+                            updateGroupBus(bus.key, {
+                              providerId: value,
+                              vehicleId: undefined,
+                            })
+                          }
+                          options={groupProviders.map((p: any) => ({
+                            value: p.id,
+                            label: p.name,
+                          }))}
+                        />
+                      </Col>
+                      <Col xs={24} sm={8}>
+                        <Select
+                          allowClear
+                          placeholder="Vehicle"
+                          style={{ width: "100%" }}
+                          value={bus.vehicleId}
+                          onChange={(value) =>
+                            updateGroupBus(bus.key, { vehicleId: value })
+                          }
+                          options={vehicles.map((vehicle: any) => ({
+                            value: vehicle.id,
+                            label: `${vehicle.plateNumber} · ${vehicle.capacity} seats`,
+                          }))}
+                        />
+                      </Col>
+                      <Col xs={24} sm={8}>
+                        <Input
+                          placeholder="Note (optional)"
+                          value={bus.note}
+                          onChange={(event) =>
+                            updateGroupBus(bus.key, {
+                              note: event.target.value,
+                            })
+                          }
+                        />
+                      </Col>
+                    </Row>
+                  </Card>
+                );
+              })}
+            </Flex>
+            <Flex
+              justify="space-between"
+              align="center"
+              style={{ marginTop: 12 }}
+            >
+              <Typography.Text
+                type={groupPaxTotal === groupParentPax ? "secondary" : "danger"}
+              >
+                Total {groupPaxTotal} / {groupParentPax} pax
+              </Typography.Text>
+              <Button
+                type="primary"
+                loading={groupSaving}
+                disabled={groupPaxTotal !== groupParentPax}
+                onClick={saveGroupBuses}
+              >
+                Create buses
+              </Button>
+            </Flex>
+          </Card>
         )}
         {bookingDetail?.payLater && bookingDetail?.payment === "PENDING" && (
           <Flex gap={8} style={{ marginTop: 16 }} wrap>

@@ -61,6 +61,7 @@ export interface BoardItem {
   endDate: string;
   durationDays: number;
   status: string;
+  groupRef?: string | null;
   executionMode?: AssignmentExecutionMode;
   partnerStatus?: PartnerHandoffStatus | null;
   partnerId?: string | null;
