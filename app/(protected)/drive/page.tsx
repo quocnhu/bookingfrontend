@@ -11,6 +11,7 @@ import {
   Modal,
   Popconfirm,
   Progress,
+  Select,
   Table,
   Tag,
   Typography,
@@ -85,8 +86,13 @@ function fileIcon(mime: string | null, name: string) {
 }
 
 export default function DrivePage() {
-  const { refreshProfile } = useApp();
+  const { refreshProfile, user } = useApp();
+  const isAdmin = user?.role === "ADMIN";
   const [data, setData] = useState<DriveState | null>(null);
+  const [driveUsers, setDriveUsers] = useState<
+    { id: string; name?: string | null; email?: string | null; role: string }[]
+  >([]);
+  const [selectedUserId, setSelectedUserId] = useState<string | undefined>();
 
   const tableHeight = useFillHeight({
     rootSelector: ".drive-page",
@@ -108,20 +114,34 @@ export default function DrivePage() {
 
   const [previewFile, setPreviewFile] = useState<DriveFile | null>(null);
 
-  const load = useCallback(async (folderId?: string | null) => {
-    setLoading(true);
-    try {
-      const r = await api.get(
-        folderId ? `/drive/folders/${folderId}` : "/drive",
-      );
-      setData(r.data);
-      setCurrentFolderId(folderId ?? null);
-    } catch (e) {
-      message.error(getErrorMessage(e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (folderId?: string | null) => {
+      setLoading(true);
+      try {
+        const qs = selectedUserId
+          ? `?userId=${encodeURIComponent(selectedUserId)}`
+          : "";
+        const r = await api.get(
+          folderId ? `/drive/folders/${folderId}${qs}` : `/drive${qs}`,
+        );
+        setData(r.data);
+        setCurrentFolderId(folderId ?? null);
+      } catch (e) {
+        message.error(getErrorMessage(e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [selectedUserId],
+  );
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    api
+      .get("/drive/users")
+      .then((r) => setDriveUsers(r.data ?? []))
+      .catch(() => setDriveUsers([]));
+  }, [isAdmin]);
 
   useEffect(() => {
     load();
@@ -144,7 +164,10 @@ export default function DrivePage() {
     const name = folderName.trim();
     if (!name) return;
     try {
-      await api.post("/drive/folders", {
+      const qs = selectedUserId
+        ? `?userId=${encodeURIComponent(selectedUserId)}`
+        : "";
+      await api.post(`/drive/folders${qs}`, {
         name,
         parentId: currentFolderId ?? undefined,
       });
@@ -174,7 +197,10 @@ export default function DrivePage() {
     if (currentFolderId) fd.append("folderId", currentFolderId);
     setUploading(true);
     try {
-      await api.post("/drive/files", fd);
+      const qs = selectedUserId
+        ? `?userId=${encodeURIComponent(selectedUserId)}`
+        : "";
+      await api.post(`/drive/files${qs}`, fd);
       message.success(isAvatarFolder ? "Avatar updated" : "File uploaded");
       if (isAvatarFolder) refreshProfile();
       load(currentFolderId);
@@ -188,8 +214,11 @@ export default function DrivePage() {
   const rename = async () => {
     if (!renameTarget || !renameValue.trim()) return;
     try {
+      const qs = selectedUserId
+        ? `?userId=${encodeURIComponent(selectedUserId)}`
+        : "";
       await api.patch(
-        `/drive/${renameTarget.kind === "folder" ? "folders" : "files"}/${renameTarget.id}`,
+        `/drive/${renameTarget.kind === "folder" ? "folders" : "files"}/${renameTarget.id}${qs}`,
         { name: renameValue.trim() },
       );
       message.success("Renamed");
@@ -202,7 +231,12 @@ export default function DrivePage() {
 
   const remove = async (id: string, kind: "folder" | "file") => {
     try {
-      await api.delete(`/drive/${kind === "folder" ? "folders" : "files"}/${id}`);
+      const qs = selectedUserId
+        ? `?userId=${encodeURIComponent(selectedUserId)}`
+        : "";
+      await api.delete(
+        `/drive/${kind === "folder" ? "folders" : "files"}/${id}${qs}`,
+      );
       message.success(kind === "folder" ? "Folder deleted" : "File deleted");
       load(currentFolderId);
     } catch (e) {
@@ -301,25 +335,44 @@ export default function DrivePage() {
             </Typography.Text>
           </Flex>
         }
-        extra={
-          <Flex gap={8}>
-            <Button
-              size="small"
-              icon={<ReloadOutlined />}
-              onClick={() => load(currentFolderId)}
-            >
-              Refresh
-            </Button>
-            <Button
-              size="small"
-              icon={<FolderAddOutlined />}
-              onClick={() => {
-                setFolderName("");
-                setFolderModalOpen(true);
-              }}
-            >
-              New folder
-            </Button>
+      >
+        <Flex vertical gap={16}>
+          <Flex gap={8} wrap align="center" justify="space-between">
+            <Flex gap={8} wrap align="center">
+              {isAdmin && (
+                <Select
+                  size="small"
+                  allowClear
+                  style={{ minWidth: 240 }}
+                  placeholder="My Drive — choose a user to browse"
+                  value={selectedUserId}
+                  onChange={(value) => setSelectedUserId(value)}
+                  options={driveUsers
+                    .filter((u) => u.role !== "ADMIN")
+                    .map((u) => ({
+                      value: u.id,
+                      label: `${u.name ?? u.email ?? u.id} · ${u.role}`,
+                    }))}
+                />
+              )}
+              <Button
+                size="small"
+                icon={<ReloadOutlined />}
+                onClick={() => load(currentFolderId)}
+              >
+                Refresh
+              </Button>
+              <Button
+                size="small"
+                icon={<FolderAddOutlined />}
+                onClick={() => {
+                  setFolderName("");
+                  setFolderModalOpen(true);
+                }}
+              >
+                New folder
+              </Button>
+            </Flex>
             <Upload
               showUploadList={false}
               accept={uploadAccept}
@@ -338,13 +391,10 @@ export default function DrivePage() {
                 disabled={storageFull}
                 title={storageFull ? "Storage is full" : undefined}
               >
-                Upload
+                Upload file
               </Button>
             </Upload>
           </Flex>
-        }
-      >
-        <Flex vertical gap={16}>
           {data?.quota && (
             <div style={{ maxWidth: 420 }}>
               <Flex align="center" justify="space-between" gap={8} wrap>

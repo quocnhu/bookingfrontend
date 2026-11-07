@@ -330,7 +330,9 @@ export default function GuideBookingsPanel({
           <Text type="secondary" style={{ fontSize: 12 }}>
             Collect {fmtVnd(money.collected)} ₫ · Refund {fmtVnd(money.paid)} ₫ ·{" "}
             <Text strong style={{ fontSize: 12 }}>
-              {fmtVnd(money.net)} ₫ due to the company
+              {money.net >= 0
+                ? `${fmtVnd(money.net)} ₫ returns to the company`
+                : `${fmtVnd(Math.abs(money.net))} ₫ the company pays the guide`}
             </Text>
           </Text>
         )}

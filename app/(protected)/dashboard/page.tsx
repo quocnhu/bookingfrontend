@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Avatar, Card, Col, Flex, Row, Segmented, Statistic, Table, Tag, Typography, theme as antdTheme } from "antd";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Avatar, Card, Col, DatePicker, Flex, Row, Segmented, Statistic, Table, Tag, Typography, theme as antdTheme } from "antd";
+import dayjs, { type Dayjs } from "dayjs";
 import {
   BarChart,
   Bar,
@@ -19,9 +20,12 @@ import {
 import {
   CalendarOutlined,
   CarOutlined,
+  ClockCircleOutlined,
+  DollarOutlined,
   FileTextOutlined,
   LockOutlined,
   LoginOutlined,
+  RollbackOutlined,
   TeamOutlined,
   UserOutlined,
 } from "@ant-design/icons";
@@ -36,6 +40,9 @@ export default function DashboardPage() {
   const [widgets, setWidgets] = useState<any>(null);
   const [charts, setCharts] = useState<any>(null);
   const [range, setRange] = useState<"day" | "week" | "month">("week");
+  const [revenueRange, setRevenueRange] = useState<
+    [Dayjs | null, Dayjs | null] | null
+  >(null);
 
   const COLORS = [token.colorPrimary, token.colorInfo, token.colorError, token.colorWarning, token.colorSuccess];
 
@@ -46,11 +53,31 @@ export default function DashboardPage() {
     boxShadow: token.boxShadowSecondary,
   };
 
+  const loadStats = useCallback(
+    (value?: [Dayjs | null, Dayjs | null] | null) => {
+      const from = value?.[0];
+      const to = value?.[1];
+      const qs =
+        from && to
+          ? `?fromDate=${from.format("YYYY-MM-DD")}&toDate=${to.format("YYYY-MM-DD")}`
+          : "";
+      api.get(`/dashboard/stats${qs}`).then((r) => setStats(r.data));
+    },
+    [],
+  );
+
+  const changeRevenueRange = (
+    value: [Dayjs | null, Dayjs | null] | null,
+  ) => {
+    setRevenueRange(value);
+    loadStats(value);
+  };
+
   useEffect(() => {
     if (!hasPermission("dashboard.read")) return;
-    api.get("/dashboard/stats").then((r) => setStats(r.data));
+    loadStats();
     api.get("/dashboard/widgets").then((r) => setWidgets(r.data));
-  }, []);
+  }, [loadStats]);
 
   useEffect(() => {
     if (!hasPermission("dashboard.read")) return;
@@ -90,7 +117,45 @@ export default function DashboardPage() {
 
   const canRead = hasPermission("dashboard.read");
 
-  const statGroups = [
+  const revenueRangePicker = (
+    <DatePicker.RangePicker
+      size="small"
+      value={revenueRange}
+      onChange={changeRevenueRange}
+      allowClear
+      placeholder={["From", "To"]}
+      presets={[
+        { label: "Today", value: [dayjs().startOf("day"), dayjs().endOf("day")] },
+        {
+          label: "Last 7 days",
+          value: [dayjs().subtract(6, "day").startOf("day"), dayjs().endOf("day")],
+        },
+        {
+          label: "Last 30 days",
+          value: [dayjs().subtract(29, "day").startOf("day"), dayjs().endOf("day")],
+        },
+        {
+          label: "This month",
+          value: [dayjs().startOf("month"), dayjs().endOf("month")],
+        },
+      ]}
+    />
+  );
+
+  const statGroups: {
+    title: string;
+    color: string;
+    icon: ReactNode;
+    extra?: ReactNode;
+    items: {
+      title: string;
+      value: number;
+      icon: ReactNode;
+      suffix?: string;
+      color?: string;
+      parts?: { label: string; value: number; color: string }[];
+    }[];
+  }[] = [
     {
       title: "Booking",
       color: token.colorPrimary,
@@ -108,7 +173,43 @@ export default function DashboardPage() {
       color: token.colorInfo,
       icon: <TeamOutlined />,
       items: [
-        { title: "Users", value: stats?.totalUsers ?? 0, icon: <UserOutlined /> },
+        {
+          title: "Users",
+          value: stats?.totalUsers ?? 0,
+          icon: <UserOutlined />,
+          parts: [
+            {
+              label: "Local account",
+              value: stats?.localUsers ?? 0,
+              color: token.colorPrimary,
+            },
+            {
+              label: "Google account",
+              value: stats?.googleUsers ?? 0,
+              color: "#DB4437",
+            },
+          ],
+        },
+        {
+          title: "Customers",
+          value: stats?.customerUsers ?? 0,
+          icon: <TeamOutlined />,
+          parts: [
+            {
+              label: "Local account",
+              value: Math.max(
+                0,
+                (stats?.customerUsers ?? 0) - (stats?.googleCustomers ?? 0),
+              ),
+              color: token.colorPrimary,
+            },
+            {
+              label: "Google account",
+              value: stats?.googleCustomers ?? 0,
+              color: "#DB4437",
+            },
+          ],
+        },
         { title: "Roles", value: stats?.totalRoles ?? 0, icon: <TeamOutlined /> },
         { title: "Permissions", value: stats?.totalPermissions ?? 0, icon: <LockOutlined /> },
       ],
@@ -119,6 +220,54 @@ export default function DashboardPage() {
       icon: <CarOutlined />,
       items: [
         { title: "Tours", value: stats?.totalTours ?? 0, icon: <FileTextOutlined /> },
+      ],
+    },
+    {
+      title: "Revenue",
+      color: token.colorWarning,
+      icon: <DollarOutlined />,
+      extra: revenueRangePicker,
+      items: [
+        {
+          title: "Collected (paid)",
+          value: stats?.totalRevenue ?? 0,
+          icon: <DollarOutlined />,
+          suffix: "₫",
+        },
+        {
+          title: "Today",
+          value: stats?.revenueToday ?? 0,
+          icon: <CalendarOutlined />,
+          suffix: "₫",
+        },
+        {
+          title: "Pending collection",
+          value: stats?.pendingRevenue ?? 0,
+          icon: <ClockCircleOutlined />,
+          suffix: "₫",
+        },
+      ],
+    },
+    {
+      title: "Settlement",
+      color: token.colorInfo,
+      icon: <RollbackOutlined />,
+      extra: revenueRangePicker,
+      items: [
+        {
+          title: "Returned to company",
+          value: stats?.settledToCompany ?? 0,
+          icon: <RollbackOutlined />,
+          suffix: "₫",
+          color: token.colorSuccess,
+        },
+        {
+          title: "Returned to guide/driver",
+          value: stats?.settledToGuide ?? 0,
+          icon: <DollarOutlined />,
+          suffix: "₫",
+          color: token.colorWarning,
+        },
       ],
     },
     {
@@ -149,6 +298,7 @@ export default function DashboardPage() {
             key={group.title}
             variant="borderless"
             style={{ height: "100%" }}
+            extra={group.extra}
             styles={{ body: { padding: 16 } }}
           >
             <Flex align="center" gap={8} style={{ marginBottom: 12 }}>
@@ -180,13 +330,63 @@ export default function DashboardPage() {
                     shape="square"
                     size={44}
                     icon={s.icon}
-                    style={{ background: group.color, color: "#fff", borderRadius: 12 }}
+                    style={{
+                      background: s.color ?? group.color,
+                      color: "#fff",
+                      borderRadius: 12,
+                    }}
                   />
                   <div>
-                    <Statistic value={s.value} styles={{ content: { fontWeight: 700, fontSize: 22 } }} />
+                    <Statistic
+                      value={s.value}
+                      suffix={s.suffix}
+                      styles={{ content: { fontWeight: 700, fontSize: 22 } }}
+                    />
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                       {s.title}
                     </Typography.Text>
+                    {s.parts && (
+                      <Flex vertical gap={2} style={{ marginTop: 4 }}>
+                        {s.parts.map((part) => (
+                          <Flex
+                            key={part.label}
+                            align="center"
+                            justify="space-between"
+                            gap={8}
+                            style={{ minWidth: 130 }}
+                          >
+                            <Typography.Text
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 600,
+                                color: part.color,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  width: 8,
+                                  height: 8,
+                                  borderRadius: 4,
+                                  background: part.color,
+                                  marginRight: 5,
+                                }}
+                              />
+                              {part.label}
+                            </Typography.Text>
+                            <Typography.Text
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 700,
+                                color: part.color,
+                              }}
+                            >
+                              {part.value}
+                            </Typography.Text>
+                          </Flex>
+                        ))}
+                      </Flex>
+                    )}
                   </div>
                 </Flex>
               ))}
@@ -261,6 +461,24 @@ export default function DashboardPage() {
                 <YAxis stroke={token.colorTextSecondary} tick={{ fill: token.colorTextSecondary }} />
                 <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: token.colorText }} itemStyle={{ color: token.colorText }} />
                 <Line type="monotone" dataKey="count" name="Logins" stroke={token.colorError} strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </Col>
+        </Row>
+        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+          <Col xs={24}>
+            <Typography.Text strong>Revenue collected</Typography.Text>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={charts?.revenueByBucket ?? []}>
+                <XAxis dataKey="label" stroke={token.colorTextSecondary} tick={{ fill: token.colorTextSecondary }} />
+                <YAxis stroke={token.colorTextSecondary} tick={{ fill: token.colorTextSecondary }} />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  labelStyle={{ color: token.colorText }}
+                  itemStyle={{ color: token.colorText }}
+                  formatter={(value) => [`${Number(value).toLocaleString("vi-VN")} ₫`, "Revenue"]}
+                />
+                <Line type="monotone" dataKey="amount" name="Revenue" stroke={token.colorSuccess} strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </Col>

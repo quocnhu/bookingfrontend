@@ -36,7 +36,12 @@ import {
 } from "@ant-design/icons";
 import Link from "next/link";
 import dayjs from "dayjs";
+import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
+import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
 import { api } from "@/lib/api";
+
+dayjs.extend(isSameOrAfter);
+dayjs.extend(isSameOrBefore);
 import type { LeaveSummary } from "@/components/leave-summary";
 import { formatLeaveDayCount, leaveDayCount } from "@/lib/leave";
 

@@ -450,7 +450,7 @@ export default function BoardCard({
   today,
   confirming,
   canConfirm,
-  recallCutoff = "06:30",
+  recallCutoff = "06:00",
   readOnly,
   onConfirm,
   onDispatch,

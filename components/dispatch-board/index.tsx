@@ -138,7 +138,7 @@ export default function DispatchBoard({
   const [autoDispatch, setAutoDispatch] =
     useState<AutoDispatchSettings | null>(null);
   const [autoDispatchSaving, setAutoDispatchSaving] = useState(false);
-  const [recallCutoff, setRecallCutoff] = useState("06:30");
+  const [recallCutoff, setRecallCutoff] = useState("06:00");
   const [recallCutoffSaving, setRecallCutoffSaving] = useState(false);
 
   const loadBoard = useCallback((background = false) => {
@@ -198,8 +198,8 @@ export default function DispatchBoard({
         .catch(() => setAutoDispatch(null));
       api
         .get("/assignments/board/recall-cutoff")
-        .then((r) => setRecallCutoff(r.data?.time ?? "06:30"))
-        .catch(() => setRecallCutoff("06:30"));
+        .then((r) => setRecallCutoff(r.data?.time ?? "06:00"))
+        .catch(() => setRecallCutoff("06:00"));
     }
   }, [open, loadBoard]);
 

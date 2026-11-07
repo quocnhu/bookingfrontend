@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { AppProvider } from "@/lib/app-context";
 import AntdProvider from "@/lib/antd-provider";
@@ -62,8 +63,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="h-full">
+    <html lang="en" className="h-full" suppressHydrationWarning>
       <body className="h-full">
+        <Script id="theme-init" strategy="beforeInteractive">
+          {`(function(){try{var t=localStorage.getItem('booking.theme');if(t!=='light'&&t!=='dark')t='dark';var r=document.documentElement;r.classList.toggle('dark',t==='dark');r.style.colorScheme=t;}catch(e){var r=document.documentElement;r.classList.add('dark');r.style.colorScheme='dark';}})();`}
+        </Script>
         <AntdRegistry>
           <AppProvider>
             <AntdProvider>{children}</AntdProvider>

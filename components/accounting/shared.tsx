@@ -12,6 +12,7 @@ import {
   Divider,
   Empty,
   Flex,
+  Image,
   Input,
   InputNumber,
   Modal,
@@ -33,6 +34,7 @@ import {
   FileTextOutlined,
   HistoryOutlined,
   LockOutlined,
+  PictureOutlined,
   PlusOutlined,
   PrinterOutlined,
   SafetyCertificateOutlined,
@@ -1234,9 +1236,17 @@ export function QueueTab({
   );
 }
 
+interface EvidenceImage {
+  name?: string | null;
+  url?: string;
+  ext?: string | null;
+  mimeType?: string | null;
+}
+
 interface TourReportData {
   notes?: string | null;
   moneyVerifiedAt?: string | null;
+  evidenceImages?: EvidenceImage[] | null;
 }
 
 export function TourMoneyDrawer({
@@ -1282,6 +1292,11 @@ export function TourMoneyDrawer({
     ? Number(item.partnerAmount ?? 0) > 0
     : (rows.length > 0 || !!item.groupRef) &&
       !!(item.guide || (isDriverOnly && item.driver));
+  const evidence = tourReport?.evidenceImages ?? [];
+  const isEvidenceImage = (e: EvidenceImage) =>
+    ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].includes(
+      (e.ext ?? "").toLowerCase(),
+    ) || (e.mimeType ?? "").toLowerCase().startsWith("image/");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1520,6 +1535,68 @@ return (
           </>
         )}
       </Descriptions>
+
+      <Card
+        size="small"
+        title={
+          <Space>
+            <PictureOutlined />
+            <span>Guide evidence ({evidence.length})</span>
+          </Space>
+        }
+        style={{ marginBottom: 16 }}
+      >
+        {evidence.length === 0 ? (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            The guide did not upload any evidence for this trip.
+          </Typography.Text>
+        ) : (
+          <Image.PreviewGroup>
+            <Flex wrap gap={10}>
+              {evidence.map((e, i) =>
+                isEvidenceImage(e) && e.url ? (
+                  <Image
+                    key={i}
+                    src={e.url}
+                    alt={e.name ?? "evidence"}
+                    width={96}
+                    height={96}
+                    style={{ objectFit: "cover", borderRadius: 8 }}
+                  />
+                ) : (
+                  <a
+                    key={i}
+                    href={e.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ textDecoration: "none" }}
+                  >
+                    <Flex
+                      vertical
+                      align="center"
+                      justify="center"
+                      style={{
+                        width: 96,
+                        height: 96,
+                        border: "1px solid #d9d9d9",
+                        borderRadius: 8,
+                        background: "#fafafa",
+                      }}
+                    >
+                      <FileTextOutlined
+                        style={{ fontSize: 26, color: "#1890ff" }}
+                      />
+                      <Typography.Text style={{ fontSize: 10 }}>
+                        {(e.ext ?? "FILE").toUpperCase()}
+                      </Typography.Text>
+                    </Flex>
+                  </a>
+                ),
+              )}
+            </Flex>
+          </Image.PreviewGroup>
+        )}
+      </Card>
 
       {canSettle && !isPartner && (
         <Card size="small" title="Add entry" style={{ marginBottom: 16 }}>

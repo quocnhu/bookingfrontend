@@ -106,7 +106,15 @@ export interface BoardItem {
     settlementFlow?: "COLLECT_MONEY" | "PAY_MONEY" | null;
     moneyVerifiedByName?: string | null;
     moneyVerifiedAt?: string | null;
-    evidenceImages?: Array<{ name?: string; url: string; uploadedAt?: string; uploadedByName?: string }>;
+    evidenceImages?: Array<{
+      name?: string;
+      url: string;
+      ext?: string;
+      mimeType?: string;
+      size?: number;
+      uploadedAt?: string;
+      uploadedByName?: string;
+    }>;
   } | null;
   paymentLines?: Array<{
     id: string;

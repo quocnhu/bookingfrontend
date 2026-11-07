@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  Alert,
   Button,
   Card,
   Descriptions,
@@ -30,6 +29,7 @@ import {
   HomeOutlined,
   EnvironmentOutlined,
   DeleteOutlined,
+  DollarOutlined,
   PictureOutlined,
   ReloadOutlined,
   SendOutlined,
@@ -38,7 +38,13 @@ import {
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
+import TripMoneySheet from "@/components/tour-guide/trip-money-sheet";
 import dayjs from "dayjs";
+import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
+import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
+
+dayjs.extend(isSameOrAfter);
+dayjs.extend(isSameOrBefore);
 
 const STATUS_COLOR: Record<string, string> = {
   PENDING: "orange",
@@ -58,6 +64,12 @@ interface EvidenceItem {
   uploadedAt?: string;
   uploadedByName?: string;
 }
+
+const IMAGE_EXTS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"];
+const isImageEvidence = (e: EvidenceItem) =>
+  IMAGE_EXTS.includes((e.ext ?? "").toLowerCase()) ||
+  (e.mimeType ?? "").toLowerCase().startsWith("image/") ||
+  /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(e.name ?? e.url ?? "");
 
 export default function SubmitReportPage() {
   const { user } = useApp();
@@ -103,15 +115,19 @@ export default function SubmitReportPage() {
     load();
   }, []);
 
+  const refreshEntryCount = (assignmentId: string) => {
+    api
+      .get(`/assignments/${assignmentId}/money`)
+      .then((r) => setEntryCount(r.data?.entryCount ?? r.data?.rows?.length ?? 0))
+      .catch(() => setEntryCount(null));
+  };
+
   const openDetail = (a: any) => {
     setDetail(a);
     // Notice: a report needs at least one money entry — load the count so
     // the guide sees the requirement before submitting.
     setEntryCount(null);
-    api
-      .get(`/assignments/${a.id}/money`)
-      .then((r) => setEntryCount(r.data?.entryCount ?? r.data?.rows?.length ?? 0))
-      .catch(() => setEntryCount(null));
+    refreshEntryCount(a.id);
     if (a.tourReport) {
       form.setFieldsValue({
         actualPax: a.tourReport.actualPax,
@@ -307,43 +323,33 @@ export default function SubmitReportPage() {
         title={`Tour Report — ${detail?.tourName ?? detail?.code ?? ""}`}
         open={Boolean(detail)}
         onClose={() => setDetail(null)}
-        width={isMobile ? "100%" : 520}
+        width={isMobile ? "100%" : 760}
         footer={
           detail && canEditReport(detail) ? (
-            <Flex justify="end">
-              <Button
-                type="primary"
-                icon={<SendOutlined />}
-                loading={submitting}
-                disabled={entryCount === 0 && !detail?.groupRef}
-                onClick={() => submit(detail.id)}
-                block={isMobile}
-              >
-                {reportStatus === "REJECTED" ? "Resubmit Report" : "Submit Report"}
-              </Button>
+            <Flex vertical gap={8}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                This submits the tour report for accounting verification. The
+                trip will be completed after Accounting verifies and locks the
+                money.
+              </Typography.Text>
+              <Flex justify="end">
+                <Button
+                  type="primary"
+                  icon={<SendOutlined />}
+                  loading={submitting}
+                  disabled={entryCount === 0 && !detail?.groupRef}
+                  onClick={() => submit(detail.id)}
+                  block={isMobile}
+                >
+                  {reportStatus === "REJECTED" ? "Resubmit Report" : "Submit Report"}
+                </Button>
+              </Flex>
             </Flex>
           ) : null
         }
       >
         {detail && (
           <>
-            {canEditReport(detail) && entryCount === 0 && (
-              <Alert
-                type={detail.groupRef ? "info" : "warning"}
-                showIcon
-                style={{ marginBottom: 16 }}
-                message={
-                  detail.groupRef
-                    ? "Customer paid on the parent booking"
-                    : "At least one money entry is required"
-                }
-                description={
-                  detail.groupRef
-                    ? "You can submit with no money entries — Accounting will lock this bus at net 0. Add expenses or extra cash only if they happened on this bus."
-                    : "Record what you collected or spent (Booking & Money on My Trips) before submitting — Accounting cannot verify an empty money sheet."
-                }
-              />
-            )}
             <Descriptions column={1} size="small" bordered style={{ marginBottom: 24 }}>
               <Descriptions.Item label="Tour">{detail.tourName ?? "—"}</Descriptions.Item>
               <Descriptions.Item label="Code">{detail.code ?? "—"}</Descriptions.Item>
@@ -451,6 +457,22 @@ export default function SubmitReportPage() {
 
             {canEditReport(detail) ? (
               <>
+                <Card
+                  size="small"
+                  title={
+                    <Space>
+                      <DollarOutlined />
+                      <span>Trip money sheet</span>
+                    </Space>
+                  }
+                  style={{ marginBottom: 16 }}
+                >
+                  <TripMoneySheet
+                    assignmentId={detail.id}
+                    allowEmpty={Boolean(detail.groupRef)}
+                    onChanged={() => refreshEntryCount(detail.id)}
+                  />
+                </Card>
                 <Form form={form} layout="vertical">
                   <Form.Item name="actualPax" label="Actual pax count">
                     <InputNumber min={0} style={{ width: "100%" }} placeholder="Number of guests who showed up" />
@@ -474,13 +496,13 @@ export default function SubmitReportPage() {
 
                 <div style={{ marginBottom: 24 }}>
                   <Typography.Text strong style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 8 }}>
-                    <PictureOutlined /> Evidence pictures ({evidence.length})
+                    <PictureOutlined /> Evidence (pictures, videos, files) ({evidence.length})
                   </Typography.Text>
                   <Flex wrap gap={8} align="center">
                     <Upload
-                      accept="image/*"
+                      accept="image/*,video/*,.pdf,.doc,.docx"
                       showUploadList={false}
-                      multiple={false}
+                      multiple
                       customRequest={async ({ file, onSuccess, onError }) => {
                         try {
                           await uploadEvidence(file as File);
@@ -490,20 +512,49 @@ export default function SubmitReportPage() {
                         }
                       }}
                     >
-                      <Button icon={<UploadOutlined />}>Upload picture</Button>
+                      <Button icon={<UploadOutlined />}>Upload file</Button>
                     </Upload>
                   </Flex>
                   {evidence.length > 0 && (
                     <Flex wrap gap={10} style={{ marginTop: 10 }}>
                       {evidence.map((e, i) => (
                         <div key={i} style={{ position: "relative" }}>
-                          <Image
-                            src={e.url}
-                            alt={e.name ?? "evidence"}
-                            width={80}
-                            height={80}
-                            style={{ objectFit: "cover", borderRadius: 8 }}
-                          />
+                          {isImageEvidence(e) ? (
+                            <Image
+                              src={e.url}
+                              alt={e.name ?? "evidence"}
+                              width={80}
+                              height={80}
+                              style={{ objectFit: "cover", borderRadius: 8 }}
+                            />
+                          ) : (
+                            <a
+                              href={e.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ textDecoration: "none" }}
+                            >
+                              <Flex
+                                vertical
+                                align="center"
+                                justify="center"
+                                style={{
+                                  width: 80,
+                                  height: 80,
+                                  border: "1px solid #d9d9d9",
+                                  borderRadius: 8,
+                                  background: "#fafafa",
+                                }}
+                              >
+                                <FileTextOutlined
+                                  style={{ fontSize: 22, color: "#1890ff" }}
+                                />
+                                <Typography.Text style={{ fontSize: 10 }}>
+                                  {(e.ext ?? "FILE").toUpperCase()}
+                                </Typography.Text>
+                              </Flex>
+                            </a>
+                          )}
                           <DeleteOutlined
                             onClick={() =>
                               setEvidence((prev) => prev.filter((_, x) => x !== i))
@@ -525,7 +576,7 @@ export default function SubmitReportPage() {
                     </Flex>
                   )}
                   <Typography.Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 8 }}>
-                    Pictures stay pending here, then move into your Drive folder named
+                    Files stay pending here, then move into your Drive folder named
                     "tour name + date" once an administrator or accounting verifies this
                     report.
                   </Typography.Text>
@@ -535,21 +586,51 @@ export default function SubmitReportPage() {
               <>
                 {evidence.length === 0 ? (
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    No evidence pictures uploaded.
+                    No evidence uploaded.
                   </Typography.Text>
                 ) : (
                   <Image.PreviewGroup>
                     <Flex wrap gap={10} style={{ marginBottom: 24 }}>
-                      {evidence.map((e, i) => (
-                        <Image
-                          key={i}
-                          src={e.url}
-                          alt={e.name ?? "evidence"}
-                          width={90}
-                          height={90}
-                          style={{ objectFit: "cover", borderRadius: 8 }}
-                        />
-                      ))}
+                      {evidence.map((e, i) =>
+                        isImageEvidence(e) ? (
+                          <Image
+                            key={i}
+                            src={e.url}
+                            alt={e.name ?? "evidence"}
+                            width={90}
+                            height={90}
+                            style={{ objectFit: "cover", borderRadius: 8 }}
+                          />
+                        ) : (
+                          <a
+                            key={i}
+                            href={e.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ textDecoration: "none" }}
+                          >
+                            <Flex
+                              vertical
+                              align="center"
+                              justify="center"
+                              style={{
+                                width: 90,
+                                height: 90,
+                                border: "1px solid #d9d9d9",
+                                borderRadius: 8,
+                                background: "#fafafa",
+                              }}
+                            >
+                              <FileTextOutlined
+                                style={{ fontSize: 24, color: "#1890ff" }}
+                              />
+                              <Typography.Text style={{ fontSize: 10 }}>
+                                {(e.ext ?? "FILE").toUpperCase()}
+                              </Typography.Text>
+                            </Flex>
+                          </a>
+                        ),
+                      )}
                     </Flex>
                   </Image.PreviewGroup>
                 )}

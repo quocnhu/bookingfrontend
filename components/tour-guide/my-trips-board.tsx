@@ -44,8 +44,22 @@ export default function MyTripsBoard({
 }) {
   const { token } = antdTheme.useToken();
   const today = dayjs().add(7, "hour").startOf("day");
-  const [filterDate, setFilterDate] = useState<Dayjs>(() => today);
+  const [selectedDate, setSelectedDate] = useState<Dayjs | null>(null);
   const [templateTarget, setTemplateTarget] = useState<BoardItem | null>(null);
+
+  const autoDate = useMemo(() => {
+    if (!assignments.length) return today;
+    const hasTripToday = assignments.some((a) =>
+      tripDay(a.startDate).isSame(today, "day"),
+    );
+    if (hasTripToday) return today;
+    const next = assignments
+      .map((a) => tripDay(a.startDate))
+      .filter((d) => !d.isBefore(today, "day"))
+      .sort((a, b) => a.valueOf() - b.valueOf())[0];
+    return next ?? today;
+  }, [assignments, today]);
+  const filterDate = selectedDate ?? autoDate;
 
   const filtered = useMemo(
     () => assignments.filter((a) => tripDay(a.startDate).isSame(filterDate, "day")),
@@ -148,7 +162,7 @@ export default function MyTripsBoard({
                 <DatePicker
                   value={filterDate}
                   onChange={(d) => {
-                    if (d) setFilterDate(d);
+                    if (d) setSelectedDate(d);
                   }}
                   allowClear={false}
                   style={{ width: 200 }}
@@ -157,16 +171,16 @@ export default function MyTripsBoard({
                 />
                 <Button
                   size="small"
-                  onClick={() => setFilterDate((d) => d.subtract(1, "day"))}
+                  onClick={() => setSelectedDate((d) => (d ?? filterDate).subtract(1, "day"))}
                 >
                   ← Prev
                 </Button>
-                <Button size="small" onClick={() => setFilterDate(today)}>
+                <Button size="small" onClick={() => setSelectedDate(today)}>
                   Today
                 </Button>
                 <Button
                   size="small"
-                  onClick={() => setFilterDate((d) => d.add(1, "day"))}
+                  onClick={() => setSelectedDate((d) => (d ?? filterDate).add(1, "day"))}
                 >
                   Next →
                 </Button>
@@ -219,7 +233,7 @@ export default function MyTripsBoard({
             {assignments.length > 0 && jumpTripDate && (
               <Button
                 type="primary"
-                onClick={() => setFilterDate(jumpTripDate)}
+                onClick={() => setSelectedDate(jumpTripDate)}
                 style={{ marginTop: 8 }}
               >
                 {jumpTripDate.isBefore(today, "day")
@@ -344,8 +358,9 @@ export default function MyTripsBoard({
 
       <Flex justify="center" style={{ marginTop: 12 }}>
         <Text type="secondary" style={{ fontSize: 11 }}>
-          <ScheduleOutlined /> This board only shows trips assigned to you. It is
-          read-only — admin or operations manage dispatch changes.
+          <ScheduleOutlined /> Trips are confirmed by 23:00 the night before and
+          locked at 06:00 on the departure day. This board is read-only — admin or
+          operations manage changes.
         </Text>
       </Flex>
 

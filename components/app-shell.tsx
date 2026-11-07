@@ -40,6 +40,7 @@ import {
   DownloadOutlined,
   LockOutlined,
   CreditCardOutlined,
+  SendOutlined,
 } from "@ant-design/icons";
 import { useApp } from "@/lib/app-context";
 import NotificationCenter from "@/components/notification-center";
@@ -72,6 +73,7 @@ const menuItems = [
     label: <MenuLabel text="Service" />,
     children: [
       { key: "/service/transportation", icon: <CarOutlined />, label: <MenuLabel text="Transportation" /> },
+      { key: "/service/transport-requests", icon: <SendOutlined />, label: <MenuLabel text="Transport requests" /> },
       { key: "/service/coordinate", icon: <EnvironmentOutlined />, label: <MenuLabel text="Coordinate & Hotel" /> },
     ],
   },

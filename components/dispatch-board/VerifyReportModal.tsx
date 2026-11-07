@@ -19,6 +19,7 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   FileDoneOutlined,
+  FileTextOutlined,
   PictureOutlined,
   WarningOutlined,
 } from "@ant-design/icons";
@@ -28,6 +29,17 @@ import type { BoardItem } from "./types";
 import TourTemplateModal from "./TourTemplateModal";
 
 const { Text } = Typography;
+
+const IMAGE_EXTS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"];
+const isEvidenceImage = (e: {
+  ext?: string;
+  mimeType?: string;
+  name?: string;
+  url?: string;
+}) =>
+  IMAGE_EXTS.includes((e.ext ?? "").toLowerCase()) ||
+  (e.mimeType ?? "").toLowerCase().startsWith("image/") ||
+  /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(e.name ?? e.url ?? "");
 
 export default function VerifyReportModal({
   assignment: a,
@@ -284,7 +296,7 @@ export default function VerifyReportModal({
             )}
             {images.length === 0 ? (
               <Text type="secondary" style={{ fontSize: 12 }}>
-                No evidence pictures uploaded.
+                No evidence uploaded.
               </Text>
             ) : (
               <div>
@@ -292,20 +304,51 @@ export default function VerifyReportModal({
                   strong
                   style={{ fontSize: 12, display: "block", marginBottom: 8 }}
                 >
-                  <PictureOutlined /> Evidence pictures ({images.length})
+                  <PictureOutlined /> Evidence — pictures, videos, files (
+                  {images.length})
                 </Text>
                 <Image.PreviewGroup>
                   <Flex gap={8} wrap>
-                    {images.map((img, i) => (
-                      <Image
-                        key={i}
-                        src={img.url}
-                        alt={img.name ?? "evidence"}
-                        width={96}
-                        height={96}
-                        style={{ objectFit: "cover", borderRadius: 8 }}
-                      />
-                    ))}
+                    {images.map((img, i) =>
+                      isEvidenceImage(img) ? (
+                        <Image
+                          key={i}
+                          src={img.url}
+                          alt={img.name ?? "evidence"}
+                          width={96}
+                          height={96}
+                          style={{ objectFit: "cover", borderRadius: 8 }}
+                        />
+                      ) : (
+                        <a
+                          key={i}
+                          href={img.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ textDecoration: "none" }}
+                        >
+                          <Flex
+                            vertical
+                            align="center"
+                            justify="center"
+                            style={{
+                              width: 96,
+                              height: 96,
+                              border: "1px solid #d9d9d9",
+                              borderRadius: 8,
+                              background: "#fafafa",
+                            }}
+                          >
+                            <FileTextOutlined
+                              style={{ fontSize: 26, color: "#1890ff" }}
+                            />
+                            <Text style={{ fontSize: 10 }}>
+                              {(img.ext ?? "FILE").toUpperCase()}
+                            </Text>
+                          </Flex>
+                        </a>
+                      ),
+                    )}
                   </Flex>
                 </Image.PreviewGroup>
               </div>
