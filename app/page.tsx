@@ -18,24 +18,28 @@ import { absoluteUrl, BRAND, SITE_DESCRIPTION, SITE_KEYWORDS } from "@/lib/site"
  */
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: `${BRAND} — Vietnam Tours, Day Trips & Private Experiences`,
-  description: SITE_DESCRIPTION,
-  keywords: SITE_KEYWORDS,
-  alternates: { canonical: "/" },
-  openGraph: {
-    type: "website",
-    siteName: BRAND,
-    url: absoluteUrl("/"),
-    title: `${BRAND} — Vietnam Tours, Day Trips & Private Experiences`,
+export async function generateMetadata(): Promise<Metadata> {
+  const company = await fetchCompany();
+  const brandName = company.shortName?.trim() || BRAND;
+  return {
+    title: `${brandName} — Vietnam Tours, Day Trips & Private Experiences`,
     description: SITE_DESCRIPTION,
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: `${BRAND} — Vietnam Tours, Day Trips & Private Experiences`,
-    description: SITE_DESCRIPTION,
-  },
-};
+    keywords: SITE_KEYWORDS,
+    alternates: { canonical: "/" },
+    openGraph: {
+      type: "website",
+      siteName: brandName,
+      url: absoluteUrl("/"),
+      title: `${brandName} — Vietnam Tours, Day Trips & Private Experiences`,
+      description: SITE_DESCRIPTION,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${brandName} — Vietnam Tours, Day Trips & Private Experiences`,
+      description: SITE_DESCRIPTION,
+    },
+  };
+}
 
 export default async function Home() {
   const [tours, categories, company] = await Promise.all([

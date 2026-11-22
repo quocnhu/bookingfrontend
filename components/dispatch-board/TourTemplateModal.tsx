@@ -1,12 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Button, Empty, Flex, Modal, Skeleton, Typography } from "antd";
+import { Button, Empty, Flex, Modal, Select, Skeleton, Typography } from "antd";
 import { message } from "@/lib/antd-message";
 import { PrinterOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";
 import type { BoardItem } from "./types";
+import {
+  DEFAULT_PAPER_SIZE,
+  PAPER_SIZE_OPTIONS,
+  paperSizeCss,
+  type PaperSize,
+} from "@/lib/paper-size";
 
 const { Text } = Typography;
 
@@ -170,7 +176,7 @@ function Voucher({
   const totalCollected = rows.reduce((sum, r) => sum + r.collected, 0);
   const totalPaid = rows.reduce((sum, r) => sum + r.paid, 0);
   const fmtVnd = (n: number) =>
-    new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(Math.round(n));
+    new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(n));
 
   const printedAt = dayjs().format("DD MMM YYYY");
 
@@ -482,6 +488,7 @@ export default function TourTemplateModal({
   const [companyLoading, setCompanyLoading] = useState(false);
   const [assignment, setAssignment] = useState<FullAssignmentData | null>(null);
   const [assignmentLoading, setAssignmentLoading] = useState(false);
+  const [paperSize, setPaperSize] = useState<PaperSize>(DEFAULT_PAPER_SIZE);
 
   useEffect(() => {
     if (!open) return;
@@ -522,6 +529,16 @@ return (
       open={open}
       onCancel={onClose}
       footer={[
+        <Select
+          key="paper"
+          size="small"
+          value={paperSize}
+          onChange={setPaperSize}
+          options={PAPER_SIZE_OPTIONS}
+          className="no-print"
+          style={{ width: 190, marginRight: 8 }}
+          popupMatchSelectWidth={false}
+        />,
         <Button key="cancel" onClick={onClose} className="no-print">
           Close
         </Button>,
@@ -539,12 +556,10 @@ return (
       destroyOnClose
     >
 <style>{`
-        /* NOTE: no size here on purpose — declaring a paper size locks
-           Chrome's paper selector. Leaving it out lets you pick A4, A5,
-           Letter, etc. freely under More settings. */
-        /* Top kept tight so the template starts near the top; left keeps
-           room for binding holes. Order: top right bottom left. */
-        @page { margin: 3mm 10mm 10mm 20mm; }
+        /* Paper size follows the selector (default A4; Auto leaves the size
+           to the browser/printer). Top kept tight so the template starts near
+           the top; left keeps room for binding holes. */
+        @page { ${paperSizeCss(paperSize)}margin: 3mm 10mm 10mm 20mm; }
         .print-doc {
           background: #fff !important;
           color: ${INK} !important;

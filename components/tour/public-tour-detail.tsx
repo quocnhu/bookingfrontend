@@ -8,6 +8,7 @@ import {
   AutoComplete,
   Button,
   Card,
+  Checkbox,
   Col,
   DatePicker,
   Descriptions,
@@ -30,7 +31,6 @@ import {
 import { message } from "@/lib/antd-message";
 import dayjs from "dayjs";
 import {
-  PrinterOutlined,
   EnvironmentOutlined,
   CalendarOutlined,
   ClockCircleOutlined,
@@ -61,7 +61,27 @@ import type { PublicTour } from "@/lib/server-tours";
 
 
 const vnd = (value: string | number | null | undefined) =>
-  `${Number(value ?? 0).toLocaleString("vi-VN", { maximumFractionDigits: 0 })} ₫`;
+  `${Number(value ?? 0).toLocaleString("en-US", { maximumFractionDigits: 0 })} ₫`;
+
+const paypalUsd = (
+  amount: string | number | null | undefined,
+  rate: number,
+) => {
+  const value = Number(amount ?? 0);
+  if (!Number.isFinite(value) || !Number.isFinite(rate) || rate <= 0) {
+    return "0.00";
+  }
+  return (Math.ceil((value / rate) * 100 - 1e-9) / 100).toFixed(2);
+};
+
+const PRICE_CARD_STYLE = {
+  background: "linear-gradient(135deg, #ecfeff, #dbeafe)",
+  border: "1px solid #67e8f9",
+};
+const PRICE_LABEL_STYLE = { color: "#155e75", fontWeight: 600 };
+const PRICE_VALUE_STYLE = { color: "#0c4a6e" };
+const PRICE_NOTE_STYLE = { color: "#0e7490", fontSize: 12 };
+const PRICE_WARN_STYLE = { color: "#b45309", fontSize: 12 };
 
 /**
  * The public tour page.
@@ -87,9 +107,10 @@ export default function PublicTourDetail({
   const [payChoice, setPayChoice] = useState<"paynow" | "paylater">("paynow");
   const [quote, setQuote] = useState<any>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteRefreshKey, setQuoteRefreshKey] = useState(0);
   const [createdBookingId, setCreatedBookingId] = useState<string | null>(null);
   const [paypalEnabled, setPaypalEnabled] = useState<boolean | null>(null);
-  const [paypalRate, setPaypalRate] = useState(25000);
+  const [paypalRate, setPaypalRate] = useState(26000);
   const [paypalCurrency, setPaypalCurrency] = useState("USD");
   const watchedPax = Form.useWatch("totalPax", bookingForm);
   const watchedDate = Form.useWatch("startingDate", bookingForm);
@@ -200,7 +221,7 @@ export default function PublicTourDetail({
       .get("/payments/paypal/config")
       .then((r) => {
         setPaypalEnabled(!!r.data?.enabled);
-        setPaypalRate(Number(r.data?.vndPerUsd) || 25000);
+        setPaypalRate(Number(r.data?.vndPerUsd) || 26000);
         setPaypalCurrency(String(r.data?.currency || "USD"));
       })
       .catch(() => setPaypalEnabled(false));
@@ -225,6 +246,7 @@ export default function PublicTourDetail({
         tourId: tour.id,
         tourType: selectedType,
         totalPax: Number(watchedPax),
+        startingDate: watchedDate?.format?.("YYYY-MM-DD") ?? watchedDate,
       })
       .then((r) => active && setQuote(r.data))
       .catch(() => active && setQuote(null))
@@ -232,10 +254,19 @@ export default function PublicTourDetail({
     return () => {
       active = false;
     };
-  }, [bookingOpen, tour?.id, selectedType, watchedPax, createdBookingId]);
+  }, [
+    bookingOpen,
+    tour?.id,
+    selectedType,
+    watchedPax,
+    watchedDate,
+    createdBookingId,
+    quoteRefreshKey,
+  ]);
 
   const openBooking = () => {
     if (!user) {
+      message.info("Please sign in to book this tour.");
       router.push(
         `/login?redirect=${encodeURIComponent(window.location.pathname)}`,
       );
@@ -272,7 +303,7 @@ export default function PublicTourDetail({
     if (step === 1) {
       return ["customerName", "phone", "mail", "hotelName", "address"];
     }
-    return [];
+    return quote?.lateBooking ? ["lateAcknowledged"] : [];
   };
 
   const goToNextStep = async () => {
@@ -301,28 +332,52 @@ export default function PublicTourDetail({
         message.error("PayPal is not configured yet. Please choose Pay later.");
         return;
       }
+      if (quote?.lateBooking && !values.lateAcknowledged) {
+        message.error(
+          "Please confirm that you understand this is a late booking.",
+        );
+        return;
+      }
+      const bookingValues: Record<string, any> = { ...values };
+      delete bookingValues.lateAcknowledged;
       const payload = {
-        ...values,
+        ...bookingValues,
         tourId: tour?.id,
         startingDate: values.startingDate?.format("YYYY-MM-DD"),
         payLater: payChoice === "paylater",
+        lateBooking: !!quote?.lateBooking,
         paymentNote:
           payChoice === "paylater"
             ? "Customer selected pay later on the website."
             : undefined,
       };
       const res = await api.post("/bookings/website", payload);
-      if (payChoice === "paylater") {
+      if (quote?.lateBooking) {
         message.success(
-          `Booking ${res.data.booking?.bookingRef ?? ""} submitted. Payment is due at the end of the tour.`,
+          `Booking ${res.data.booking?.bookingRef ?? ""} joined the waiting list. We will reply after 05:00 on the departure day.`,
         );
+      }
+      if (payChoice === "paylater") {
+        if (!quote?.lateBooking) {
+          message.success(
+            `Booking ${res.data.booking?.bookingRef ?? ""} submitted. Payment is due at the end of the tour.`,
+          );
+        }
         setBookingOpen(false);
       } else {
         setCreatedBookingId(res.data.booking?.id ?? null);
-        message.success("Booking created. Complete the PayPal payment below.");
+        message.success(
+          quote?.lateBooking
+            ? "Booking held. Complete the PayPal payment below."
+            : "Booking created. Complete the PayPal payment below.",
+        );
       }
     } catch (e) {
-      message.error(getErrorMessage(e, "Failed to submit booking"));
+      const text = getErrorMessage(e, "Failed to submit booking");
+      if (text.toLowerCase().includes("late-booking option")) {
+        setQuoteRefreshKey((key) => key + 1);
+      }
+      message.error(text);
     } finally {
       setSavingBooking(false);
     }
@@ -380,15 +435,12 @@ export default function PublicTourDetail({
                   </Link>
                 ))}
               </Flex>
-              <Flex gap={8} className="no-print">
+              <Flex gap={8}>
                 {user && canEdit && (
                   <Button icon={<EditOutlined />} onClick={() => router.push(`/manage/tours/${tour.id}`)}>
                     Back to Editor
                   </Button>
                 )}
-                <Button icon={<PrinterOutlined />} onClick={() => window.print()}>
-                  Print
-                </Button>
               </Flex>
             </Flex>
 
@@ -399,7 +451,6 @@ export default function PublicTourDetail({
                   {/* SLIDESHOW */}
                   <Card
                     variant="borderless"
-                    className="print-full"
                     styles={{ body: { padding: 0 } }}
                     title={
                       <Flex align="center" gap={8}>
@@ -929,20 +980,20 @@ children: tour.insurancePolicy ? (
               message="Booking created — payment is the last step"
               description="Complete the PayPal payment below. The booking stays unpaid until PayPal confirms the capture."
             />
-            <Card size="small" style={{ background: "#fafafa" }}>
+            <Card size="small" style={PRICE_CARD_STYLE}>
               <Flex justify="space-between" align="baseline">
-                <Typography.Text type="secondary">
+                <Typography.Text style={PRICE_LABEL_STYLE}>
                   Total {quote?.totalPax ?? watchedPax ?? 0} pax
                 </Typography.Text>
-                <Typography.Title level={4} style={{ margin: 0 }}>
+                <Typography.Title level={4} style={{ margin: 0, ...PRICE_VALUE_STYLE }}>
                   {vnd(quote?.totalAmount ?? 0)}
                 </Typography.Title>
               </Flex>
               {paypalEnabled && quote?.totalAmount ? (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                <Typography.Text style={PRICE_NOTE_STYLE}>
                   PayPal charges approximately {paypalCurrency}{" "}
-                  {(Number(quote.totalAmount) / paypalRate).toFixed(2)} (rate{" "}
-                  {paypalRate.toLocaleString("vi-VN")} VND/{paypalCurrency}).
+                  {paypalUsd(quote.totalAmount, paypalRate)} (rate{" "}
+                  {paypalRate.toLocaleString("en-US")} VND/{paypalCurrency}).
                 </Typography.Text>
               ) : null}
             </Card>
@@ -1040,12 +1091,12 @@ children: tour.insurancePolicy ? (
               >
                 <Input placeholder="e.g. 1 adult, 1 child" />
               </Form.Item>
-              <Card size="small" style={{ background: "#fafafa" }}>
+              <Card size="small" style={PRICE_CARD_STYLE}>
                 <Flex justify="space-between" align="baseline">
-                  <Typography.Text type="secondary">
+                  <Typography.Text style={PRICE_LABEL_STYLE}>
                     {quoteLoading ? "Checking price…" : "Price per person"}
                   </Typography.Text>
-                  <Typography.Text strong>
+                  <Typography.Text strong style={{ ...PRICE_VALUE_STYLE, fontSize: 20 }}>
                     {vnd(
                       quote?.unitPrice ??
                         discountedPrice(
@@ -1055,7 +1106,7 @@ children: tour.insurancePolicy ? (
                     )}
                   </Typography.Text>
                 </Flex>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                <Typography.Text style={PRICE_NOTE_STYLE}>
                   {selectedType === "PRIVATE_TOUR"
                     ? "Private price depends on the number of people."
                     : "Group price is per person. The final total is shown in the payment step."}
@@ -1151,6 +1202,46 @@ children: tour.insurancePolicy ? (
               <Typography.Text strong style={{ display: "block", marginBottom: 12 }}>
                 Step 3 of 3 · Review & payment
               </Typography.Text>
+              {quote?.lateBooking ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message="Late booking — waiting list"
+                  description={`This departure was sealed at ${quote.dispatchCutoffTime ?? "23:00"}. Your booking will wait on a waiting-list bus and we will reply after 05:00 on the departure day. If no seat is available, the booking can be cancelled.`}
+                />
+              ) : quote?.urgentBooking ? (
+                <Alert
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message="Urgent booking"
+                  description="This departure is close to the daily 23:00 dispatch cutoff. Please complete your booking now so we can arrange the bus and driver."
+                />
+              ) : null}
+              {quote?.lateBooking && (
+                <Form.Item
+                  name="lateAcknowledged"
+                  valuePropName="checked"
+                  rules={[
+                    {
+                      validator: (_, value) =>
+                        value
+                          ? Promise.resolve()
+                          : Promise.reject(
+                              new Error(
+                                "Please confirm that you understand this is a late booking.",
+                              ),
+                            ),
+                    },
+                  ]}
+                >
+                  <Checkbox>
+                    I understand this is a late booking. The tour is not
+                    confirmed until the travel agent replies after 05:00.
+                  </Checkbox>
+                </Form.Item>
+              )}
               <Descriptions
                 size="small"
                 column={2}
@@ -1194,33 +1285,33 @@ children: tour.insurancePolicy ? (
                   <Radio.Button value="paylater">Pay later</Radio.Button>
                 </Radio.Group>
               </Form.Item>
-              <Card size="small" style={{ background: "#fafafa" }}>
+              <Card size="small" style={PRICE_CARD_STYLE}>
                 {quoteLoading ? (
                   <Spin size="small" />
                 ) : (
                   <Flex justify="space-between" align="baseline">
-                    <Typography.Text type="secondary">
+                    <Typography.Text style={PRICE_LABEL_STYLE}>
                       Total {quote?.totalPax ?? watchedPax ?? 0} pax
                     </Typography.Text>
-                    <Typography.Title level={4} style={{ margin: 0 }}>
+                    <Typography.Title level={4} style={{ margin: 0, ...PRICE_VALUE_STYLE }}>
                       {vnd(quote?.totalAmount ?? 0)}
                     </Typography.Title>
                   </Flex>
                 )}
                 {payChoice === "paynow" && paypalEnabled && quote?.totalAmount ? (
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  <Typography.Text style={PRICE_NOTE_STYLE}>
                     PayPal charges approximately {paypalCurrency}{" "}
-                    {(Number(quote.totalAmount) / paypalRate).toFixed(2)} (rate{" "}
-                    {paypalRate.toLocaleString("vi-VN")} VND/{paypalCurrency}).
+                    {paypalUsd(quote.totalAmount, paypalRate)} (rate{" "}
+                    {paypalRate.toLocaleString("en-US")} VND/{paypalCurrency}).
                   </Typography.Text>
                 ) : null}
                 {payChoice === "paynow" && paypalEnabled === false && (
-                  <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                  <Typography.Text style={PRICE_WARN_STYLE}>
                     PayPal is not configured. Choose Pay later or contact us.
                   </Typography.Text>
                 )}
                 {!quoteLoading && !quote?.totalAmount && (
-                  <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                  <Typography.Text style={PRICE_WARN_STYLE}>
                     Go back and check the date and pax so the total can be calculated.
                   </Typography.Text>
                 )}

@@ -11,6 +11,8 @@ import {
   Select,
   Progress,
   Popover,
+  Popconfirm,
+  Segmented,
   Space,
   Spin,
   Tag,
@@ -23,6 +25,7 @@ import {
   CarOutlined,
   CheckCircleOutlined,
   CheckOutlined,
+  ClockCircleOutlined,
   CloseOutlined,
   EnvironmentOutlined,
   FileTextOutlined,
@@ -32,12 +35,13 @@ import {
   PrinterOutlined,
   SafetyCertificateOutlined,
   LockOutlined,
+  MailOutlined,
   SendOutlined,
   UndoOutlined,
   UpOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import dayjs, { Dayjs } from "dayjs";
 import type { BoardCrew, BoardItem, BookingItem, TourMeta } from "./types";
 import MarqueeText from "@/components/MarqueeText";
@@ -87,6 +91,55 @@ function bookingKm(lat?: number | null, lng?: number | null): string {
   const km = haversineKm(ROOT_COORD.lat, ROOT_COORD.lng, lat, lng);
   if (km < 1) return `${Math.round(km * 1000)} m`;
   return `${km.toFixed(1)} km`;
+}
+
+function mapsHref(
+  hotelName?: string | null,
+  address?: string | null,
+  lat?: number | null,
+  lng?: number | null,
+): string | null {
+  if (lat != null && lng != null) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+  }
+  const destination = [hotelName, address].filter(Boolean).join(", ");
+  if (!destination) return null;
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
+}
+
+function whatsAppHref(phone?: string | null): string | null {
+  if (!phone) return null;
+  let digits = phone.replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  else if (digits.startsWith("0")) digits = `84${digits.slice(1)}`;
+  return `https://wa.me/${digits}`;
+}
+
+function MapsLink({
+  href,
+  title,
+  style,
+  children,
+}: {
+  href: string | null;
+  title?: string;
+  style?: CSSProperties;
+  children: ReactNode;
+}) {
+  if (!href) return <span style={style}>{children}</span>;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      draggable={false}
+      title={title}
+      style={{ ...style, textDecoration: "none", cursor: "pointer" }}
+    >
+      {children}
+    </a>
+  );
 }
 
 const GUIDE_FAILBACK = "#52c41a";
@@ -278,7 +331,7 @@ interface BookingMoneyEntry {
 }
 
 const fmtInfoVnd = (n: number) =>
-  new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(Math.round(n));
+  new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(n));
 
 // INFO cell: gold icon when the booking has a note and/or collect-refund
 // entries added by admin/privileged users. Clicking opens a box with the
@@ -443,6 +496,10 @@ function BookingInfoCell({
   );
 }
 
+// Shared across cards: a row dragged from a WAITING_LIST bus may be dropped
+// onto a bus even after the 23:00 seal.
+let draggingFromWaitingList = false;
+
 export default function BoardCard({
   assignment: a,
   index,
@@ -452,6 +509,7 @@ export default function BoardCard({
   canConfirm,
   recallCutoff = "06:00",
   readOnly,
+  sealed,
   onConfirm,
   onDispatch,
   dispatching,
@@ -466,6 +524,10 @@ export default function BoardCard({
   onPartnerReturn,
   crew,
   onCrewChange,
+  reminderModeSavingId,
+  reminderSendingId,
+  onReminderModeChange,
+  onSendReminder,
 }: {
   assignment: BoardItem;
   index: number;
@@ -475,6 +537,7 @@ export default function BoardCard({
   canConfirm: boolean;
   recallCutoff?: string;
   readOnly?: boolean;
+  sealed?: boolean;
   onConfirm: (assignment: BoardItem) => void;
   onDispatch: (assignment: BoardItem) => void;
   dispatching: boolean;
@@ -498,6 +561,13 @@ export default function BoardCard({
     field: "guideId" | "driverId",
     userId: string | null,
   ) => void;
+  reminderModeSavingId?: string | null;
+  reminderSendingId?: string | null;
+  onReminderModeChange?: (
+    assignment: BoardItem,
+    mode: "AUTO" | "MANUAL",
+  ) => void;
+  onSendReminder?: (assignment: BoardItem) => void;
 }) {
   const { token } = antdTheme.useToken();
   const { user } = useApp();
@@ -518,6 +588,11 @@ export default function BoardCard({
   const { color, accent } = meta;
   const capacity = a.vehicle?.capacity ?? 12;
   const isFull = a.totalPax >= capacity;
+  const reminderEligible = (a.bookings ?? []).filter(
+    (b) =>
+      (b.channel === "WEBSITE" || b.channel === "MANUAL") &&
+      Boolean((b.mail ?? "").trim()),
+  ).length;
   const isToday = dayjs(a.startDate).startOf("day").isSame(today);
   const activeTodayMs = today.startOf("day").valueOf();
   const startDayMs = dayjs(a.startDate).startOf("day").valueOf();
@@ -551,12 +626,17 @@ export default function BoardCard({
   const isPastTour = dayjs(a.endDate).endOf("day").isBefore(
     dayjs().startOf("day"),
   );
+  const isWaitingList = a.status === "WAITING_LIST";
   const interactive =
     canConfirm &&
     !isOutsourced &&
     a.status !== "COMPLETED" &&
     a.status !== "CANCELED" &&
     !isPastTour;
+  // Evaluated at drag-event time (a module-level flag changes when a row from
+  // a WAITING_LIST bus starts dragging, without re-rendering the targets).
+  const canAcceptDrop = () =>
+    interactive && !isWaitingList && (!sealed || draggingFromWaitingList);
   const hasMovedBooking =
     a.bookings?.some((b) => b.movedFromBus) ?? false;
 
@@ -567,16 +647,18 @@ export default function BoardCard({
       dragDepth.current = 0;
       setDragOver(false);
       setDropTarget(null);
-      if (!interactive) return;
+      if (!canAcceptDrop()) return;
       const bookingId = readDraggedBookingId(e);
       clearDraggedBooking();
+      draggingFromWaitingList = false;
       if (!bookingId) {
         message.error("Could not read the dragged assignment - try again");
         return;
       }
       onMoveBooking(bookingId, a.id, null);
     },
-    [interactive, onMoveBooking, a.id],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [interactive, isWaitingList, sealed, onMoveBooking, a.id],
   );
 
   const handleRowDrop = useCallback(
@@ -587,7 +669,7 @@ export default function BoardCard({
       setDragOver(false);
       const pos = dropTarget?.rowId === beforeBookingId ? dropTarget.pos : null;
       setDropTarget(null);
-      if (!interactive) return;
+      if (!canAcceptDrop()) return;
       const bookingId = readDraggedBookingId(e);
       clearDraggedBooking();
       if (!bookingId) {
@@ -597,13 +679,14 @@ export default function BoardCard({
       if (bookingId === beforeBookingId) return;
       onMoveBooking(bookingId, a.id, beforeBookingId, pos ?? "before");
     },
-    [interactive, onMoveBooking, a.id, dropTarget],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [interactive, isWaitingList, sealed, onMoveBooking, a.id, dropTarget],
   );
 
   /** Arrow button: move a booking up/down one slot within the same bus. */
   const nudge = useCallback(
     (bookingId: string, dir: "up" | "down") => {
-      if (!interactive) return;
+      if (!interactive || isWaitingList) return;
       const ids = (a.bookings ?? []).map((b) => b.id);
       const at = ids.indexOf(bookingId);
       if (at === -1) return;
@@ -615,7 +698,7 @@ export default function BoardCard({
         onMoveBooking(bookingId, a.id, ids[at + 1], "after");
       }
     },
-    [interactive, onMoveBooking, a.id, a.bookings],
+    [interactive, isWaitingList, onMoveBooking, a.id, a.bookings],
   );
 
   /** The top/bottom half of the row decides whether to insert before or after. */
@@ -723,7 +806,17 @@ export default function BoardCard({
       // A card that can't accept a drop used to fail silently - the browser
       // just showed the "not allowed" cursor. Say why instead.
       title={
-        readOnly ? undefined : !canConfirm ? (
+        readOnly ? undefined : isWaitingList ? (
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            <ClockCircleOutlined style={{ fontSize: 10 }} /> Waiting list — place
+            these guests on an open bus after 05:00
+          </Text>
+        ) : sealed ? (
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            <LockOutlined style={{ fontSize: 10 }} /> Board sealed at the
+            dispatch cutoff — only waiting-list bookings can be placed
+          </Text>
+        ) : !canConfirm ? (
           <Text type="secondary" style={{ fontSize: 11 }}>
             You do not have permission to move bookings
           </Text>
@@ -739,19 +832,19 @@ export default function BoardCard({
         ) : undefined
       }
       onDragEnter={(e) => {
-        if (!interactive) return;
+        if (!canAcceptDrop()) return;
         e.preventDefault();
         dragDepth.current += 1;
         setDragOver(true);
       }}
       onDragOver={(e) => {
-        if (!interactive) return;
+        if (!canAcceptDrop()) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
         setDragOver(true);
       }}
       onDragLeave={() => {
-        if (!interactive) return;
+        if (!canAcceptDrop()) return;
         dragDepth.current -= 1;
         if (dragDepth.current <= 0) {
           dragDepth.current = 0;
@@ -1185,30 +1278,39 @@ export default function BoardCard({
                   "another bus"
                 : null;
               const isMoved = !!fromLabel;
+              const mapLink = mapsHref(
+                b.hotelName,
+                b.address,
+                b.latitude,
+                b.longitude,
+              );
+              const waLink = whatsAppHref(b.phone);
               return (
               <List.Item
                 key={b.id}
                 draggable={interactive}
                 onDragStart={(e) => {
                   draggingBookingId = b.id;
+                  draggingFromWaitingList = isWaitingList;
                   e.dataTransfer.setData("text/plain", b.id);
                   e.dataTransfer.effectAllowed = "move";
                 }}
                 onDragEnd={() => {
                   clearDraggedBooking();
+                  draggingFromWaitingList = false;
                   dragDepth.current = 0;
                   setDragOver(false);
                   setDropTarget(null);
                 }}
                 onDragEnter={(e) => {
-                  if (!interactive) return;
+                  if (!canAcceptDrop()) return;
                   e.preventDefault();
                   e.stopPropagation();
                   setDropTarget({ rowId: b.id, pos: rowDropPos(e) });
                   setDragOver(true);
                 }}
                 onDragOver={(e) => {
-                  if (!interactive) return;
+                  if (!canAcceptDrop()) return;
                   // No stopPropagation here: the card-level handler still needs
                   // to run so the bus highlight stays lit while over a row.
                   e.preventDefault();
@@ -1216,7 +1318,7 @@ export default function BoardCard({
                   setDropTarget({ rowId: b.id, pos: rowDropPos(e) });
                 }}
                 onDragLeave={(e) => {
-                  if (!interactive) return;
+                  if (!canAcceptDrop()) return;
                   e.stopPropagation();
                   setDropTarget((d) => (d?.rowId === b.id ? null : d));
                 }}
@@ -1254,7 +1356,6 @@ export default function BoardCard({
                   className="board-bk-grid"
                   style={{
                     flex: 1,
-                    minWidth: 0,
                     display: "grid",
                     // The first column is the up/down arrow. The "fr" columns use minmax(0)
                     // so they can shrink - hard minimums used to make the grid
@@ -1264,7 +1365,7 @@ export default function BoardCard({
                     // rendered, so the column count always matches the child
                     // count.
                     gridTemplateColumns:
-                      (interactive && activeBookings.length > 1
+                      (interactive && !isWaitingList && activeBookings.length > 1
                         ? "18px "
                         : "") +
                       "20px minmax(0,1.05fr) 70px minmax(0,1.6fr) 64px 36px 24px",
@@ -1293,7 +1394,7 @@ export default function BoardCard({
                       needed. Lives inside the grid (not as a flex sibling) so it
                       cannot shift the layout; disabled at both ends of the
                       list. */}
-                  {interactive && activeBookings.length > 1 && (
+                  {interactive && !isWaitingList && activeBookings.length > 1 && (
                     <div
                       style={{
                         display: "flex",
@@ -1368,6 +1469,21 @@ export default function BoardCard({
                     >
                       {b.customerName ?? "no name"}
                     </Text>
+                    {b.lateBooking && (
+                      <Tag
+                        color="orange"
+                        title="Late booking from the waiting list"
+                        style={{
+                          margin: 0,
+                          fontSize: 9,
+                          lineHeight: "16px",
+                          padding: "0 4px",
+                          width: "fit-content",
+                        }}
+                      >
+                        LATE
+                      </Tag>
+                    )}
                     {isMoved && (
                       <Tag
                         color="red"
@@ -1412,7 +1528,9 @@ export default function BoardCard({
                       minWidth: 0,
                     }}
                   >
-                    <span
+                    <MapsLink
+                      href={mapLink}
+                      title="Open directions in Google Maps"
                       style={{
                         display: "inline-flex",
                         alignItems: "center",
@@ -1435,10 +1553,12 @@ export default function BoardCard({
                       >
                         {b.hotelName || "No pickup"}
                       </MarqueeText>
-                    </span>
+                    </MapsLink>
                       {b.address &&
                         (!b.hotelName || b.address !== b.hotelName) && (
-                          <MarqueeText
+                          <MapsLink
+                            href={mapLink}
+                            title="Open directions in Google Maps"
                             style={{
                               display: "inline-flex",
                               alignItems: "center",
@@ -1447,10 +1567,11 @@ export default function BoardCard({
                               paddingLeft: 16,
                               minWidth: 0,
                             }}
-                            tip={b.address}
                           >
-                            {b.address}
-                          </MarqueeText>
+                            <MarqueeText tip={b.address}>
+                              {b.address}
+                            </MarqueeText>
+                          </MapsLink>
                         )}
                     {b.phone && (
                       <span
@@ -1461,16 +1582,28 @@ export default function BoardCard({
                           minWidth: 0,
                         }}
                       >
-                        <PhoneOutlined
-                          style={{
-                            color: "#52c41a",
-                            flexShrink: 0,
-                            fontSize: 11,
-                          }}
-                        />
                         <a
                           href={`tel:${b.phone}`}
-                          title={b.phone}
+                          title={`Call ${b.phone}`}
+                          draggable={false}
+                          style={{
+                            display: "inline-flex",
+                            color: "#52c41a",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <PhoneOutlined style={{ fontSize: 11 }} />
+                        </a>
+                        <a
+                          href={waLink ?? `tel:${b.phone}`}
+                          target={waLink ? "_blank" : undefined}
+                          rel={waLink ? "noopener noreferrer" : undefined}
+                          draggable={false}
+                          title={
+                            waLink
+                              ? "Chat on WhatsApp"
+                              : `Call ${b.phone}`
+                          }
                           style={{
                             color: "#389e0d",
                             fontWeight: 600,
@@ -1478,6 +1611,8 @@ export default function BoardCard({
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap",
                             minWidth: 0,
+                            padding: "2px 0",
+                            touchAction: "manipulation",
                           }}
                         >
                           {b.phone}
@@ -1600,7 +1735,7 @@ export default function BoardCard({
               ? "Company pays the partner"
               : "Partner collects and remits to the company"}
             {a.partnerAmount != null
-              ? ` · ${new Intl.NumberFormat("vi-VN", {
+              ? ` · ${new Intl.NumberFormat("en-US", {
                   maximumFractionDigits: 0,
                 }).format(Number(a.partnerAmount))} ${a.partnerCurrency ?? "VND"}`
               : ""}
@@ -1746,6 +1881,67 @@ export default function BoardCard({
             Outsource to partner agency
           </Button>
         )}
+      {canConfirm && reminderEligible > 0 && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: "8px 10px",
+            borderRadius: 8,
+            background: "rgba(34,211,238,0.06)",
+            border: "1px solid rgba(34,211,238,0.25)",
+          }}
+        >
+          <Flex justify="space-between" align="center" gap={8} wrap>
+            <Space size={6} align="center">
+              <MailOutlined style={{ color: "#0891b2" }} />
+              <Text strong style={{ fontSize: 12 }}>
+                Pickup reminder
+              </Text>
+              {a.pickupReminderLastSentAt && (
+                <Tag color="success" style={{ margin: 0, fontSize: 10 }}>
+                  Sent
+                </Tag>
+              )}
+            </Space>
+            <Space size={6} align="center" wrap>
+              <Segmented
+                size="small"
+                value={a.pickupReminderMode ?? "AUTO"}
+                disabled={reminderModeSavingId === a.id}
+                options={[
+                  { label: "Auto", value: "AUTO" },
+                  { label: "Manual", value: "MANUAL" },
+                ]}
+                onChange={(value) =>
+                  onReminderModeChange?.(a, value as "AUTO" | "MANUAL")
+                }
+              />
+              <Popconfirm
+                title="Send the pickup reminder now?"
+                description={`This sends an email to ${reminderEligible} guest(s) on this trip.`}
+                okText="Send"
+                onConfirm={() => onSendReminder?.(a)}
+              >
+                <Button
+                  size="small"
+                  icon={<MailOutlined />}
+                  loading={reminderSendingId === a.id}
+                >
+                  {a.pickupReminderLastSentAt ? "Resend" : "Send"}
+                </Button>
+              </Popconfirm>
+            </Space>
+          </Flex>
+          <Text
+            type="secondary"
+            style={{ fontSize: 10, display: "block", marginTop: 4 }}
+          >
+            {a.pickupReminderMode === "MANUAL"
+              ? "Manual — only this button sends the reminder."
+              : "Auto — sent before pickup; this button sends immediately."}
+          </Text>
+        </div>
+      )}
       {canConfirm && (!a.tourReport?.locked || isAdmin) && (
         <Button
           type="dashed"

@@ -296,7 +296,7 @@ export default function TourItineraryEditorPage() {
   return (
     <div>
       {/* ─── TOP ACTION BAR ─── */}
-      <Card className="no-print" variant="borderless" style={{ marginBottom: 16 }}>
+      <Card variant="borderless" style={{ marginBottom: 16 }}>
         <Flex justify="space-between" align="center" wrap gap={12}>
           <Flex align="center" gap={12} wrap style={{ flex: "1 1 300px" }}>
             <Flex gap={8} align="center">
@@ -347,7 +347,6 @@ export default function TourItineraryEditorPage() {
                   <span>Tour Image Slideshow / Folder Gallery</span>
                 </Flex>
               }
-              className="print-full"
             >
               {canEdit && mode === "edit" ? (
                 <GalleryManager
@@ -621,7 +620,6 @@ export default function TourItineraryEditorPage() {
         {/* ─── RIGHT: TOUR BOOKING BOX ─── */}
         <Col xs={24} lg={8}>
           <Card
-            className="print-full"
             style={{
               position: "sticky",
               top: 16,
@@ -672,10 +670,10 @@ export default function TourItineraryEditorPage() {
                         delete
                         style={{ fontSize: 15, lineHeight: 1 }}
                       >
-                        {Number(tour.adultPrice ?? 0).toLocaleString()} {tour.currency}
+                        {Number(tour.adultPrice ?? 0).toLocaleString("en-US", { maximumFractionDigits: 0 })} {tour.currency}
                       </Typography.Text>
                       <Typography.Title level={3} style={{ margin: 0, color: "#dc2626" }}>
-                        {Number(discountedPrice(tour.adultPrice, discountFor(tour, tour.type))).toLocaleString()}{" "}
+                        {Number(discountedPrice(tour.adultPrice, discountFor(tour, tour.type))).toLocaleString("en-US", { maximumFractionDigits: 0 })}{" "}
                         {tour.currency}
                       </Typography.Title>
                       <Tag color="red" style={{ alignSelf: "flex-start" }}>
@@ -684,7 +682,7 @@ export default function TourItineraryEditorPage() {
                     </>
                   ) : (
                     <Typography.Title level={3} style={{ margin: 0 }}>
-                      {Number(tour.adultPrice ?? 0).toLocaleString()} {tour.currency}
+                      {Number(tour.adultPrice ?? 0).toLocaleString("en-US", { maximumFractionDigits: 0 })} {tour.currency}
                     </Typography.Title>
                   )}
                 </>

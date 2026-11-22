@@ -27,10 +27,12 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   LoadingOutlined,
+  MailOutlined,
   SendOutlined,
   ScheduleOutlined,
   SyncOutlined,
   TeamOutlined,
+  UnorderedListOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
@@ -41,11 +43,14 @@ dayjs.extend(isSameOrAfter);
 import { api, getErrorMessage } from "@/lib/api";
 import type { BoardCrew, BoardItem } from "./types";
 import { TYPE_META, sortByDate } from "./types";
+import AssignmentListDrawer from "./AssignmentListDrawer";
 import BoardColumn from "./BoardColumn";
 import BookingAdditionsModal from "./BookingAdditionsModal";
 import ConfirmFinishedModal from "./ConfirmFinishedModal";
 import CrewAvailabilityDrawer from "./CrewAvailabilityDrawer";
 import VerifyReportModal from "./VerifyReportModal";
+import TourTemplateModal from "./TourTemplateModal";
+import WaitingListDrawer from "./WaitingListDrawer";
 import {
   PartnerHandoffModal,
   PartnerReturnModal,
@@ -59,6 +64,12 @@ type AutoDispatchSettings = {
   cron: string;
   timezone: string;
   nextRun: string | null;
+};
+
+type PickupReminderSettings = {
+  enabled: boolean;
+  time: string;
+  timezone: string;
 };
 
 const DAILY_CRON = /^\s*(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+\*\s*$/;
@@ -123,6 +134,17 @@ export default function DispatchBoard({
   const [boardData, setBoardData] = useState<BoardItem[]>([]);
   const [boardLoading, setBoardLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [sealInfo, setSealInfo] = useState<{
+    sealed: boolean;
+    urgent: boolean;
+    cutoffTime: string;
+    cutoffAt: string;
+  } | null>(null);
+  const [waitingOpen, setWaitingOpen] = useState(false);
+  const [assigningWaitingKey, setAssigningWaitingKey] = useState<string | null>(
+    null,
+  );
+  const [templateTarget, setTemplateTarget] = useState<BoardItem | null>(null);
   const [crew, setCrew] = useState<BoardCrew>({ guides: [], drivers: [] });
   const [confirmingId] = useState<string | null>(null);
   const [dispatchingId, setDispatchingId] = useState<string | null>(null);
@@ -134,12 +156,22 @@ export default function DispatchBoard({
   const [partnerReturnTarget, setPartnerReturnTarget] =
     useState<BoardItem | null>(null);
   const [crewAvailOpen, setCrewAvailOpen] = useState(false);
+  const [assignmentListOpen, setAssignmentListOpen] = useState(false);
   const [autoAssign, setAutoAssign] = useState(false);
   const [autoDispatch, setAutoDispatch] =
     useState<AutoDispatchSettings | null>(null);
   const [autoDispatchSaving, setAutoDispatchSaving] = useState(false);
   const [recallCutoff, setRecallCutoff] = useState("06:00");
   const [recallCutoffSaving, setRecallCutoffSaving] = useState(false);
+  const [pickupReminder, setPickupReminder] =
+    useState<PickupReminderSettings | null>(null);
+  const [pickupReminderSaving, setPickupReminderSaving] = useState(false);
+  const [reminderModeSavingId, setReminderModeSavingId] = useState<
+    string | null
+  >(null);
+  const [reminderSendingId, setReminderSendingId] = useState<string | null>(
+    null,
+  );
 
   const loadBoard = useCallback((background = false) => {
     if (background) setRefreshing(true);
@@ -200,8 +232,27 @@ export default function DispatchBoard({
         .get("/assignments/board/recall-cutoff")
         .then((r) => setRecallCutoff(r.data?.time ?? "06:00"))
         .catch(() => setRecallCutoff("06:00"));
+      api
+        .get("/assignments/board/pickup-reminder")
+        .then((r) => setPickupReminder(r.data ?? null))
+        .catch(() => setPickupReminder(null));
     }
   }, [open, loadBoard]);
+
+  const refreshSeal = useCallback(async () => {
+    try {
+      const { data } = await api.get("/assignments/board/seal", {
+        params: { date: filterDate.format("YYYY-MM-DD") },
+      });
+      setSealInfo(data ?? null);
+    } catch {
+      setSealInfo(null);
+    }
+  }, [filterDate]);
+
+  useEffect(() => {
+    void refreshSeal();
+  }, [refreshSeal]);
 
   const saveAutoDispatch = async (patch: {
     enabled?: boolean;
@@ -213,6 +264,7 @@ export default function DispatchBoard({
       const r = await api.put("/assignments/board/auto-dispatch", patch);
       setAutoDispatch(r.data ?? null);
       message.success("Scheduled auto-dispatch updated");
+      void refreshSeal();
     } catch (e) {
       message.error(getErrorMessage(e, "Failed to update auto-dispatch"));
     } finally {
@@ -234,6 +286,75 @@ export default function DispatchBoard({
       message.error(getErrorMessage(e, "Failed to update recall cutoff"));
     } finally {
       setRecallCutoffSaving(false);
+    }
+  };
+
+  const savePickupReminder = async (patch: {
+    enabled?: boolean;
+    time?: string;
+  }) => {
+    if (!canUpdateAssignment) return;
+    setPickupReminderSaving(true);
+    try {
+      const r = await api.put("/assignments/board/pickup-reminder", patch);
+      setPickupReminder(r.data ?? null);
+      message.success("Pickup reminder schedule updated");
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to update pickup reminders"));
+    } finally {
+      setPickupReminderSaving(false);
+    }
+  };
+
+  const changeReminderMode = async (
+    assignment: BoardItem,
+    mode: "AUTO" | "MANUAL",
+  ) => {
+    if (!canUpdateAssignment) return;
+    setReminderModeSavingId(assignment.id);
+    try {
+      await api.put(`/assignments/${assignment.id}/pickup-reminder-mode`, {
+        mode,
+      });
+      setBoardData((prev) =>
+        prev.map((a) =>
+          a.id === assignment.id ? { ...a, pickupReminderMode: mode } : a,
+        ),
+      );
+      message.success(
+        mode === "AUTO"
+          ? "Reminder set to Auto — it will send before pickup."
+          : "Reminder set to Manual — use Send reminder when ready.",
+      );
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to update reminder mode"));
+    } finally {
+      setReminderModeSavingId(null);
+    }
+  };
+
+  const sendPickupReminder = async (assignment: BoardItem) => {
+    if (!canUpdateAssignment) return;
+    setReminderSendingId(assignment.id);
+    try {
+      const r = await api.post(`/assignments/${assignment.id}/pickup-reminder`);
+      const sent = Number(r.data?.sent ?? 0);
+      const failed = Number(r.data?.failed ?? 0);
+      const eligible = Number(r.data?.eligible ?? 0);
+      if (sent === 0 && eligible === 0) {
+        message.warning("No guest on this trip has a reminder email.");
+      } else if (failed > 0) {
+        message.warning(
+          `Reminder sent to ${sent} guest(s); ${failed} failed and will retry automatically.`,
+        );
+      } else {
+        message.success(`Reminder sent to ${sent} guest(s).`);
+      }
+      loadBoard(true);
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to send pickup reminder"));
+    } finally {
+      setReminderSendingId(null);
     }
   };
 
@@ -342,7 +463,9 @@ export default function DispatchBoard({
   const dispatchAllBuses = async () => {
     setDispatchingAll(true);
     try {
-      const r = await api.post(`/assignments/board/dispatch-all`);
+      const r = await api.post(`/assignments/board/dispatch-all`, {
+        date: filterDate.format("YYYY-MM-DD"),
+      });
       const dispatched = r.data?.dispatched ?? 0;
       const skipped = r.data?.skipped ?? 0;
       const skippedOnLeave = r.data?.skippedOnLeave ?? 0;
@@ -371,6 +494,31 @@ export default function DispatchBoard({
     }
   };
 
+  const assignWaitingBooking = async (
+    bookingId: string,
+    toAssignmentId: string,
+  ) => {
+    const source = waitingItems.find((bus) =>
+      (bus.bookings ?? []).some((booking) => booking.id === bookingId),
+    );
+    if (!source) return;
+    const key = `${source.id}:${bookingId}`;
+    setAssigningWaitingKey(key);
+    try {
+      await api.put(`/assignments/${source.id}/bookings/${bookingId}/move`, {
+        toAssignmentId,
+      });
+      message.success("Late booking placed on the bus.");
+      await loadBoard(true);
+    } catch (error) {
+      message.error(
+        getErrorMessage(error, "Could not place the waiting-list booking"),
+      );
+    } finally {
+      setAssigningWaitingKey(null);
+    }
+  };
+
   const setAllOrigin = async (origin: "MANUAL" | "AUTO_ASSIGN") => {
     try {
       const { data } = await api.put(`/assignments/board/origin`, { origin });
@@ -380,6 +528,7 @@ export default function DispatchBoard({
         `Switched to ${origin === "AUTO_ASSIGN" ? "Auto-assign" : "Manual"}`,
       );
       loadBoard(true);
+      void refreshSeal();
       onChanged?.();
     } catch (e) {
       message.error(getErrorMessage(e, "Failed to update assignment origins"));
@@ -490,21 +639,29 @@ export default function DispatchBoard({
     [boardData, filterDate],
   );
 
-  const groupItems = useMemo(
-    () => filtered.filter((a) => a.tourType === "GROUP_TOUR").sort(sortByDate),
+  const waitingItems = useMemo(
+    () => filtered.filter((a) => a.status === "WAITING_LIST").sort(sortByDate),
     [filtered],
+  );
+  const normalItems = useMemo(
+    () => filtered.filter((a) => a.status !== "WAITING_LIST"),
+    [filtered],
+  );
+  const groupItems = useMemo(
+    () => normalItems.filter((a) => a.tourType === "GROUP_TOUR").sort(sortByDate),
+    [normalItems],
   );
   const privateItems = useMemo(
     () =>
-      filtered.filter((a) => a.tourType === "PRIVATE_TOUR").sort(sortByDate),
-    [filtered],
+      normalItems.filter((a) => a.tourType === "PRIVATE_TOUR").sort(sortByDate),
+    [normalItems],
   );
   const otherItems = useMemo(
     () =>
-      filtered
+      normalItems
         .filter((a) => a.tourType !== "GROUP_TOUR" && a.tourType !== "PRIVATE_TOUR")
         .sort(sortByDate),
-    [filtered],
+    [normalItems],
   );
 
   const bookingDates = useMemo(() => {
@@ -528,15 +685,16 @@ export default function DispatchBoard({
 
   const stats = useMemo(
     () => ({
-      pending: filtered.filter((a) => a.status === "PENDING").length,
-      dispatched: filtered.filter((a) => a.status === "DISPATCHED").length,
-      verifying: filtered.filter((a) => a.status === "VERIFYING").length,
+      pending: normalItems.filter((a) => a.status === "PENDING").length,
+      dispatched: normalItems.filter((a) => a.status === "DISPATCHED").length,
+      verifying: normalItems.filter((a) => a.status === "VERIFYING").length,
       group: groupItems.length,
       private: privateItems.length,
       other: otherItems.length,
-      total: filtered.length,
+      waiting: waitingItems.length,
+      total: normalItems.length,
     }),
-    [filtered, groupItems, privateItems, otherItems],
+    [normalItems, groupItems, privateItems, otherItems, waitingItems],
   );
 
   const renderDateCell: NonNullable<DatePickerProps["cellRender"]> = (
@@ -568,6 +726,141 @@ export default function DispatchBoard({
       </div>
     );
   };
+
+  const scheduleSettings = (
+    <>
+            {autoDispatch && (
+              <Flex
+                wrap
+                gap={10}
+                align="center"
+                justify="space-between"
+                style={{
+                  marginTop: 12,
+                  paddingTop: 10,
+                  borderTop: `1px solid ${token.colorSplit}`,
+                }}
+              >
+                <Space wrap size={8} align="center">
+                  <Tooltip title="Automatic dispatch — at this time it fills missing crew, then dispatches all pending trips that start the next day. New bookings after this time go to the waiting list.">
+                    <ScheduleOutlined style={{ color: token.colorPrimary }} />
+                  </Tooltip>
+                  <Text strong style={{ fontSize: 12 }}>
+                    Auto-dispatch
+                  </Text>
+                  <Switch
+                    size="small"
+                    checked={autoDispatch.enabled}
+                    loading={autoDispatchSaving}
+                    disabled={!canUpdateAssignment}
+                    onChange={(enabled) => saveAutoDispatch({ enabled })}
+                  />
+                  <TimePicker
+                    size="small"
+                    value={cronToTime(autoDispatch.cron)}
+                    format="HH:mm"
+                    minuteStep={5}
+                    allowClear={false}
+                    disabled={!canUpdateAssignment}
+                    onChange={(time) => {
+                      if (time) saveAutoDispatch({ cron: timeToCron(time) });
+                    }}
+                    style={{ width: 78 }}
+                  />
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {autoDispatch.timezone}
+                  </Text>
+                  {autoDispatch.enabled ? (
+                    autoDispatch.nextRun ? (
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        · Next{" "}
+                        {dayjs(autoDispatch.nextRun).format("DD MMM, HH:mm")}
+                      </Text>
+                    ) : null
+                  ) : (
+                    <Tooltip title="Automatic dispatch is off — scheduled crew fill + dispatch are paused.">
+                      <Tag style={{ margin: 0, fontSize: 11 }}>Off</Tag>
+                    </Tooltip>
+                  )}
+                </Space>
+
+                <Space wrap size={8} align="center">
+                  <Tooltip title="Recall cutoff — after this time on the departure day, a dispatched trip can no longer be recalled to PENDING.">
+                    <ClockCircleOutlined
+                      style={{ color: token.colorPrimary }}
+                    />
+                  </Tooltip>
+                  <Text strong style={{ fontSize: 12 }}>
+                    Recall cutoff
+                  </Text>
+                  <TimePicker
+                    size="small"
+                    value={hhmmToTime(recallCutoff)}
+                    format="HH:mm"
+                    minuteStep={5}
+                    allowClear={false}
+                    disabled={!canUpdateAssignment || recallCutoffSaving}
+                    onChange={(time) => {
+                      if (time) saveRecallCutoff(time);
+                    }}
+                    style={{ width: 78 }}
+                  />
+                </Space>
+              </Flex>
+            )}
+
+            {pickupReminder && (
+              <Flex
+                wrap
+                gap={10}
+                align="center"
+                justify="space-between"
+                style={{
+                  marginTop: autoDispatch ? 8 : 12,
+                  paddingTop: 10,
+                  borderTop: `1px solid ${token.colorSplit}`,
+                }}
+              >
+                <Space wrap size={8} align="center">
+                  <Tooltip title="Customer pickup reminder — sent to every guest on the tour before pickup. Auto uses the time below; Manual waits for the button on each trip card.">
+                    <MailOutlined style={{ color: token.colorPrimary }} />
+                  </Tooltip>
+                  <Text strong style={{ fontSize: 12 }}>
+                    Pickup reminder
+                  </Text>
+                  <Switch
+                    size="small"
+                    checked={pickupReminder.enabled}
+                    loading={pickupReminderSaving}
+                    disabled={!canUpdateAssignment}
+                    onChange={(enabled) => savePickupReminder({ enabled })}
+                  />
+                  <TimePicker
+                    size="small"
+                    value={hhmmToTime(pickupReminder.time)}
+                    format="HH:mm"
+                    minuteStep={5}
+                    allowClear={false}
+                    disabled={!canUpdateAssignment || pickupReminderSaving}
+                    onChange={(time) => {
+                      if (time) savePickupReminder({ time: time.format("HH:mm") });
+                    }}
+                    style={{ width: 78 }}
+                  />
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {pickupReminder.timezone}
+                  </Text>
+                  {!pickupReminder.enabled && (
+                    <Tag style={{ margin: 0, fontSize: 11 }}>Off</Tag>
+                  )}
+                </Space>
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  Never later than 60 min before the earliest pickup.
+                </Text>
+              </Flex>
+            )}
+    </>
+  );
 
   return (
     <Drawer
@@ -653,6 +946,7 @@ export default function DispatchBoard({
                 </Col>
               </Row>
             </Card>
+            {scheduleSettings}
             <Card size="small" style={{ borderRadius: 14 }}>
               <Empty
                 description={`No tours on ${filterDate.format("DD MMM YYYY")} — check past or future buses via the calendar above`}
@@ -677,6 +971,12 @@ export default function DispatchBoard({
                     )}
                   >
                     Next day →
+                  </Button>
+                  <Button
+                    icon={<UnorderedListOutlined />}
+                    onClick={() => setAssignmentListOpen(true)}
+                  >
+                    Assignment list
                   </Button>
                 </Space>
               </Empty>
@@ -783,13 +1083,27 @@ export default function DispatchBoard({
                     {filtered.length > 1 ? "s" : ""}
                   </Tag>
                   <Button
+                    icon={<UnorderedListOutlined />}
+                    onClick={() => setAssignmentListOpen(true)}
+                    style={{ borderRadius: 10 }}
+                  >
+                    Assignment list
+                  </Button>
+                  <Button
+                    icon={<ClockCircleOutlined />}
+                    onClick={() => setWaitingOpen(true)}
+                    style={{ borderRadius: 10 }}
+                  >
+                    Waiting list ({waitingItems.length})
+                  </Button>
+                  <Button
                     icon={<TeamOutlined />}
                     onClick={() => setCrewAvailOpen(true)}
                     style={{ borderRadius: 10 }}
                   >
                     Crew availability
                   </Button>
-                  {canUpdateAssignment && filtered.some((a) => a.status === "PENDING") && (
+                  {canUpdateAssignment && filtered.some((a) => a.status === "PENDING" || a.status === "DRAFT_ASSIGNED" || a.status === "TRANSFERRED") && (
                     <Button
                       type="primary"
                       icon={<SendOutlined />}
@@ -804,84 +1118,24 @@ export default function DispatchBoard({
               </Col>
             </Row>
 
-            {autoDispatch && (
-              <Flex
-                wrap
-                gap={10}
-                align="center"
-                justify="space-between"
-                style={{
-                  marginTop: 12,
-                  paddingTop: 10,
-                  borderTop: `1px solid ${token.colorSplit}`,
-                }}
-              >
-                <Space wrap size={8} align="center">
-                  <Tooltip title="Automatic dispatch — at this time it fills missing crew, then dispatches all pending trips that start today.">
-                    <ScheduleOutlined style={{ color: token.colorPrimary }} />
-                  </Tooltip>
-                  <Text strong style={{ fontSize: 12 }}>
-                    Auto-dispatch
-                  </Text>
-                  <Switch
-                    size="small"
-                    checked={autoDispatch.enabled}
-                    loading={autoDispatchSaving}
-                    disabled={!canUpdateAssignment}
-                    onChange={(enabled) => saveAutoDispatch({ enabled })}
-                  />
-                  <TimePicker
-                    size="small"
-                    value={cronToTime(autoDispatch.cron)}
-                    format="HH:mm"
-                    minuteStep={5}
-                    allowClear={false}
-                    disabled={!canUpdateAssignment}
-                    onChange={(time) => {
-                      if (time) saveAutoDispatch({ cron: timeToCron(time) });
-                    }}
-                    style={{ width: 78 }}
-                  />
-                  <Text type="secondary" style={{ fontSize: 11 }}>
-                    {autoDispatch.timezone}
-                  </Text>
-                  {autoDispatch.enabled ? (
-                    autoDispatch.nextRun ? (
-                      <Text type="secondary" style={{ fontSize: 11 }}>
-                        · Next{" "}
-                        {dayjs(autoDispatch.nextRun).format("DD MMM, HH:mm")}
-                      </Text>
-                    ) : null
-                  ) : (
-                    <Tooltip title="Automatic dispatch is off — scheduled crew fill + dispatch are paused.">
-                      <Tag style={{ margin: 0, fontSize: 11 }}>Off</Tag>
-                    </Tooltip>
-                  )}
-                </Space>
+            {scheduleSettings}
 
-                <Space wrap size={8} align="center">
-                  <Tooltip title="Recall cutoff — after this time on the departure day, a dispatched trip can no longer be recalled to PENDING.">
-                    <ClockCircleOutlined
-                      style={{ color: token.colorPrimary }}
-                    />
-                  </Tooltip>
-                  <Text strong style={{ fontSize: 12 }}>
-                    Recall cutoff
-                  </Text>
-                  <TimePicker
+            {sealInfo?.sealed && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginTop: 12, borderRadius: 12 }}
+                message={`Board sealed at ${sealInfo.cutoffTime}`}
+                description={`New bookings for this date are on the waiting list. You can still change crew/vehicle and recall until the 06:00 cutoff; place late bookings from 05:00 on the departure day.`}
+                action={
+                  <Button
                     size="small"
-                    value={hhmmToTime(recallCutoff)}
-                    format="HH:mm"
-                    minuteStep={5}
-                    allowClear={false}
-                    disabled={!canUpdateAssignment || recallCutoffSaving}
-                    onChange={(time) => {
-                      if (time) saveRecallCutoff(time);
-                    }}
-                    style={{ width: 78 }}
-                  />
-                </Space>
-              </Flex>
+                    onClick={() => setWaitingOpen(true)}
+                  >
+                    Waiting list ({waitingItems.length})
+                  </Button>
+                }
+              />
             )}
           </Card>
 
@@ -900,6 +1154,8 @@ export default function DispatchBoard({
                 recallingId={recallingId}
                 canConfirm={canUpdateAssignment}
                 recallCutoff={recallCutoff}
+                sealed={sealInfo?.sealed}
+                groupByDeparture
                 onConfirm={confirmTour}
                 onDispatch={dispatchAssignment}
                 onRecall={onRecall}
@@ -907,10 +1163,15 @@ export default function DispatchBoard({
                 onVerify={openVerify}
                 onReject={openReject}
                 onAdditions={setAdditionsTarget}
+                onTemplate={setTemplateTarget}
                 onPartnerHandoff={setPartnerTarget}
                 onPartnerReturn={setPartnerReturnTarget}
                 crew={crew}
                 onCrewChange={canUpdateAssignment ? changeCrew : undefined}
+                reminderModeSavingId={reminderModeSavingId}
+                reminderSendingId={reminderSendingId}
+                onReminderModeChange={changeReminderMode}
+                onSendReminder={sendPickupReminder}
               />
               <BoardColumn
                 meta={TYPE_META.PRIVATE_TOUR}
@@ -921,6 +1182,8 @@ export default function DispatchBoard({
                 recallingId={recallingId}
                 canConfirm={canUpdateAssignment}
                 recallCutoff={recallCutoff}
+                sealed={sealInfo?.sealed}
+                groupByDeparture
                 onConfirm={confirmTour}
                 onDispatch={dispatchAssignment}
                 onRecall={onRecall}
@@ -928,10 +1191,15 @@ export default function DispatchBoard({
                 onVerify={openVerify}
                 onReject={openReject}
                 onAdditions={setAdditionsTarget}
+                onTemplate={setTemplateTarget}
                 onPartnerHandoff={setPartnerTarget}
                 onPartnerReturn={setPartnerReturnTarget}
                 crew={crew}
                 onCrewChange={canUpdateAssignment ? changeCrew : undefined}
+                reminderModeSavingId={reminderModeSavingId}
+                reminderSendingId={reminderSendingId}
+                onReminderModeChange={changeReminderMode}
+                onSendReminder={sendPickupReminder}
               />
               {otherItems.length > 0 && (
                 <BoardColumn
@@ -943,6 +1211,8 @@ export default function DispatchBoard({
                   recallingId={recallingId}
                   canConfirm={canUpdateAssignment}
                   recallCutoff={recallCutoff}
+                  sealed={sealInfo?.sealed}
+                  groupByDeparture
                   onConfirm={confirmTour}
                   onDispatch={dispatchAssignment}
                   onRecall={onRecall}
@@ -950,10 +1220,15 @@ export default function DispatchBoard({
                   onVerify={openVerify}
                   onReject={openReject}
                   onAdditions={setAdditionsTarget}
+                  onTemplate={setTemplateTarget}
                   onPartnerHandoff={setPartnerTarget}
                   onPartnerReturn={setPartnerReturnTarget}
                   crew={crew}
                   onCrewChange={canUpdateAssignment ? changeCrew : undefined}
+                  reminderModeSavingId={reminderModeSavingId}
+                  reminderSendingId={reminderSendingId}
+                  onReminderModeChange={changeReminderMode}
+                  onSendReminder={sendPickupReminder}
                 />
               )}
             </Row>
@@ -1006,6 +1281,13 @@ export default function DispatchBoard({
                     title="Other"
                     value={stats.other}
                     styles={{ title: { fontSize: 12 }, content: { fontSize: 16, color: "#8c8c8c" } }}
+                  />
+                </Col>
+                <Col flex="1 1 0" style={{ minWidth: 86, textAlign: "center" }}>
+                  <Statistic
+                    title="Waiting"
+                    value={stats.waiting}
+                    styles={{ title: { fontSize: 12 }, content: { fontSize: 16, color: "#fa8c16" } }}
                   />
                 </Col>
                 <Col flex="1 1 0" style={{ minWidth: 86, textAlign: "center" }}>
@@ -1078,6 +1360,25 @@ export default function DispatchBoard({
       <CrewAvailabilityDrawer
         open={crewAvailOpen}
         onClose={() => setCrewAvailOpen(false)}
+      />
+      <AssignmentListDrawer
+        open={assignmentListOpen}
+        onClose={() => setAssignmentListOpen(false)}
+        items={boardData}
+      />
+      <TourTemplateModal
+        assignment={templateTarget}
+        open={!!templateTarget}
+        onClose={() => setTemplateTarget(null)}
+      />
+      <WaitingListDrawer
+        open={waitingOpen}
+        onClose={() => setWaitingOpen(false)}
+        items={waitingItems}
+        boardItems={normalItems}
+        onAssign={assignWaitingBooking}
+        assigningKey={assigningWaitingKey}
+        sealed={sealInfo?.sealed}
       />
     </Drawer>
   );

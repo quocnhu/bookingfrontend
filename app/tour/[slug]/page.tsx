@@ -19,13 +19,17 @@ type Params = { params: Promise<{ slug: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
-  const tour = await fetchTourBySlug(slug);
+  const [tour, company] = await Promise.all([
+    fetchTourBySlug(slug),
+    fetchCompany(),
+  ]);
   if (!tour) {
     return { title: "Tour not found", robots: { index: false, follow: true } };
   }
 
+  const brandName = company.shortName?.trim() || BRAND;
   const canonical = absoluteUrl(`/tour/${tour.slug || tour.id}`);
-  const description = tourDescription(tour);
+  const description = tourDescription(tour, brandName);
 
   return {
     title: `${tour.name} — ${tour.type === "PRIVATE_TOUR" ? "Private Tour" : "Group Tour"} in Vietnam`,
@@ -40,9 +44,9 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     alternates: { canonical },
     openGraph: {
       type: "website",
-      siteName: BRAND,
+      siteName: brandName,
       url: canonical,
-      title: `${tour.name} | ${BRAND}`,
+      title: `${tour.name} | ${brandName}`,
       description,
       images: tour.thumbnailUrl
         ? [{ url: tour.thumbnailUrl, alt: tour.name }]
@@ -50,7 +54,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     },
     twitter: {
       card: "summary_large_image",
-      title: `${tour.name} | ${BRAND}`,
+      title: `${tour.name} | ${brandName}`,
       description,
       images: tour.thumbnailUrl ? [tour.thumbnailUrl] : undefined,
     },
@@ -88,7 +92,7 @@ export default async function PublicTourPage({ params }: Params) {
 }
 
 /** The meta description of a tour — the first lines of its overview. */
-function tourDescription(tour: PublicTour): string {
+function tourDescription(tour: PublicTour, brandName: string): string {
   const plain = (tour.overview ?? "")
     .replace(/<[^>]*>/g, " ")
     .replace(/\s+/g, " ")
@@ -99,7 +103,7 @@ function tourDescription(tour: PublicTour): string {
   if (plain) {
     return plain.length > 155 ? `${plain.slice(0, 152)}...` : plain;
   }
-  return `${tour.name} — a ${days}-day ${tour.type === "PRIVATE_TOUR" ? "private" : "group"} tour in ${place}. Book online with ${BRAND}.`;
+  return `${tour.name} — a ${days}-day ${tour.type === "PRIVATE_TOUR" ? "private" : "group"} tour in ${place}. Book online with ${brandName}.`;
 }
 
 /** The canonical origin of the site — used by the JSON-LD. */

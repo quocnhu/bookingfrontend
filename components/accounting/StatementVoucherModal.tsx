@@ -1,13 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Button, Flex, Modal, Skeleton } from "antd";
+import { Button, Flex, Modal, Select, Skeleton } from "antd";
 import { message } from "@/lib/antd-message";
 import { PrinterOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { calcStatementTotals, type StatementLine } from "./shared";
+import {
+  DEFAULT_PAPER_SIZE,
+  PAPER_SIZE_OPTIONS,
+  paperSizeCss,
+  paperSizeLabel,
+  type PaperSize,
+} from "@/lib/paper-size";
 
 const NAVY = "#1f3a5f";
 const NAVY_DARK = "#16263f";
@@ -26,7 +33,7 @@ export interface VoucherPayee {
 }
 
 const vnd = (n: number) =>
-  new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(n ?? 0);
+  new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n ?? 0);
 
 const fmtD = (d?: string | null) =>
   d ? dayjs(d).format("DD/MM/YYYY") : "—";
@@ -88,6 +95,7 @@ export default function StatementVoucherModal({
     taxId?: string;
   } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [paperSize, setPaperSize] = useState<PaperSize>(DEFAULT_PAPER_SIZE);
   const { user } = useApp();
 
   useEffect(() => {
@@ -161,12 +169,22 @@ export default function StatementVoucherModal({
       title={
         <Flex align="center" gap={8} className="stmt-no-print">
           <PrinterOutlined />
-          <span>{title} (A4)</span>
+          <span>{title} · {paperSizeLabel(paperSize)}</span>
         </Flex>
       }
       open={open}
       onCancel={onClose}
       footer={[
+        <Select
+          key="paper"
+          size="small"
+          value={paperSize}
+          onChange={setPaperSize}
+          options={PAPER_SIZE_OPTIONS}
+          className="stmt-no-print"
+          style={{ width: 190, marginRight: 8 }}
+          popupMatchSelectWidth={false}
+        />,
         <Button key="cancel" onClick={onClose} className="stmt-no-print">
           Close
         </Button>,
@@ -177,14 +195,14 @@ export default function StatementVoucherModal({
           className="stmt-no-print"
           onClick={() => window.print()}
         >
-          Print A4
+          Print
         </Button>,
       ]}
       width={920}
       destroyOnClose
     >
       <style>{`
-        @page { size: A4; margin: 10mm 12mm; }
+        @page { ${paperSizeCss(paperSize)}margin: 10mm 12mm; }
         .stmt-doc { background: #fff !important; color: ${INK} !important; }
         .stmt-doc td, .stmt-doc th, .stmt-doc div, .stmt-doc span, .stmt-doc p { color: ${INK} !important; }
         .stmt-doc .stmt-white, .stmt-doc .stmt-white div, .stmt-doc .stmt-white span, .stmt-doc .stmt-white th { color: #fff !important; }

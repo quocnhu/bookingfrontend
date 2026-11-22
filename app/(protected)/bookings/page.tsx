@@ -29,6 +29,7 @@ import {
 import { message } from "@/lib/antd-message";
 import {
   CarOutlined,
+  ClockCircleOutlined,
   MailOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -47,12 +48,11 @@ const PAYMENT_STATUS = ["PENDING", "PAID", "REFUNDED"];
 const TOUR_TYPES = ["PRIVATE_TOUR", "GROUP_TOUR"];
 
 /**
- * A booking can only be cancelled while the tour is still more than 24h away
- * — inside the window the vehicle, the guide and the tickets are committed.
- * The backend enforces this (HTTP 400 "Cancellation window closed"); the
- * frontend only has to react to it and offer the admin override.
+ * Default cancellation window. The backend stores the live value in
+ * SystemSetting (`cancellationWindowHours`) and enforces it; this is only the
+ * fallback until the settings request returns.
  */
-const CANCEL_WINDOW_HOURS = 24;
+const DEFAULT_CANCEL_WINDOW_HOURS = 24;
 
 /**
  * Fixed table body height so every page reserves a full page of rows:
@@ -111,6 +111,14 @@ export default function BookingsPage() {
   const [bookingsPage, setBookingsPage] = useState(1);
   const [bookingsPageSize, setBookingsPageSize] = useState(20);
   const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [cancelWindowHours, setCancelWindowHours] = useState(
+    DEFAULT_CANCEL_WINDOW_HOURS,
+  );
+  const [cancelWindowOpen, setCancelWindowOpen] = useState(false);
+  const [cancelWindowDraft, setCancelWindowDraft] = useState(
+    DEFAULT_CANCEL_WINDOW_HOURS,
+  );
+  const [cancelWindowSaving, setCancelWindowSaving] = useState(false);
 
   const [assignments, setAssignments] = useState<any[]>([]);
   const [assignmentsPage, setAssignmentsPage] = useState(1);
@@ -518,7 +526,7 @@ export default function BookingsPage() {
   /**
    * Cancel a booking.
    *
-   * The 24h cancellation window is enforced by the backend: it answers with
+   * The configured cancellation window is enforced by the backend: it answers with
    * 400 "Cancellation window closed" when the tour departs too soon. Only an
    * administrator may override it (the override is recorded in the audit
    * trail), so a non-admin simply gets the error.
@@ -532,8 +540,9 @@ export default function BookingsPage() {
 
     try {
       await cancel(false);
-      message.success("Booking canceled");
+      message.success("Booking canceled and removed from its bus");
       loadBookings();
+      if (hasPermission("assignment.read")) loadAssignments();
     } catch (e) {
       const text = getErrorMessage(e);
       if (!/cancellation window closed/i.test(text)) {
@@ -555,6 +564,7 @@ export default function BookingsPage() {
             await cancel(true);
             message.success("Booking canceled (window override)");
             loadBookings();
+            if (hasPermission("assignment.read")) loadAssignments();
           } catch (e2) {
             message.error(getErrorMessage(e2));
             throw e2;
@@ -564,12 +574,44 @@ export default function BookingsPage() {
     }
   };
 
+  const loadCancellationWindow = () => {
+    api
+      .get("/bookings/cancellation-window")
+      .then((res) => {
+        const hours = Number(res.data?.hours);
+        if (!Number.isFinite(hours)) return;
+        setCancelWindowHours(hours);
+        setCancelWindowDraft(hours);
+      })
+      .catch(() => undefined);
+  };
+
   /** The last moment this booking could be cancelled without an override. */
   const cancelDeadline = (r: any): Date | null => {
     if (!r?.startingDate) return null;
     const d = new Date(r.startingDate);
     if (Number.isNaN(d.getTime())) return null;
-    return new Date(d.getTime() - CANCEL_WINDOW_HOURS * 60 * 60 * 1000);
+    return new Date(d.getTime() - cancelWindowHours * 60 * 60 * 1000);
+  };
+
+  const saveCancellationWindow = async () => {
+    setCancelWindowSaving(true);
+    try {
+      const res = await api.put("/bookings/cancellation-window", {
+        hours: Number(cancelWindowDraft),
+      });
+      const hours = Number(res.data?.hours ?? cancelWindowDraft);
+      setCancelWindowHours(hours);
+      setCancelWindowDraft(hours);
+      setCancelWindowOpen(false);
+      message.success(`Cancellation window set to ${hours}h`);
+    } catch (e) {
+      message.error(
+        getErrorMessage(e, "Could not update the cancellation window"),
+      );
+    } finally {
+      setCancelWindowSaving(false);
+    }
   };
 
   const loadAssignments = () => {
@@ -600,6 +642,8 @@ export default function BookingsPage() {
   useEffect(() => {
     api.get("/tours", { params: { limit: 100 } }).then((r) => setTours(r.data.items ?? []));
     api.get("/coordinates", { params: { limit: 1000 } }).then((r) => setCoordinates(r.data.items ?? []));
+    loadCancellationWindow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
@@ -804,10 +848,17 @@ export default function BookingsPage() {
       key: "bookingRef",
       width: 110,
       ellipsis: true,
-      render: (v: any) => (
-        <Typography.Text strong style={{ fontSize: 12 }}>
-          {v ?? "—"}
-        </Typography.Text>
+      render: (v: any, r: any) => (
+        <Flex gap={4} align="center" wrap>
+          <Typography.Text strong style={{ fontSize: 12 }}>
+            {v ?? "—"}
+          </Typography.Text>
+          {r.lateBooking && (
+            <Tag color="orange" style={{ margin: 0, fontSize: 10 }}>
+              LATE
+            </Tag>
+          )}
+        </Flex>
       ),
       onFilter: (v: any, r: any) => (r.bookingRef ?? "").toLowerCase().includes(v.toLowerCase()),
     },
@@ -1437,6 +1488,19 @@ export default function BookingsPage() {
                 title="Bookings"
                 extra={
                   <Flex wrap gap={8} align="center">
+                    {canUpdateBooking && (
+                      <Tooltip title="How many hours before departure a manual cancellation is free. Inside the window only an administrator can override.">
+                        <Button
+                          icon={<ClockCircleOutlined />}
+                          onClick={() => {
+                            setCancelWindowDraft(cancelWindowHours);
+                            setCancelWindowOpen(true);
+                          }}
+                        >
+                          Cancellation: {cancelWindowHours}h
+                        </Button>
+                      </Tooltip>
+                    )}
                     {canCreateBooking && (
                       <Button type="primary" icon={<PlusOutlined />} onClick={openBooking}>
                         Add Booking
@@ -1507,6 +1571,42 @@ extra={
         ]}
       />
       )}
+
+      <Modal
+        title={
+          <Space>
+            <ClockCircleOutlined />
+            Cancellation window
+          </Space>
+        }
+        open={cancelWindowOpen}
+        onCancel={() => setCancelWindowOpen(false)}
+        onOk={saveCancellationWindow}
+        okText="Save"
+        confirmLoading={cancelWindowSaving}
+      >
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <Typography.Text type="secondary">
+            A manual cancellation is free while the tour is more than this many
+            hours away. Inside the window only an administrator can cancel, and
+            the override is recorded in the audit trail.
+          </Typography.Text>
+          <InputNumber
+            min={0}
+            max={720}
+            value={cancelWindowDraft}
+            onChange={(value) =>
+              setCancelWindowDraft(Number(value ?? 0))
+            }
+            addonAfter="hours"
+            style={{ width: "100%" }}
+          />
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            Current: {cancelWindowHours}h · 0 = no window (cancel any time
+            until departure).
+          </Typography.Text>
+        </Space>
+      </Modal>
 
       <Drawer title="Add Booking" open={bookingOpen} onClose={() => setBookingOpen(false)} size={480}>
         <Form form={bookingForm} layout="vertical">
@@ -2031,7 +2131,7 @@ extra={
               { key: "payment", label: "Payment", children: bookingDetail.payment ?? "—" },
               ...(bookingDetail.channel === "WEBSITE" || bookingDetail.totalAmount
                 ? [
-                    { key: "totalAmount", label: "Total", children: bookingDetail.totalAmount != null ? `${Number(bookingDetail.totalAmount).toLocaleString("vi-VN", { maximumFractionDigits: 0 })} ${bookingDetail.currency ?? "VND"}` : "—" },
+                    { key: "totalAmount", label: "Total", children: bookingDetail.totalAmount != null ? `${Number(bookingDetail.totalAmount).toLocaleString("en-US", { maximumFractionDigits: 0 })} ${bookingDetail.currency ?? "VND"}` : "—" },
                     { key: "paymentMethod", label: "Method", children: bookingDetail.paymentMethod ?? (bookingDetail.payLater ? "Pay later" : "—") },
                     { key: "payLater", label: "Pay later", children: bookingDetail.payLater ? "Yes" : "No" },
                     { key: "paymentDue", label: "Payment due", children: bookingDetail.paymentDueAt ? new Date(bookingDetail.paymentDueAt).toLocaleString() : "—" },
@@ -2304,7 +2404,7 @@ extra={
                   {p.method} · {p.payerType} · {p.provider ?? "internal"}
                 </Typography.Text>
                 <Typography.Text style={{ fontSize: 12 }}>
-                  {Number(p.amount).toLocaleString("vi-VN", { maximumFractionDigits: 0 })}{" "}
+                  {Number(p.amount).toLocaleString("en-US", { maximumFractionDigits: 0 })}{" "}
                   {p.currency} · <Tag style={{ margin: 0 }}>{p.status}</Tag>
                 </Typography.Text>
               </Flex>

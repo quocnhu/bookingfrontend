@@ -42,9 +42,15 @@ api.interceptors.response.use(
         return api(original);
       }
       const { pathname } = window.location;
-      const onPublicPage =
-        pathname === '/' || pathname === '/login' || pathname === '/register';
-      if (!onPublicPage) {
+      const isPublicPath =
+        pathname === "/" ||
+        pathname === "/login" ||
+        pathname === "/register" ||
+        pathname === "/tours" ||
+        pathname.startsWith("/tours/") ||
+        pathname === "/tour" ||
+        pathname.startsWith("/tour/");
+      if (!isPublicPath) {
         window.location.href = '/login';
       }
     }

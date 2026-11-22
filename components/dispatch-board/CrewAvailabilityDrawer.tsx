@@ -112,6 +112,14 @@ function coversLeave(day: Dayjs, l: AvailLeave) {
   return t >= s && t <= e;
 }
 
+function assignmentOverlapsLeave(a: AvailAssignment, l: AvailLeave) {
+  const aStart = dayjs(a.startDate).startOf("day").valueOf();
+  const aEnd = dayjs(a.endDate).startOf("day").valueOf();
+  const lStart = dayjs(l.startDate).startOf("day").valueOf();
+  const lEnd = dayjs(l.endDate).startOf("day").valueOf();
+  return aStart <= lEnd && aEnd >= lStart;
+}
+
 export default function CrewAvailabilityDrawer({
   open,
   onClose,
@@ -164,6 +172,8 @@ export default function CrewAvailabilityDrawer({
     }
     return out;
   }, [range]);
+
+  const today = useMemo(() => dayjs().startOf("day"), []);
 
   const driverColors = useMemo(() => {
     const map: Record<string, string> = {};
@@ -238,10 +248,21 @@ export default function CrewAvailabilityDrawer({
         render: (_, row) => {
           // Red "Off" tag next to the crew name when they have a day-off
           // covering any visible day (in addition to the per-day Off cells).
-          const offLeave = row.member.leaves?.find(
-            (l) =>
-              l.status !== "REJECTED" &&
-              days.some((d) => coversLeave(d, l)),
+          // "Off today" is promoted so the admin sees today's absences instantly.
+          const activeLeaves = (row.member.leaves ?? []).filter(
+            (l) => l.status !== "REJECTED",
+          );
+          const offToday = activeLeaves.find((l) => coversLeave(today, l));
+          const offLeave =
+            offToday ??
+            activeLeaves.find((l) => days.some((d) => coversLeave(d, l)));
+          // Data safety: a leave approved AFTER a trip was assigned leaves the
+          // person both "on leave" and "on a bus". Surface it so the admin can
+          // reassign before dispatch (the backend blocks new assignments).
+          const leaveConflicts = (row.member.assignments ?? []).filter(
+            (a) =>
+              a.status !== "CANCELED" &&
+              activeLeaves.some((l) => assignmentOverlapsLeave(a, l)),
           );
           // Paid summary for the searched range: derived from the exported
           // payment periods (Accounting preview → Accept/Export → Paid).
@@ -287,8 +308,26 @@ export default function CrewAvailabilityDrawer({
                     <Tooltip
                       title={`Off (${offLeave.status}) · ${dayjs(offLeave.startDate).format("DD MMM YYYY")} → ${dayjs(offLeave.endDate).format("DD MMM YYYY")}`}
                     >
-                      <Tag color="red" style={{ margin: 0, fontSize: 10 }}>
-                        Off
+                      <Tag
+                        color={offToday ? "red" : "volcano"}
+                        style={{
+                          margin: 0,
+                          fontSize: 10,
+                          fontWeight: offToday ? 700 : 400,
+                        }}
+                      >
+                        {offToday ? "Off today" : "Off"}
+                      </Tag>
+                    </Tooltip>
+                  )}
+                  {leaveConflicts.length > 0 && (
+                    <Tooltip
+                      title={`On leave but still assigned to: ${leaveConflicts
+                        .map((a) => a.code ?? a.tourName ?? "trip")
+                        .join(", ")}. Reassign before dispatch.`}
+                    >
+                      <Tag color="magenta" style={{ margin: 0, fontSize: 10 }}>
+                        Assigned while off
                       </Tag>
                     </Tooltip>
                   )}
@@ -311,7 +350,7 @@ export default function CrewAvailabilityDrawer({
               {d.format("DD MMM")}
             </Text>
             <Text type="secondary" style={{ fontSize: 10 }}>
-              {d.format("ddd")}
+              {d.isSame(today, "day") ? "Today" : d.format("ddd")}
             </Text>
           </Flex>
         ),
@@ -351,7 +390,8 @@ export default function CrewAvailabilityDrawer({
               </Tooltip>
             );
           }
-          const busy = row.member.assignments.find((a) => covers(d, a));
+          const busyList = row.member.assignments.filter((a) => covers(d, a));
+          const busy = busyList[0];
           if (busy) {
             // Completed tours read grey — only running buses stay orange,
             // so free-to-assign days are obvious at a glance.
@@ -363,9 +403,22 @@ export default function CrewAvailabilityDrawer({
               : busy.moneyVerifiedAt
                 ? " · Unpaid (money locked, not exported)"
                 : " · Unpaid (not exported)";
+            const extra = busyList.length - 1;
+            const tooltip = busyList
+              .map(
+                (a) =>
+                  `${a.code ?? "Bus"}${a.plateNumber ? ` · ${a.plateNumber}` : ""} · ${a.tourName ?? "Tour"} · ${a.status ?? ""}${
+                    a.paid
+                      ? ` · ✓ Paid${a.paidToName ? ` to ${a.paidToName}` : ""}`
+                      : a.moneyVerifiedAt
+                        ? " · Unpaid (money locked, not exported)"
+                        : " · Unpaid (not exported)"
+                  }`,
+              )
+              .join("\n");
             return (
               <Tooltip
-                title={`${busy.code ?? "Bus"}${plate} · ${busy.tourName ?? "Tour"} · ${busy.status ?? ""}${paidMark}`}
+                title={<div style={{ whiteSpace: "pre-line" }}>{tooltip}</div>}
               >
                 <div
                   style={{
@@ -403,6 +456,7 @@ export default function CrewAvailabilityDrawer({
                       : done
                         ? `✓ ${busy.code ?? "Done"}${busy.plateNumber ? ` · ${busy.plateNumber}` : ""} · Unpaid`
                         : `${busy.code ?? "Busy"}${busy.plateNumber ? ` · ${busy.plateNumber}` : ""} · Unpaid`}
+                    {extra > 0 ? ` +${extra}` : ""}
                   </Text>
                 </div>
               </Tooltip>
@@ -435,7 +489,7 @@ export default function CrewAvailabilityDrawer({
         },
       })),
     ],
-    [days],
+    [days, today],
   );
 
   return (

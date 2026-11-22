@@ -49,6 +49,7 @@ interface TransportRequest {
   code?: string | null;
   tourName?: string | null;
   tourCode?: string | null;
+  durationDays?: number | null;
   totalPax?: number | null;
   startDate: string;
   endDate: string;
@@ -338,8 +339,14 @@ export default function ProviderTransportRequests() {
     [candidates],
   );
 
+  const closedAssignmentStatuses = ["DISPATCHED", "VERIFYING", "COMPLETED", "CANCELED"];
   const open = (row: TransportRequest) =>
-    row.providerRequestStatus === "REQUESTED" || row.providerRequestStatus === "VIEWED";
+    (row.providerRequestStatus === "REQUESTED" ||
+      row.providerRequestStatus === "VIEWED") &&
+    !closedAssignmentStatuses.includes(row.status);
+  const notAvailable = (row: TransportRequest) =>
+    ["EXPIRED", "CANCELLED", "DECLINED"].includes(row.providerRequestStatus) ||
+    closedAssignmentStatuses.includes(row.status);
 
   const suggestedDriver = useMemo(
     () =>
@@ -475,8 +482,10 @@ export default function ProviderTransportRequests() {
           The travel agent suggests one available driver and vehicle per request.
           Manual: you choose. Suggest: the suggested pick is pre-filled and you
           can accept or swap it. Fully automatic: requests are assigned
-          immediately with the suggested pick. The standard deadline is 23:00 the
-          day before; travel-agent changes lock at 06:00 on the departure day.
+          immediately with the suggested pick. Assign before 23:00 the day
+          before — you will get a reminder 3 hours before the deadline, and an
+          unassigned route may be given to another provider. Travel-agent
+          changes lock at 06:00 on the departure day.
         </Text>
       </Card>
 
@@ -625,9 +634,19 @@ export default function ProviderTransportRequests() {
                 {target.tourName ?? target.code}
               </Title>
               <Text type="secondary">
+                {target.tourCode ? `${target.tourCode} · ` : ""}
                 {dayjs(target.startDate).format("DD MMM YYYY")} · {target.totalPax ?? 0} pax
+                {target.durationDays ? ` · ${target.durationDays} day(s)` : ""}
               </Text>
             </div>
+            {notAvailable(target) && (
+              <Alert
+                type="warning"
+                showIcon
+                message="This route is not available anymore"
+                description="The deadline passed, you declined, or the travel agent assigned the route to another provider. No further action is needed."
+              />
+            )}
             <Flex gap={8} wrap>
               <Tag color={STATUS_COLOR[target.providerRequestStatus]}>
                 {STATUS_LABEL[target.providerRequestStatus]}
@@ -647,18 +666,31 @@ export default function ProviderTransportRequests() {
               />
             )}
             {!!target.pickups?.length && (
-              <div>
-                <Text strong>Pickups</Text>
-                <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+              <Card size="small" title="Route & pickups" style={{ borderRadius: 10 }}>
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
                   {target.pickups.map((pickup, index) => (
-                    <li key={`${pickup.pickup}-${index}`}>
+                    <li key={`${pickup.pickup}-${index}`} style={{ marginBottom: 4 }}>
                       {pickup.customerName ? `${pickup.customerName}: ` : ""}
-                      {pickup.pickup ?? "—"}
+                      {pickup.pickup ? (
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pickup.pickup)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {pickup.pickup}
+                        </a>
+                      ) : (
+                        "—"
+                      )}
                       {pickup.totalPax ? ` (${pickup.totalPax} pax)` : ""}
                     </li>
                   ))}
                 </ul>
-              </div>
+                <Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 6 }}>
+                  Assign a driver who can cover this route. Driver and vehicle
+                  must both be confirmed before the 23:00 deadline.
+                </Text>
+              </Card>
             )}
             {open(target) ? (
               <>
@@ -701,6 +733,9 @@ export default function ProviderTransportRequests() {
                   />
                 )}
                 <div>
+                  <Text strong style={{ display: "block", marginBottom: 4 }}>
+                    Assign driver to this route
+                  </Text>
                   <Text type="secondary">
                     Least-busy first (tour days in the last{" "}
                     {candidates?.workloadWindow?.days ?? 30} days).

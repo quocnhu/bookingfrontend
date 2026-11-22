@@ -36,6 +36,8 @@ export const DEFAULT_LOCALE = "en_US";
 /** The company details shown in the footer and in the structured data. */
 export type CompanyInfo = {
   name: string;
+  shortName?: string | null;
+  logoUrl?: string | null;
   address?: string | null;
   phone?: string | null;
   email?: string | null;

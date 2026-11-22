@@ -122,7 +122,14 @@ export default function RoleDashboard({
   const needReport = useMemo(
     () =>
       mode === "guide"
-        ? items.filter((a) => a.status === "DISPATCHED" && !a.tourReport)
+        ? items.filter(
+            (a) =>
+              a.status === "DISPATCHED" &&
+              !a.tourReport &&
+              dayjs(a.startDate)
+                .startOf("day")
+                .isSameOrBefore(dayjs().startOf("day")),
+          )
         : [],
     [items, mode],
   );

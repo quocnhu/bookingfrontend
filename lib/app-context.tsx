@@ -1,8 +1,9 @@
 'use client';
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from './api';
+import { BRAND } from './site';
 
 export interface SessionUser {
   id: string;
@@ -34,8 +35,16 @@ export function getDefaultRoute(role: string): string {
 
 export type ThemeMode = 'light' | 'dark';
 
+export interface CompanyBrand {
+  id?: string;
+  name?: string | null;
+  shortName?: string | null;
+  logoUrl?: string | null;
+}
+
 interface AppContextValue {
   user: SessionUser | null;
+  company: CompanyBrand | null;
   loading: boolean;
   theme: ThemeMode;
   toggleTheme: () => void;
@@ -43,11 +52,13 @@ interface AppContextValue {
   loginWithGoogle: (redirect?: string) => void;
   logout: () => void;
   refreshProfile: () => Promise<void>;
+  refreshCompany: () => Promise<void>;
   hasPermission: (permission: string) => boolean;
 }
 
 const AppContext = createContext<AppContextValue>({
   user: null,
+  company: null,
   loading: true,
   theme: 'light',
   toggleTheme: () => {},
@@ -55,14 +66,17 @@ const AppContext = createContext<AppContextValue>({
   loginWithGoogle: () => {},
   logout: () => {},
   refreshProfile: async () => {},
+  refreshCompany: async () => {},
   hasPermission: () => false,
 });
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [company, setCompany] = useState<CompanyBrand | null>(null);
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<ThemeMode>('dark');
+  const seenBrandsRef = useRef<string[]>([BRAND]);
 
   useEffect(() => {
     const storedTheme = localStorage.getItem('booking.theme');
@@ -88,9 +102,83 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const fetchCompany = async (): Promise<void> => {
+    try {
+      const { data } = await api.get('/company-profile');
+      setCompany(data ?? null);
+    } catch {
+      setCompany(null);
+    }
+  };
+
   useEffect(() => {
     fetchProfile();
   }, []);
+
+  useEffect(() => {
+    if (user) void fetchCompany();
+    else setCompany(null);
+  }, [user]);
+
+  useEffect(() => {
+    if (!company || typeof document === "undefined") return;
+    const nextBrand = company.shortName?.trim() || BRAND;
+    const logoHref = company.logoUrl?.trim() || "/icon.svg";
+    const brandSeen = seenBrandsRef.current.includes(nextBrand);
+    if (!brandSeen) seenBrandsRef.current.push(nextBrand);
+
+    const syncBrand = () => {
+      let title = document.title;
+      for (const brand of seenBrandsRef.current) {
+        if (brand && brand !== nextBrand && title.includes(brand)) {
+          title = title.split(brand).join(nextBrand);
+        }
+      }
+      const pipeIndex = title.lastIndexOf(" | ");
+      if (pipeIndex !== -1) {
+        const tail = title.slice(pipeIndex + 3);
+        if (tail && tail.length <= 60 && !tail.includes(" | ")) {
+          title = `${title.slice(0, pipeIndex + 3)}${nextBrand}`;
+        }
+      } else {
+        const dashIndex = title.indexOf(" — ");
+        if (dashIndex > 0 && dashIndex <= 60) {
+          title = `${nextBrand}${title.slice(dashIndex)}`;
+        }
+      }
+      if (title !== document.title) document.title = title;
+
+      const type = logoHref.endsWith(".svg") ? "image/svg+xml" : "image/png";
+      const links = Array.from(
+        document.querySelectorAll<HTMLLinkElement>(
+          'link[rel="icon"], link[rel="shortcut icon"]',
+        ),
+      );
+      if (links.length === 0) {
+        const link = document.createElement("link");
+        link.rel = "icon";
+        link.href = logoHref;
+        link.type = type;
+        document.head.appendChild(link);
+      } else {
+        for (const link of links) {
+          link.href = logoHref;
+          link.type = type;
+        }
+      }
+      const apple = document.querySelector<HTMLLinkElement>(
+        'link[rel="apple-touch-icon"]',
+      );
+      if (apple) {
+        if (logoHref.endsWith(".svg")) apple.remove();
+        else apple.href = logoHref;
+      }
+    };
+
+    syncBrand();
+    const timer = window.setTimeout(syncBrand, 300);
+    return () => window.clearTimeout(timer);
+  }, [company]);
 
   const login = async (email: string, password: string) => {
     await api.post('/auth/login', { email, password });
@@ -128,6 +216,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(
     () => ({
       user,
+      company,
       loading,
       theme,
       toggleTheme,
@@ -135,9 +224,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       loginWithGoogle,
       logout,
       refreshProfile: fetchProfile,
+      refreshCompany: fetchCompany,
       hasPermission,
     }),
-    [user, loading, theme],
+    [user, company, loading, theme],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

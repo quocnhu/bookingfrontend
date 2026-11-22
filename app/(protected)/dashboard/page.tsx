@@ -53,6 +53,27 @@ export default function DashboardPage() {
     boxShadow: token.boxShadowSecondary,
   };
 
+  const revenueTooltip = ({
+    active,
+    payload,
+    label,
+  }: {
+    active?: boolean;
+    payload?: ReadonlyArray<{ value?: unknown }>;
+    label?: string | number;
+  }) => {
+    if (!active || !payload?.length) return null;
+    const amount = Number(payload[0]?.value ?? 0);
+    return (
+      <div style={{ ...tooltipStyle, padding: "8px 12px", minWidth: 140 }}>
+        <div style={{ color: token.colorTextSecondary, fontSize: 12 }}>{label}</div>
+        <div style={{ color: token.colorSuccess, fontSize: 14, fontWeight: 700 }}>
+          {amount.toLocaleString("en-US", { maximumFractionDigits: 0 })} ₫
+        </div>
+      </div>
+    );
+  };
+
   const loadStats = useCallback(
     (value?: [Dayjs | null, Dayjs | null] | null) => {
       const from = value?.[0];
@@ -116,6 +137,8 @@ export default function DashboardPage() {
   }, [widgets]);
 
   const canRead = hasPermission("dashboard.read");
+  const canViewFinance =
+    hasPermission("dashboard.finance.read") && stats?.canViewFinance !== false;
 
   const revenueRangePicker = (
     <DatePicker.RangePicker
@@ -281,6 +304,12 @@ export default function DashboardPage() {
     },
   ];
 
+  const visibleStatGroups = canViewFinance
+    ? statGroups
+    : statGroups.filter(
+        (group) => group.title !== "Revenue" && group.title !== "Settlement",
+      );
+
   const bookingsData = charts?.bookingsByBucket ?? [];
   const loginsData = charts?.loginsByBucket ?? [];
 
@@ -293,7 +322,7 @@ export default function DashboardPage() {
       {canRead && (
         <>
       <div className="dashboard-stats-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 480px), 1fr))", gap: 16, marginBottom: 16 }}>
-        {statGroups.map((group) => (
+        {visibleStatGroups.map((group) => (
           <Card
             key={group.title}
             variant="borderless"
@@ -465,24 +494,43 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </Col>
         </Row>
-        <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-          <Col xs={24}>
-            <Typography.Text strong>Revenue collected</Typography.Text>
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={charts?.revenueByBucket ?? []}>
-                <XAxis dataKey="label" stroke={token.colorTextSecondary} tick={{ fill: token.colorTextSecondary }} />
-                <YAxis stroke={token.colorTextSecondary} tick={{ fill: token.colorTextSecondary }} />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  labelStyle={{ color: token.colorText }}
-                  itemStyle={{ color: token.colorText }}
-                  formatter={(value) => [`${Number(value).toLocaleString("vi-VN")} ₫`, "Revenue"]}
-                />
-                <Line type="monotone" dataKey="amount" name="Revenue" stroke={token.colorSuccess} strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </Col>
-        </Row>
+        {canViewFinance && (
+          <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+            <Col xs={24}>
+              <Typography.Text strong>Revenue collected</Typography.Text>
+              <Typography.Text type="secondary" style={{ display: "block", marginBottom: 4, fontSize: 12 }}>
+                Hover the chart for exact revenue by date.
+              </Typography.Text>
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart data={charts?.revenueByBucket ?? []} margin={{ top: 8, right: 24, bottom: 8, left: 16 }}>
+                  <XAxis
+                    dataKey="label"
+                    stroke={token.colorTextSecondary}
+                    tick={{ fill: token.colorTextSecondary, fontSize: 11 }}
+                    tickMargin={8}
+                    interval={0}
+                    height={40}
+                    padding={{ left: 16, right: 16 }}
+                  />
+                  <YAxis stroke={token.colorTextSecondary} tick={{ fill: token.colorTextSecondary }} axisLine={false} />
+                  <Tooltip
+                    content={revenueTooltip}
+                    cursor={{ stroke: token.colorTextSecondary, strokeDasharray: "3 3" }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="amount"
+                    name="Revenue"
+                    stroke={token.colorSuccess}
+                    strokeWidth={2}
+                    dot={{ r: 2 }}
+                    activeDot={{ r: 5 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </Col>
+          </Row>
+        )}
       </Card>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>

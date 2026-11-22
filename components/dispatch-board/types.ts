@@ -8,11 +8,16 @@ export interface BookingItem {
   hotelName?: string;
   address?: string;
   phone?: string;
+  mail?: string | null;
+  channel?: string | null;
+  departureTime?: string | null;
+  pickupReminderSentAt?: string | null;
   payment?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   notes?: string | null;
   status?: string; // Booking status: PENDING, ASSIGNED, CANCELED
+  lateBooking?: boolean;
   tourType?: string | null; // PRIVATE_TOUR | GROUP_TOUR
   // Provenance: the bus it was moved out of (keeps the red colour on the board)
   movedFromBus?: { code?: string; vehicle?: { plateNumber?: string } } | null;
@@ -61,6 +66,9 @@ export interface BoardItem {
   endDate: string;
   durationDays: number;
   status: string;
+  departureTime?: string | null;
+  departureBucket?: "MORNING" | "AFTERNOON" | "EVENING" | "UNSCHEDULED";
+  lateBookings?: number;
   groupRef?: string | null;
   executionMode?: AssignmentExecutionMode;
   partnerStatus?: PartnerHandoffStatus | null;
@@ -80,9 +88,12 @@ export interface BoardItem {
   longitude?: number | null;
   pickupInfo?: PickupInfoItem[] | null;
   vehicle?: { plateNumber?: string; capacity?: number } | null;
-  provider?: { name?: string } | null;
-  driver?: { id?: string; name?: string } | null;
-  guide?: { id?: string; name?: string } | null;
+  providerId?: string | null;
+  provider?: { id?: string; name?: string; isCompany?: boolean } | null;
+  providerRequestStatus?: string | null;
+  providerDeadline?: string | null;
+  driver?: { id?: string; name?: string; email?: string } | null;
+  guide?: { id?: string; name?: string; email?: string } | null;
   reportVerifier?: { name?: string } | null;
   bookings?: BookingItem[];
   // Tour report (submitted by the guide after the trip ends)
@@ -123,6 +134,8 @@ export interface BoardItem {
     payableTo?: { id?: string; name?: string } | null;
   }>;
   createdWho?: string;
+  pickupReminderMode?: "AUTO" | "MANUAL";
+  pickupReminderLastSentAt?: string | null;
 }
 
 export interface TourMeta {
@@ -159,6 +172,7 @@ export interface BoardCrew {
 export const LEAVE_COLOR = "#fa541c";
 
 export const STATUS_COLORS: Record<string, string> = {
+  WAITING_LIST: "orange",
   DRAFT_ASSIGNED: "gold",
   PENDING: "orange",
   TRANSFERRED: "volcano",

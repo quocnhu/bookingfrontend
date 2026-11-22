@@ -6,6 +6,7 @@ import {
   Card,
   Col,
   Avatar,
+  Dropdown,
   Flex,
   Form,
   Input,
@@ -35,6 +36,7 @@ import {
   UploadOutlined,
   UserOutlined,
   MailOutlined,
+  MoreOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
 import { api, API_URL, getErrorMessage } from "@/lib/api";
@@ -53,7 +55,7 @@ interface Role {
   id: string;
   name: string;
   isSystem: boolean;
-  permissions?: Permission[];
+  permissions?: { permission: Permission }[];
 }
 
 interface User {
@@ -125,10 +127,12 @@ function PermissionPicker({
   perms,
   selected,
   onToggle,
+  disabled = false,
 }: {
   perms: Permission[];
   selected: string[];
   onToggle: (id: string, checked: boolean) => void;
+  disabled?: boolean;
 }) {
   const grouped = useMemo(() => {
     const map = new Map<string, Permission[]>();
@@ -160,6 +164,7 @@ function PermissionPicker({
               <Col key={p.id}>
                 <Checkbox
                   checked={selected.includes(p.id)}
+                  disabled={disabled}
                   onChange={(e) => onToggle(p.id, e.target.checked)}
                 >
                   {p.code}
@@ -333,11 +338,16 @@ export default function UsersPage() {
   const openRoleModal = (role?: Role) => {
     setEditingRole(role ?? null);
     roleForm.setFieldsValue({ name: role?.name ?? "" });
-    setSelectedPerms((role?.permissions ?? []).map((p) => p.id));
+    setSelectedPerms(
+      role?.name === "ADMIN"
+        ? perms.map((p) => p.id)
+        : (role?.permissions ?? []).map((p) => p.permission.id),
+    );
     setRoleModalOpen(true);
   };
 
   const saveRole = async () => {
+    if (editingRole?.name === "ADMIN") return;
     const values = await roleForm.validateFields();
     setSavingRole(true);
     try {
@@ -591,11 +601,16 @@ export default function UsersPage() {
       title: "Mailbox",
       dataIndex: "email",
       key: "email",
+      width: 220,
       render: (v: string) => (
-        <Space>
-          <MailOutlined style={{ color: "#3b82f6" }} />
-          <Typography.Text strong>{v}</Typography.Text>
-        </Space>
+        <Flex align="center" gap={8} style={{ minWidth: 0 }}>
+          <MailOutlined style={{ color: "#3b82f6", flexShrink: 0 }} />
+          <Tooltip title={v}>
+            <Typography.Text strong ellipsis style={{ minWidth: 0 }}>
+              {v}
+            </Typography.Text>
+          </Tooltip>
+        </Flex>
       ),
       filters: Array.from(new Set(mailboxes.map((m: any) => m.email).filter(Boolean))).sort().map((e: any) => ({ text: e, value: e })),
       onFilter: (v: any, r: any) => (r.email ?? "").toLowerCase().includes(String(v).toLowerCase()),
@@ -603,90 +618,137 @@ export default function UsersPage() {
     {
       title: "Watch status",
       key: "watch",
+      width: 145,
       filters: [{ text: "Active", value: true }, { text: "Expired", value: false }],
       onFilter: (v: any, r: any) => r.isWatchActive === v,
       render: (_: any, r: any) =>
         r.isWatchActive ? (
-          <Tag color="green">Active · {r.expiresInDays}d left</Tag>
+          <Tooltip title="Renews automatically when 1 day or less remains. Use Renew watch to reset it now.">
+            <Tag color={r.expiresInDays <= 1 ? "orange" : "green"}>
+              Active · {r.expiresInDays}d left
+            </Tag>
+          </Tooltip>
         ) : (
-          <Tag color="orange">Expired</Tag>
+          <Tooltip title="The hourly renewal retries automatically; use Renew watch to retry now.">
+            <Tag color="red">Expired</Tag>
+          </Tooltip>
         ),
     },
     {
       title: "Last history ID",
       dataIndex: "lastHistoryId",
       key: "lastHistoryId",
+      width: 125,
       filters: Array.from(new Set(mailboxes.map((m: any) => m.lastHistoryId).filter(Boolean))).sort().map((h: any) => ({ text: h, value: h })),
       onFilter: (v: any, r: any) => (r.lastHistoryId ?? "").toLowerCase().includes(String(v).toLowerCase()),
-      render: (v: any) => (v ? <Typography.Text code>{v}</Typography.Text> : "—"),
+      render: (v: any) =>
+        v ? (
+          <Typography.Text code style={{ whiteSpace: "nowrap" }}>
+            {v}
+          </Typography.Text>
+        ) : (
+          "—"
+        ),
     },
     {
       title: "Watch expires",
       dataIndex: "watchExpiration",
       key: "watchExpiration",
-      render: (v: any) => (v ? new Date(v).toLocaleString() : "—"),
+      width: 160,
+      render: (v: any) => (
+        <span style={{ whiteSpace: "nowrap" }}>
+          {v ? new Date(v).toLocaleString() : "—"}
+        </span>
+      ),
     },
     {
       title: "Refresh token",
       dataIndex: "refreshTokenMasked",
       key: "refreshTokenMasked",
+      width: 110,
       filters: Array.from(new Set(mailboxes.map((m: any) => m.refreshTokenMasked).filter(Boolean))).sort().map((t: any) => ({ text: t, value: t })),
       onFilter: (v: any, r: any) => (r.refreshTokenMasked ?? "").toLowerCase().includes(String(v).toLowerCase()),
-      render: (v: any) => (v ? <Typography.Text code>{v}</Typography.Text> : "—"),
+      render: (v: any) =>
+        v ? (
+          <Typography.Text code style={{ whiteSpace: "nowrap" }}>
+            {v}
+          </Typography.Text>
+        ) : (
+          "—"
+        ),
     },
     {
       title: "Connected",
       dataIndex: "createdAt",
       key: "createdAt",
+      width: 160,
       filters: Array.from(new Set(mailboxes.map((m: any) => m.createdAt ? new Date(m.createdAt).toLocaleDateString() : null).filter(Boolean))).sort().map((d: any) => ({ text: d, value: d })),
       onFilter: (v: any, r: any) => r.createdAt ? new Date(r.createdAt).toLocaleDateString().includes(String(v)) : false,
-      render: (v: any) => (v ? new Date(v).toLocaleString() : "—"),
+      render: (v: any) => (
+        <span style={{ whiteSpace: "nowrap" }}>
+          {v ? new Date(v).toLocaleString() : "—"}
+        </span>
+      ),
     },
     {
       title: "Updated",
       dataIndex: "updatedAt",
       key: "updatedAt",
+      width: 160,
       filters: Array.from(new Set(mailboxes.map((m: any) => m.updatedAt ? new Date(m.updatedAt).toLocaleDateString() : null).filter(Boolean))).sort().map((d: any) => ({ text: d, value: d })),
       onFilter: (v: any, r: any) => r.updatedAt ? new Date(r.updatedAt).toLocaleDateString().includes(String(v)) : false,
-      render: (v: any) => (v ? new Date(v).toLocaleString() : "—"),
+      render: (v: any) => (
+        <span style={{ whiteSpace: "nowrap" }}>
+          {v ? new Date(v).toLocaleString() : "—"}
+        </span>
+      ),
     },
     ...(canManageMailbox
       ? [
           {
             title: "Actions",
             key: "actions",
+            width: 120,
             render: (_: any, r: any) => (
-              <Space size={8} wrap>
-                <Button
-                  size="small"
-                  icon={<ReloadOutlined />}
-                  onClick={() => testMailbox(r)}
-                >
-                  Test
+              <Dropdown
+                trigger={["click"]}
+                menu={{
+                  items: [
+                    {
+                      key: "test",
+                      icon: <ReloadOutlined />,
+                      label: "Test connection",
+                    },
+                    {
+                      key: "renew",
+                      icon: <ReloadOutlined />,
+                      label: "Renew watch",
+                    },
+                    {
+                      key: "reconnect",
+                      icon: <ReloadOutlined />,
+                      label: "Reconnect",
+                    },
+                    { type: "divider" as const },
+                    {
+                      key: "remove",
+                      danger: true,
+                      icon: <DeleteOutlined />,
+                      label: "Remove mailbox",
+                    },
+                  ],
+                  onClick: ({ key }) => {
+                    if (key === "test") testMailbox(r);
+                    else if (key === "renew") renewWatch(r);
+                    else if (key === "reconnect") reconnectMailbox(r);
+                    else if (key === "remove") removeMailbox(r);
+                  },
+                }}
+              >
+                <Button size="small" icon={<MoreOutlined />}>
+                  Actions
                 </Button>
-                <Button
-                  size="small"
-                  icon={<ReloadOutlined />}
-                  onClick={() => renewWatch(r)}
-                >
-                  Renew watch
-                </Button>
-                <Button
-                  size="small"
-                  icon={<ReloadOutlined />}
-                  onClick={() => reconnectMailbox(r)}
-                >
-                  Reconnect
-                </Button>
-                <Button
-                  danger
-                  size="small"
-                  icon={<DeleteOutlined />}
-                  onClick={() => removeMailbox(r)}
-                >
-                  Remove
-                </Button>
-              </Space>
+              </Dropdown>
             ),
           },
         ]
@@ -857,7 +919,7 @@ export default function UsersPage() {
                         columns={mailboxColumns}
                         dataSource={mailboxes}
                         loading={mailboxesLoading}
-                        scroll={{ x: 1100, y: tableHeight }}
+                        scroll={{ x: 1250, y: tableHeight }}
                         pagination={{
                           pageSize: 10,
                           showSizeChanger: true,
@@ -1170,20 +1232,38 @@ export default function UsersPage() {
         onCancel={() => setRoleModalOpen(false)}
         onOk={saveRole}
         confirmLoading={savingRole}
+        okButtonProps={{ disabled: editingRole?.name === "ADMIN" }}
         width={520}
       >
         <Form form={roleForm} layout="vertical">
           <Form.Item
             name="name"
             label="Role name"
+            extra={
+              editingRole
+                ? "Role names are fixed after creation."
+                : undefined
+            }
             rules={[{ required: true, message: "Role name required" }]}
           >
-            <Input />
+            <Input disabled={Boolean(editingRole)} />
           </Form.Item>
-          <Form.Item label="Permissions">
+          <Form.Item
+            label="Permissions"
+            extra={
+              editingRole?.name === "ADMIN"
+                ? "System role — the admin always has every permission."
+                : undefined
+            }
+          >
             <PermissionPicker
               perms={perms}
-              selected={selectedPerms}
+              selected={
+                editingRole?.name === "ADMIN"
+                  ? perms.map((p) => p.id)
+                  : selectedPerms
+              }
+              disabled={editingRole?.name === "ADMIN"}
               onToggle={(id, checked) =>
                 setSelectedPerms((prev) =>
                   checked ? [...prev, id] : prev.filter((x) => x !== id),

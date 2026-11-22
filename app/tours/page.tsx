@@ -29,23 +29,27 @@ import {
  */
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Vietnam Tours — Day Trips, Cruises & Private Experiences",
-  description:
-    "Browse every tour: Ha Long Bay cruises, Ninh Binh day trips, Hoi An lantern nights, Da Nang & Ba Na Hills and Ho Chi Minh City. Prices per person, free cancellation.",
-  alternates: { canonical: "/tours" },
-  openGraph: {
-    type: "website",
-    siteName: BRAND,
-    url: absoluteUrl("/tours"),
-    title: `Vietnam Tours | ${BRAND}`,
+export async function generateMetadata(): Promise<Metadata> {
+  const company = await fetchCompany();
+  const brandName = company.shortName?.trim() || BRAND;
+  return {
+    title: "Vietnam Tours — Day Trips, Cruises & Private Experiences",
     description:
-      "Ha Long Bay cruises, Ninh Binh day trips, Hoi An lantern nights, Da Nang & Ba Na Hills — book a Vietnam tour online.",
-  },
-};
+      "Browse every tour: Ha Long Bay cruises, Ninh Binh day trips, Hoi An lantern nights, Da Nang & Ba Na Hills and Ho Chi Minh City. Prices per person, free cancellation.",
+    alternates: { canonical: "/tours" },
+    openGraph: {
+      type: "website",
+      siteName: brandName,
+      url: absoluteUrl("/tours"),
+      title: `Vietnam Tours | ${brandName}`,
+      description:
+        "Ha Long Bay cruises, Ninh Binh day trips, Hoi An lantern nights, Da Nang & Ba Na Hills — book a Vietnam tour online.",
+    },
+  };
+}
 
 const vnd = (value: unknown) =>
-  `${Number(value ?? 0).toLocaleString("vi-VN", { maximumFractionDigits: 0 })} ₫`;
+  `${Number(value ?? 0).toLocaleString("en-US", { maximumFractionDigits: 0 })} ₫`;
 
 const chipStyle = (active: boolean): CSSProperties => ({
   padding: "6px 14px",

@@ -77,7 +77,7 @@ const TYPE_TEXT_COLOR: Record<string, string> = {
 };
 
 const vnd = (value: string | number | null | undefined) =>
-  `${Number(value ?? 0).toLocaleString("vi-VN", { maximumFractionDigits: 0 })} ₫`;
+  `${Number(value ?? 0).toLocaleString("en-US", { maximumFractionDigits: 0 })} ₫`;
 
 /**
  * The home page.
@@ -631,6 +631,7 @@ export default function HomePage({
                               `/tour/${tour.slug || tour.id}`,
                             )}`
                       }
+                      onClick={(e) => e.stopPropagation()}
                       style={{ display: "block", marginTop: 4 }}
                     >
                       <Button
@@ -645,7 +646,6 @@ export default function HomePage({
                             : undefined,
                           borderColor: promo ? "#dc2626" : undefined,
                         }}
-                        onClick={(e) => e.stopPropagation()}
                       >
                         Book now
                       </Button>

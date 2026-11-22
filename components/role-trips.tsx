@@ -232,7 +232,12 @@ export default function RoleTripsPage({
   const completed = filtered.filter((a) => a.status === "COMPLETED");
   const needsReport =
     mode === "guide"
-      ? assignments.filter((a) => a.status === "DISPATCHED" && !a.tourReport)
+      ? assignments.filter(
+          (a) =>
+            a.status === "DISPATCHED" &&
+            !a.tourReport &&
+            dayjs(a.startDate).startOf("day").isSameOrBefore(today.startOf("day")),
+        )
       : [];
 
   // Calendar grid
@@ -530,14 +535,23 @@ export default function RoleTripsPage({
                 <Button
                   size="small"
                   type={
-                    a.status === "DISPATCHED" && !a.tourReport
+                    a.status === "DISPATCHED" &&
+                    !a.tourReport &&
+                    dayjs(a.startDate).startOf("day").isSameOrBefore(today.startOf("day"))
                       ? "primary"
                       : "default"
+                  }
+                  disabled={
+                    a.status === "DISPATCHED" &&
+                    !a.tourReport &&
+                    dayjs(a.startDate).startOf("day").isAfter(today.startOf("day"))
                   }
                   icon={<FileTextOutlined />}
                 >
                   {a.status === "DISPATCHED" && !a.tourReport
-                    ? "Report"
+                    ? dayjs(a.startDate).startOf("day").isAfter(today.startOf("day"))
+                      ? "Report after departure"
+                      : "Report"
                     : "View report"}
                 </Button>
               </Link>
@@ -560,6 +574,11 @@ export default function RoleTripsPage({
               {subtitle}
             </Typography.Text>
           )}
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            {mode === "provider"
+              ? "Assign drivers before 23:00 the night before. A reminder is sent 3 hours before the deadline; unassigned routes may be given to another provider."
+              : "Trips are confirmed at 23:00 the night before; crew and vehicle changes lock at 06:00 on the departure day."}
+          </Typography.Text>
         </Flex>
         <Flex
           align="center"

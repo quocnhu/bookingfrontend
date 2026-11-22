@@ -25,7 +25,7 @@ import {
 const { Text } = Typography;
 
 const fmtVnd = (n: number) =>
-  new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(
+  new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(
     Math.round(n),
   );
 

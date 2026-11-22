@@ -78,7 +78,7 @@ const PAYMENT_COLORS: Record<string, string> = {
 };
 
 const vnd = (value: string | number | null | undefined) =>
-  `${Number(value ?? 0).toLocaleString("vi-VN", {
+  `${Number(value ?? 0).toLocaleString("en-US", {
     maximumFractionDigits: 0,
   })} ₫`;
 
@@ -234,6 +234,14 @@ export default function BookingPaymentsTab() {
         }}
         locale={{ emptyText: "No booking payments found" }}
         columns={[
+          {
+            title: "#",
+            key: "__index",
+            width: 56,
+            align: "center",
+            render: (_: unknown, __: BookingPaymentRow, index: number) =>
+              (page.current - 1) * page.pageSize + index + 1,
+          },
           {
             title: "Booking",
             align: "center",

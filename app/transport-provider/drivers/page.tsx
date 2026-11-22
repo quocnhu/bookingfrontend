@@ -133,7 +133,7 @@ export default function ProviderDriversPage() {
         showIcon
         style={{ marginBottom: 16 }}
         message="Roster freezes at 22:00 daily"
-        description="Finish assigning drivers before 10pm — the 4am auto crew + dispatch runs on the settled roster."
+        description="Finish assigning drivers before 23:00 — the 23:00 auto crew + next-day dispatch runs on the settled roster."
       />
 
       <Card size="small">

@@ -90,10 +90,13 @@ export default function SubmitReportPage() {
     try {
       const r = await api.get("/assignments/my-assignments");
       const items = r.data ?? [];
-      // Show DISPATCHED (needs report) + VERIFYING (submitted/pending/rejected) + COMPLETED (verified).
+      // Show DISPATCHED only once the tour has started (dispatch now happens
+      // at 23:00 the night before), plus VERIFYING/COMPLETED reports.
+      const today = dayjs().startOf("day");
       const list = items.filter(
         (a: any) =>
-          a.status === "DISPATCHED" ||
+          (a.status === "DISPATCHED" &&
+            dayjs(a.startDate).startOf("day").isSameOrBefore(today)) ||
           a.status === "VERIFYING" ||
           a.status === "COMPLETED",
       );

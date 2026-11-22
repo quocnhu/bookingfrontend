@@ -43,6 +43,9 @@ import TourCategoryManager, {
 
 const MAX_PRIVATE_PRICE_ROWS = 45;
 
+const formatVnd = (value: number) =>
+  `${Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })} ₫`;
+
 interface Tour {
   id: string;
   code?: string;
@@ -200,6 +203,30 @@ function PrivatePaxPricingSection({
   color: string;
   background: string;
 }) {
+  const form = Form.useFormInstance();
+  const rows = (Form.useWatch("privatePaxPrices", form) ?? []) as Array<{
+    pricePerPerson?: number;
+  }>;
+  const discountPct = Number(Form.useWatch("privateDiscountPercent", form) ?? 0);
+  const promoWindow = Form.useWatch("promotionWindow", form) as
+    | [Dayjs, Dayjs]
+    | null
+    | undefined;
+  const now = dayjs();
+  const promoActive =
+    discountPct > 0 &&
+    (!promoWindow?.[0] || !now.isBefore(promoWindow[0])) &&
+    (!promoWindow?.[1] || !now.isAfter(promoWindow[1]));
+
+  const finalTotal = (index: number, pricePerPerson?: number) => {
+    const base = Math.max(1, Number(index) + 1) * Number(pricePerPerson ?? 0);
+    if (!promoActive) return { base, final: base };
+    return {
+      base,
+      final: Math.round(base * (1 - discountPct / 100) * 100) / 100,
+    };
+  };
+
   return (
     <Flex
       vertical
@@ -241,6 +268,28 @@ function PrivatePaxPricingSection({
                     />
                   </Form.Item>
                 </Col>
+                <Col flex="none" style={{ width: 170, textAlign: "right" }}>
+                  {(() => {
+                    const totals = finalTotal(
+                      index,
+                      Number(rows[index]?.pricePerPerson ?? 0),
+                    );
+                    return (
+                      <>
+                        <Typography.Text style={{ fontSize: 12, color: color }}>
+                          Final total: {formatVnd(totals.final)}
+                        </Typography.Text>
+                        {promoActive && (
+                          <Typography.Text
+                            style={{ display: "block", fontSize: 11, color: "#8c8c8c" }}
+                          >
+                            Before promo: {formatVnd(totals.base)}
+                          </Typography.Text>
+                        )}
+                      </>
+                    );
+                  })()}
+                </Col>
                 <Col flex="none">
                   <Button
                     type="text"
@@ -265,8 +314,9 @@ function PrivatePaxPricingSection({
         )}
       </Form.List>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        Add one row for each group size. The customer pays the row matching their
-        total pax.
+        Add one row for each group size. The final total is the per-person price
+        multiplied by the number of people, with the active private promotion
+        applied. This is the amount the customer pays.
       </Typography.Text>
     </Flex>
   );

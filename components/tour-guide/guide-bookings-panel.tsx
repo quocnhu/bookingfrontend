@@ -26,7 +26,7 @@ import { useTourMoney, type MoneyRow } from "@/components/dispatch-board/use-tou
 const { Text } = Typography;
 
 const fmtVnd = (n: number) =>
-  new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(Math.round(n));
+  new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(n));
 
 export interface GuideBooking {
   id: string;

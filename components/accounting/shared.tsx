@@ -50,7 +50,7 @@ import StatementVoucherModal from "./StatementVoucherModal";
 import MarqueeText from "@/components/MarqueeText";
 
 const vnd = (n: number) =>
-  new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(n ?? 0);
+  new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n ?? 0);
 
 const fmtDate = (d?: string | null) =>
   d ? new Date(d).toLocaleDateString("vi-VN") : "—";
@@ -719,7 +719,7 @@ export function PeriodTab({
               onClick={() => setVoucherOpen(true)}
               style={{ marginTop: 8 }}
             >
-              Print statement (A4)
+              Print statement
             </Button>
             <Button
               icon={<FileTextOutlined />}
@@ -772,7 +772,7 @@ export function PeriodTab({
                   type="info"
                   showIcon
                   style={{ marginBottom: 16 }}
-                  message="Trip money is settled with the guide — only the payee can export. Use Print statement (A4) or Export CSV below to see this driver's trips and whether each one is paid."
+                  message="Trip money is settled with the guide — only the payee can export. Use Print statement or Export CSV below to see this driver's trips and whether each one is paid."
                 />
               )}
               {preview.mode === "ROUTE_PRICE" ? (
@@ -1607,8 +1607,8 @@ return (
               onChange={setAmount}
               min={0}
               style={{ width: 160 }}
-              formatter={(v) => v?.toLocaleString("vi-VN") ?? ""}
-              parser={(v) => Number(v?.replace(/\./g, "") ?? 0)}
+              formatter={(v) => v?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? ""}
+              parser={(v) => Number(v?.replace(/,/g, "") ?? 0)}
             />
             <Select
               placeholder="Category"
@@ -2042,9 +2042,11 @@ export function HistoryTab({
                     </Tooltip>
                   ) : (
                     canVoid && (
-                      <Button size="small" danger onClick={() => voidPeriod(r)}>
-                        Void
-                      </Button>
+                      <Tooltip title="Void this exported period. History keeps it marked as voided, and its trips become exportable again in a new period. Use it when the range or figures were wrong.">
+                        <Button size="small" danger onClick={() => voidPeriod(r)}>
+                          Void
+                        </Button>
+                      </Tooltip>
                     )
                   ))}
                 {r.recordType !== "PARTNER" && (

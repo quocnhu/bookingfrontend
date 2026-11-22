@@ -187,7 +187,7 @@ const centerTitle = (text: string) => (
 );
 
 const vnd = (n: string | number) =>
-  `${Number(n || 0).toLocaleString("vi-VN", { maximumFractionDigits: 0 })} ₫`;
+  `${Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })} ₫`;
 
 export default function TransportationPage() {
   const { hasPermission, user } = useApp();

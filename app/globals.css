@@ -490,20 +490,6 @@ html.dark .ant-table-tbody > tr.prov-tint-5:hover > td { background: rgba(19, 19
 html.dark .ant-table-tbody > tr.prov-tint-6:hover > td { background: rgba(235, 47, 150, 0.32) !important; }
 html.dark .ant-table-tbody > tr.prov-tint-7:hover > td { background: rgba(160, 217, 17, 0.30) !important; }
 
-/* ===== Print ===== */
-@media print {
-  body {
-    background: #fff !important;
-  }
-  .no-print {
-    display: none !important;
-  }
-  .print-full {
-    box-shadow: none !important;
-    border: none !important;
-  }
-}
-
 @keyframes board-marquee-x {
   0% {
     transform: translateX(0);

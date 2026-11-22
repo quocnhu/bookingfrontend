@@ -43,6 +43,7 @@ import {
   SendOutlined,
 } from "@ant-design/icons";
 import { useApp } from "@/lib/app-context";
+import { BRAND } from "@/lib/site";
 import NotificationCenter from "@/components/notification-center";
 import MarqueeText from "@/components/MarqueeText";
 
@@ -110,8 +111,10 @@ const roleColors: Record<string, { tag: string; avatar: string }> = {
 const ADMIN_ONLY_KEYS = new Set(["/users", "/notifications", "/audit", "/auth-activities", "/company-profile"]);
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const { user, loading, theme, toggleTheme, logout } = useApp();
+  const { user, company, loading, theme, toggleTheme, logout } = useApp();
   const { token } = antdTheme.useToken();
+  const brandName = company?.shortName?.trim() || BRAND;
+  const brandLogo = company?.logoUrl?.trim() || null;
   const screens = Grid.useBreakpoint();
   const router = useRouter();
   const pathname = usePathname();
@@ -196,10 +199,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               gap={8}
               style={{ height: 56, borderBottom: `1px solid ${token.colorSplit}` }}
             >
-              <CompassOutlined style={{ color: token.colorPrimary, fontSize: 20 }} />
+              {brandLogo ? (
+                <img
+                  src={brandLogo}
+                  alt={brandName}
+                  style={{
+                    height: 30,
+                    maxWidth: collapsed ? 40 : 120,
+                    objectFit: "contain",
+                    borderRadius: 6,
+                  }}
+                />
+              ) : (
+                <CompassOutlined style={{ color: token.colorPrimary, fontSize: 20 }} />
+              )}
               {!collapsed && (
                 <Typography.Text strong style={{ fontSize: 17, color: token.colorText }}>
-                  Hana Tourist
+                  {brandName}
                 </Typography.Text>
               )}
             </Flex>
@@ -221,9 +237,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <Drawer
         title={
           <Flex align="center" gap={8}>
-            <CompassOutlined style={{ color: token.colorPrimary, fontSize: 20 }} />
+            {brandLogo ? (
+              <img
+                src={brandLogo}
+                alt={brandName}
+                style={{ height: 26, maxWidth: 120, objectFit: "contain", borderRadius: 6 }}
+              />
+            ) : (
+              <CompassOutlined style={{ color: token.colorPrimary, fontSize: 20 }} />
+            )}
             <Typography.Text strong style={{ fontSize: 16 }}>
-              Hana Tourist
+              {brandName}
             </Typography.Text>
           </Flex>
         }
