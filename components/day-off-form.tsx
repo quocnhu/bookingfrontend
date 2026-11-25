@@ -412,8 +412,8 @@ export default function DayOffForm({
           style={{ fontSize: 11, display: "block", marginTop: 8 }}
         >
           Note: only PENDING requests can be cancelled by the requester.
-          Emergency requests must be in before the 23:00 dispatch cutoff
-          (auto mode) or 04:00 on the day (manual mode).
+          Emergency requests must be in before the 21:00 day-before dispatch
+          cutoff in both Manual and Auto mode.
         </Typography.Text>
       </Modal>
     </div>

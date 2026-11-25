@@ -41,6 +41,7 @@ import {
   LockOutlined,
   CreditCardOutlined,
   SendOutlined,
+  HomeOutlined,
 } from "@ant-design/icons";
 import { useApp } from "@/lib/app-context";
 import { BRAND } from "@/lib/site";
@@ -76,6 +77,7 @@ const menuItems = [
       { key: "/service/transportation", icon: <CarOutlined />, label: <MenuLabel text="Transportation" /> },
       { key: "/service/transport-requests", icon: <SendOutlined />, label: <MenuLabel text="Transport requests" /> },
       { key: "/service/coordinate", icon: <EnvironmentOutlined />, label: <MenuLabel text="Coordinate & Hotel" /> },
+      { key: "/service/hotels", icon: <HomeOutlined />, label: <MenuLabel text="Hotels" /> },
     ],
   },
   { key: "/audit", icon: <HistoryOutlined />, label: <MenuLabel text="Audit" /> },
@@ -105,6 +107,7 @@ const roleColors: Record<string, { tag: string; avatar: string }> = {
   TOUR_GUIDE: { tag: "green", avatar: "#10B981" },
   DRIVER: { tag: "cyan", avatar: "#06B6D4" },
   TRANSPORT_PROVIDER: { tag: "purple", avatar: "#8B5CF6" },
+  HOTEL: { tag: "gold", avatar: "#D97706" },
   CUSTOMER: { tag: "pink", avatar: "#EC4899" },
 };
 
@@ -121,6 +124,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const isMobile = !screens.lg;
+  const isNarrow = !screens.sm;
   const isDark = theme === "dark";
 
   useEffect(() => {
@@ -181,7 +185,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
+    <Layout className="app-shell" style={{ minHeight: "100vh" }}>
       {!isMobile && (
         <Sider
           breakpoint="lg"
@@ -273,9 +277,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </Flex>
       </Drawer>
       <Layout>
-        <Header>
-          <Flex align="center" justify="space-between" gap={12} style={{ height: "100%" }}>
-            <Flex align="center" gap={8} style={{ minWidth: 0 }}>
+        <Header className="app-shell-header">
+          <Flex
+            align="center"
+            justify="space-between"
+            gap={isNarrow ? 4 : 12}
+            className="app-shell-header-row"
+            style={{ height: "100%" }}
+          >
+            <Flex align="center" gap={8} className="app-shell-header-user" style={{ minWidth: 0 }}>
               <Button
                 type="text"
                 icon={
@@ -284,11 +294,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 onClick={() => (isMobile ? setMobileNavOpen((o) => !o) : setCollapsed((c) => !c))}
                 aria-label={isMobile ? "Open navigation" : collapsed ? "Expand sidebar" : "Collapse sidebar"}
               />
-              <Typography.Text strong ellipsis style={{ maxWidth: "100%" }}>
-                Welcome, {user.name ?? user.email}
-              </Typography.Text>
+              {!isNarrow && (
+                <Typography.Text strong ellipsis style={{ maxWidth: "100%" }}>
+                  Welcome, {user.name ?? user.email}
+                </Typography.Text>
+              )}
             </Flex>
-            <Flex align="center" gap={8}>
+            <Flex align="center" gap={isNarrow ? 2 : 8} className="app-shell-header-actions">
               <Button
                 type="text"
                 icon={isDark ? <SunOutlined /> : <MoonOutlined />}
@@ -345,7 +357,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </Flex>
           </Flex>
         </Header>
-        <Content style={{ padding: 16 }}>{children}</Content>
+        <Content>{children}</Content>
       </Layout>
     </Layout>
   );

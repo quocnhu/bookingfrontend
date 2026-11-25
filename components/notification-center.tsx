@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
   Badge,
   Button,
@@ -36,15 +37,23 @@ const TYPE_COLORS: Record<string, string> = {
   GENERAL: "default",
 };
 
+function internalUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  if (!value.startsWith("/") || value.startsWith("//")) return null;
+  return value;
+}
+
 export default function NotificationCenter() {
   const { token } = antdTheme.useToken();
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
+  const router = useRouter();
   const { on, connected } = useSocket();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -105,6 +114,15 @@ export default function NotificationCenter() {
     } catch (e) { message.error(getErrorMessage(e)); }
   };
 
+  const openNotification = (item: any) => {
+    if (!item.read) void markRead(item.id);
+    const url = internalUrl(item.data?.url);
+    if (!url) return;
+    setDrawerOpen(false);
+    setPopoverOpen(false);
+    router.push(url);
+  };
+
   const liveTag = (
     <Tag color={connected ? "green" : "red"} style={{ margin: 0, fontSize: 10 }}>
       {connected ? "LIVE" : "OFFLINE"}
@@ -130,7 +148,7 @@ export default function NotificationCenter() {
             padding: "10px 12px",
             marginBottom: 8,
           }}
-          onClick={() => !item.read && markRead(item.id)}
+          onClick={() => openNotification(item)}
         >
           <Flex align="flex-start" gap={8}>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -243,7 +261,13 @@ export default function NotificationCenter() {
   }
 
   return (
-    <Popover content={popoverContent} trigger="click" placement="bottomRight">
+    <Popover
+      content={popoverContent}
+      trigger="click"
+      placement="bottomRight"
+      open={popoverOpen}
+      onOpenChange={setPopoverOpen}
+    >
       {bell}
     </Popover>
   );

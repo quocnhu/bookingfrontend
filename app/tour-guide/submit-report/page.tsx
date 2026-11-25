@@ -91,7 +91,7 @@ export default function SubmitReportPage() {
       const r = await api.get("/assignments/my-assignments");
       const items = r.data ?? [];
       // Show DISPATCHED only once the tour has started (dispatch now happens
-      // at 23:00 the night before), plus VERIFYING/COMPLETED reports.
+      // by 21:00 the night before), plus VERIFYING/COMPLETED reports.
       const today = dayjs().startOf("day");
       const list = items.filter(
         (a: any) =>

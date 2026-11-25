@@ -28,6 +28,7 @@ const { RangePicker } = DatePicker;
 const GUIDE_COMPANY_COLOR = "#0caf7a";
 const GUIDE_FREELANCE_COLOR = "#8a3ffc";
 const LEAVE_COLOR = "#fa541c";
+const HOLD_COLOR = "#eb2f96";
 const DRIVER_PALETTE = [
   "#1677ff",
   "#13c2c2",
@@ -61,6 +62,13 @@ interface AvailAssignment {
   paidToName?: string | null;
 }
 
+interface AvailHold {
+  id: string;
+  startDate: string;
+  endDate: string;
+  note?: string | null;
+}
+
 interface AvailGuide {
   id: string;
   name: string;
@@ -69,6 +77,7 @@ interface AvailGuide {
   rating?: number | null;
   assignments: AvailAssignment[];
   leaves?: AvailLeave[];
+  holds?: AvailHold[];
 }
 
 interface AvailDriver {
@@ -79,6 +88,7 @@ interface AvailDriver {
   provider?: { id?: string; name?: string } | null;
   assignments: AvailAssignment[];
   leaves?: AvailLeave[];
+  holds?: AvailHold[];
 }
 
 interface CrewAvailResponse {
@@ -109,6 +119,13 @@ function coversLeave(day: Dayjs, l: AvailLeave) {
   const t = day.startOf("day").valueOf();
   const s = dayjs(l.startDate).startOf("day").valueOf();
   const e = dayjs(l.endDate).startOf("day").valueOf();
+  return t >= s && t <= e;
+}
+
+function coversHold(day: Dayjs, h: AvailHold) {
+  const t = day.startOf("day").valueOf();
+  const s = dayjs(h.startDate).startOf("day").valueOf();
+  const e = dayjs(h.endDate).startOf("day").valueOf();
   return t >= s && t <= e;
 }
 
@@ -252,6 +269,10 @@ export default function CrewAvailabilityDrawer({
           const activeLeaves = (row.member.leaves ?? []).filter(
             (l) => l.status !== "REJECTED",
           );
+          const activeHolds = row.member.holds ?? [];
+          const visibleHold = activeHolds.find((h) =>
+            days.some((d) => coversHold(d, h)),
+          );
           const offToday = activeLeaves.find((l) => coversLeave(today, l));
           const offLeave =
             offToday ??
@@ -317,6 +338,15 @@ export default function CrewAvailabilityDrawer({
                         }}
                       >
                         {offToday ? "Off today" : "Off"}
+                      </Tag>
+                    </Tooltip>
+                  )}
+                  {visibleHold && (
+                    <Tooltip
+                      title={`On hold · ${dayjs(visibleHold.startDate).format("DD MMM YYYY")} → ${dayjs(visibleHold.endDate).format("DD MMM YYYY")}${visibleHold.note ? ` · ${visibleHold.note}` : ""}`}
+                    >
+                      <Tag color="magenta" style={{ margin: 0, fontSize: 10 }}>
+                        Held
                       </Tag>
                     </Tooltip>
                   )}
@@ -391,6 +421,40 @@ export default function CrewAvailabilityDrawer({
             );
           }
           const busyList = row.member.assignments.filter((a) => covers(d, a));
+          if (busyList.length === 0) {
+            const onHold = row.member.holds?.find((h) => coversHold(d, h));
+            if (onHold) {
+              return (
+                <Tooltip
+                  title={`On hold · ${dayjs(onHold.startDate).format("DD MMM YYYY")} → ${dayjs(onHold.endDate).format("DD MMM YYYY")}${onHold.note ? ` · ${onHold.note}` : ""}`}
+                >
+                  <div
+                    style={{
+                      height: 40,
+                      borderRadius: 10,
+                      background:
+                        "repeating-linear-gradient(45deg, rgba(235, 47, 150, 0.16) 0 6px, rgba(235, 47, 150, 0.05) 6px 12px)",
+                      border: "1px solid rgba(235, 47, 150, 0.45)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text
+                      strong
+                      style={{
+                        fontSize: 11,
+                        color: HOLD_COLOR,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Held
+                    </Text>
+                  </div>
+                </Tooltip>
+              );
+            }
+          }
           const busy = busyList[0];
           if (busy) {
             // Completed tours read grey — only running buses stay orange,

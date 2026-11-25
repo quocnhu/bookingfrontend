@@ -26,6 +26,7 @@ const ROLE_DEFAULT_ROUTES: Record<string, string> = {
   ADMIN: "/dashboard",
   OFFICE: "/dashboard",
   TRANSPORT_PROVIDER: "/transport-provider/dashboard",
+  HOTEL: "/hotel/dashboard",
   CUSTOMER: "/",
 };
 

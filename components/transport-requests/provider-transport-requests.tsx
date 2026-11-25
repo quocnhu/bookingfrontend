@@ -370,6 +370,31 @@ export default function ProviderTransportRequests() {
     if (suggestedVehicle) setVehicleId(suggestedVehicle.id);
   };
 
+  const statusTag = (status: RequestStatus) => (
+    <Tag color={STATUS_COLOR[status]}>{STATUS_LABEL[status]}</Tag>
+  );
+
+  const requestActions = (row: TransportRequest) => (
+    <Space wrap size={4}>
+      <Button size="small" icon={<CarOutlined />} onClick={() => openRequest(row)}>
+        {open(row) ? "Assign" : "View"}
+      </Button>
+      {open(row) && (
+        <Button
+          size="small"
+          danger
+          icon={<CloseCircleOutlined />}
+          onClick={() => {
+            setDeclineTarget(row);
+            setDeclineReason("");
+          }}
+        >
+          Decline
+        </Button>
+      )}
+    </Space>
+  );
+
   const columns: ColumnsType<TransportRequest> = [
     {
       title: "Tour",
@@ -397,9 +422,7 @@ export default function ProviderTransportRequests() {
       title: "Status",
       dataIndex: "providerRequestStatus",
       width: 120,
-      render: (status: RequestStatus) => (
-        <Tag color={STATUS_COLOR[status]}>{STATUS_LABEL[status]}</Tag>
-      ),
+      render: (status: RequestStatus) => statusTag(status),
     },
     {
       title: "Deadline",
@@ -435,32 +458,14 @@ export default function ProviderTransportRequests() {
       title: "Actions",
       key: "actions",
       width: 210,
-      render: (_, row) => (
-        <Space wrap size={4}>
-          <Button size="small" icon={<CarOutlined />} onClick={() => openRequest(row)}>
-            {open(row) ? "Assign" : "View"}
-          </Button>
-          {open(row) && (
-            <Button
-              size="small"
-              danger
-              icon={<CloseCircleOutlined />}
-              onClick={() => {
-                setDeclineTarget(row);
-                setDeclineReason("");
-              }}
-            >
-              Decline
-            </Button>
-          )}
-        </Space>
-      ),
+      render: (_, row) => requestActions(row),
     },
   ];
 
   return (
-    <Flex vertical gap={16}>
+    <Flex vertical gap={16} className="portal-page provider-requests-page">
       <Card
+        className="portal-card"
         title="Assignment mode"
         size="small"
         extra={
@@ -482,7 +487,7 @@ export default function ProviderTransportRequests() {
           The travel agent suggests one available driver and vehicle per request.
           Manual: you choose. Suggest: the suggested pick is pre-filled and you
           can accept or swap it. Fully automatic: requests are assigned
-          immediately with the suggested pick. Assign before 23:00 the day
+          immediately with the suggested pick. Assign before 21:00 the day
           before — you will get a reminder 3 hours before the deadline, and an
           unassigned route may be given to another provider. Travel-agent
           changes lock at 06:00 on the departure day.
@@ -490,6 +495,7 @@ export default function ProviderTransportRequests() {
       </Card>
 
       <Card
+        className="portal-card"
         title={
           <Space>
             <CarOutlined />
@@ -516,17 +522,54 @@ export default function ProviderTransportRequests() {
           />
         )}
         <Table
+          className="portal-table provider-requests-table"
           rowKey="id"
           size="small"
           loading={loading}
           columns={columns}
           dataSource={rows}
-          scroll={{ x: 900 }}
+          scroll={{ x: "max-content" }}
           pagination={{ pageSize: 12, showSizeChanger: true }}
         />
+        <div className="provider-requests-mobile-list">
+          {rows.map((row) => (
+            <Card key={row.id} size="small" className="provider-request-mobile-card">
+              <Flex vertical gap={6}>
+                <Flex justify="space-between" align="flex-start" gap={8} wrap>
+                  <Text strong>{row.tourName ?? row.code ?? "—"}</Text>
+                  {statusTag(row.providerRequestStatus)}
+                </Flex>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {dayjs(row.startDate).format("DD MMM YYYY")} · {row.totalPax ?? 0} pax
+                </Text>
+                <div style={{ fontSize: 12 }}>
+                  <Text type="secondary">Pickup: </Text>
+                  {row.pickups?.[0]?.pickup ?? "—"}
+                  {row.pickups && row.pickups.length > 1 ? ` +${row.pickups.length - 1}` : ""}
+                </div>
+                <div style={{ fontSize: 12 }}>
+                  <Text type="secondary">Deadline: </Text>
+                  {row.providerDeadline
+                    ? dayjs(row.providerDeadline).format("DD MMM HH:mm")
+                    : "—"}
+                </div>
+                <div style={{ fontSize: 12 }}>
+                  <Text type="secondary">Driver & vehicle: </Text>
+                  {row.driver?.name ?? "—"}
+                  {" · "}
+                  {row.vehicle
+                    ? `${row.vehicle.plateNumber ?? row.vehicle.id} · ${row.vehicle.capacity ?? 0} seats`
+                    : "No vehicle"}
+                </div>
+                <div>{requestActions(row)}</div>
+              </Flex>
+            </Card>
+          ))}
+        </div>
       </Card>
 
       <Drawer
+        className="portal-drawer"
         title="Driver workload"
         open={workloadOpen}
         onClose={() => setWorkloadOpen(false)}
@@ -602,6 +645,7 @@ export default function ProviderTransportRequests() {
       </Drawer>
 
       <Drawer
+        className="portal-drawer"
         open={!!target}
         onClose={() => setTarget(null)}
         width={480}
@@ -688,7 +732,7 @@ export default function ProviderTransportRequests() {
                 </ul>
                 <Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 6 }}>
                   Assign a driver who can cover this route. Driver and vehicle
-                  must both be confirmed before the 23:00 deadline.
+                  must both be confirmed before the 21:00 deadline.
                 </Text>
               </Card>
             )}
@@ -711,7 +755,7 @@ export default function ProviderTransportRequests() {
                         </Text>
                         <Text type="secondary" style={{ fontSize: 12 }}>
                           Accept this pick, or choose another driver/vehicle
-                          below. Assign by 23:00; changes lock at 06:00 on the
+                          below. Assign by 21:00; changes lock at 06:00 on the
                           departure day.
                         </Text>
                         {!usingSuggestion && (

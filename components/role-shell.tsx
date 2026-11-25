@@ -91,7 +91,7 @@ export default function RoleShell({ children, menuItems, roleLabel, roleColor }:
   );
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
+    <Layout className="role-shell" style={{ minHeight: "100vh" }}>
       {!isMobile && (
         <Sider
           breakpoint="lg"
@@ -161,9 +161,15 @@ export default function RoleShell({ children, menuItems, roleLabel, roleColor }:
         </Flex>
       </Drawer>
       <Layout>
-        <Header style={{ paddingInline: isNarrow ? 8 : isMobile ? 16 : 24 }}>
-          <Flex align="center" justify="space-between" gap={isNarrow ? 4 : 12} style={{ height: "100%" }}>
-            <Flex align="center" gap={8} style={{ minWidth: 0 }}>
+        <Header className="role-shell-header" style={{ paddingInline: isNarrow ? 8 : isMobile ? 16 : 24 }}>
+          <Flex
+            align="center"
+            justify="space-between"
+            gap={isNarrow ? 4 : 12}
+            className="role-shell-header-row"
+            style={{ height: "100%" }}
+          >
+            <Flex align="center" gap={8} className="role-shell-header-user" style={{ minWidth: 0 }}>
               <Button
                 type="text"
                 icon={
@@ -178,7 +184,7 @@ export default function RoleShell({ children, menuItems, roleLabel, roleColor }:
                 </Typography.Text>
               )}
             </Flex>
-            <Flex align="center" gap={8}>
+            <Flex align="center" gap={isNarrow ? 2 : 8} className="role-shell-header-actions">
               <Button
                 type="text"
                 icon={isDark ? <SunOutlined /> : <MoonOutlined />}
@@ -235,7 +241,7 @@ export default function RoleShell({ children, menuItems, roleLabel, roleColor }:
             </Flex>
           </Flex>
         </Header>
-        <Content style={{ padding: isMobile ? 12 : 16 }}>{children}</Content>
+        <Content>{children}</Content>
       </Layout>
     </Layout>
   );

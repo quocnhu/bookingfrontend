@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
   Card,
@@ -9,6 +9,8 @@ import {
   Descriptions,
   Drawer,
   Flex,
+  Input,
+  Modal,
   Grid,
   Segmented,
   Spin,
@@ -29,6 +31,7 @@ import {
   EnvironmentOutlined,
   FileTextOutlined,
   HomeOutlined,
+  LockOutlined,
   ReloadOutlined,
   TeamOutlined,
   UserOutlined,
@@ -36,6 +39,7 @@ import {
 import Link from "next/link";
 import { message } from "@/lib/antd-message";
 import { api, getErrorMessage } from "@/lib/api";
+import { useSocket } from "@/lib/use-socket";
 import GuideBookingsPanel, {
   type GuideBooking,
 } from "@/components/tour-guide/guide-bookings-panel";
@@ -49,6 +53,8 @@ import isBetween from "dayjs/plugin/isBetween";
 dayjs.extend(isSameOrAfter);
 dayjs.extend(isSameOrBefore);
 dayjs.extend(isBetween);
+
+const HOLD_COLOR = "#eb2f96";
 
 const STATUS_COLOR: Record<string, string> = {
   PENDING: "orange",
@@ -95,6 +101,19 @@ interface Trip {
     totalPax?: number;
   }>;
   tourReport?: any;
+  guideConfirmationRequestedAt?: string | null;
+  guideConfirmationEmailSentAt?: string | null;
+  guideConfirmedAt?: string | null;
+  guideDeclinedAt?: string | null;
+  guideDeclineReason?: string | null;
+}
+
+interface GuideHold {
+  id: string;
+  startDate: string;
+  endDate: string;
+  note?: string | null;
+  status?: string;
 }
 
 interface RoleTripsProps {
@@ -114,6 +133,7 @@ export default function RoleTripsPage({
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
   const [assignments, setAssignments] = useState<Trip[]>([]);
+  const [holds, setHolds] = useState<GuideHold[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"list" | "calendar" | "board">("list");
   const [statsOpen, setStatsOpen] = useState(false);
@@ -124,7 +144,9 @@ export default function RoleTripsPage({
     leaves: any[];
   }>({ assignments: [], leaves: [] });
 
-  const loadAssignments = async () => {
+  const { on } = useSocket();
+
+  const loadAssignments = useCallback(async () => {
     setLoading(true);
     try {
       const r = await api.get("/assignments/my-assignments");
@@ -134,7 +156,75 @@ export default function RoleTripsPage({
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const loadHolds = useCallback(async () => {
+    if (mode !== "guide") return;
+    try {
+      const r = await api.get("/guide-holds/mine");
+      setHolds(r.data ?? []);
+    } catch {
+      setHolds([]);
+    }
+  }, [mode]);
+
+  const [declineTrip, setDeclineTrip] = useState<Trip | null>(null);
+  const [declineReason, setDeclineReason] = useState("");
+  const [confirmationBusy, setConfirmationBusy] = useState<string | null>(null);
+
+  const confirmGuideTrip = async (trip: Trip) => {
+    setConfirmationBusy(trip.id);
+    try {
+      await api.post(`/assignments/${trip.id}/guide-confirm`);
+      message.success("Assignment confirmed");
+      await loadAssignments();
+    } catch (e) {
+      message.error(getErrorMessage(e, "Could not confirm the assignment"));
+    } finally {
+      setConfirmationBusy(null);
+    }
   };
+
+  const openDeclineTrip = (trip: Trip) => {
+    setDeclineTrip(trip);
+    setDeclineReason("");
+  };
+
+  const submitDeclineTrip = async () => {
+    if (!declineTrip) return;
+    setConfirmationBusy(declineTrip.id);
+    try {
+      await api.post(`/assignments/${declineTrip.id}/guide-decline`, {
+        reason: declineReason.trim() || undefined,
+      });
+      message.success("Marked as not available — the operator has been notified");
+      setDeclineTrip(null);
+      setDeclineReason("");
+      await loadAssignments();
+    } catch (e) {
+      message.error(getErrorMessage(e, "Could not update the assignment"));
+    } finally {
+      setConfirmationBusy(null);
+    }
+  };
+
+  const guideConfirmationTag = (a: Trip) => {
+    if (!a.guideConfirmationRequestedAt && !a.guideConfirmedAt && !a.guideDeclinedAt) {
+      return null;
+    }
+    if (a.guideDeclinedAt) return { label: "Not available", color: "red" };
+    if (a.guideConfirmedAt) return { label: "Confirmed", color: "green" };
+    return { label: "Awaiting confirm", color: "orange" };
+  };
+
+  const needsGuideConfirmation = (a: Trip) =>
+    mode === "guide" &&
+    !!a.guideConfirmationRequestedAt &&
+    !a.guideConfirmedAt &&
+    !a.guideDeclinedAt &&
+    a.status !== "CANCELED" &&
+    a.status !== "COMPLETED" &&
+    !dayjs(a.endDate).isBefore(dayjs(), "day");
 
   const loadCalendar = async () => {
     try {
@@ -149,7 +239,26 @@ export default function RoleTripsPage({
 
   useEffect(() => {
     loadAssignments();
-  }, []);
+  }, [loadAssignments]);
+
+  useEffect(() => {
+    void loadHolds();
+  }, [loadHolds]);
+
+  useEffect(() => {
+    const offBoard = on("board:refresh", () => {
+      void loadAssignments();
+      void loadHolds();
+    });
+    const offNotification = on("notification", () => {
+      void loadAssignments();
+      void loadHolds();
+    });
+    return () => {
+      offBoard();
+      offNotification();
+    };
+  }, [on, loadAssignments, loadHolds]);
 
   useEffect(() => {
     if (view === "calendar") loadCalendar();
@@ -460,9 +569,19 @@ export default function RoleTripsPage({
       key: "crew",
       render: (_: unknown, a: Trip) => (
         <Flex vertical gap={2}>
-          <Typography.Text style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-            <UserOutlined /> {a.guide?.name ?? "—"}
-          </Typography.Text>
+          <Flex align="center" gap={4} wrap>
+            <Typography.Text style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+              <UserOutlined /> {a.guide?.name ?? "—"}
+            </Typography.Text>
+            {mode === "guide" && guideConfirmationTag(a) && (
+              <Tag
+                color={guideConfirmationTag(a)?.color}
+                style={{ margin: 0, fontSize: 10 }}
+              >
+                {guideConfirmationTag(a)?.label}
+              </Tag>
+            )}
+          </Flex>
           <Typography.Text type="secondary" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
             <TeamOutlined /> {a.driver?.name ?? "—"}
           </Typography.Text>
@@ -530,6 +649,26 @@ export default function RoleTripsPage({
                 Route
               </Button>
             )}
+            {needsGuideConfirmation(a) && (
+              <>
+                <Button
+                  size="small"
+                  type="primary"
+                  loading={confirmationBusy === a.id}
+                  onClick={() => confirmGuideTrip(a)}
+                >
+                  Confirm
+                </Button>
+                <Button
+                  size="small"
+                  danger
+                  disabled={confirmationBusy === a.id}
+                  onClick={() => openDeclineTrip(a)}
+                >
+                  Not available
+                </Button>
+              </>
+            )}
             {mode === "guide" && (
               <Link href={`/tour-guide/submit-report?assignmentId=${a.id}`}>
                 <Button
@@ -563,8 +702,15 @@ export default function RoleTripsPage({
   ];
 
   return (
-    <div>
-      <Flex justify="space-between" align="center" wrap gap={12} style={{ marginBottom: 16 }}>
+    <div className="portal-page role-trips-page">
+      <Flex
+        justify="space-between"
+        align="center"
+        wrap
+        gap={12}
+        className="portal-page-header"
+        style={{ marginBottom: 16 }}
+      >
         <Flex vertical gap={2}>
           <Typography.Title level={4} style={{ margin: 0 }}>
             {titleIcon} {title}
@@ -576,14 +722,15 @@ export default function RoleTripsPage({
           )}
           <Typography.Text type="secondary" style={{ fontSize: 11 }}>
             {mode === "provider"
-              ? "Assign drivers before 23:00 the night before. A reminder is sent 3 hours before the deadline; unassigned routes may be given to another provider."
-              : "Trips are confirmed at 23:00 the night before; crew and vehicle changes lock at 06:00 on the departure day."}
+              ? "Assign drivers before 21:00 the night before. A reminder is sent 3 hours before the deadline; unassigned routes may be given to another provider."
+              : "Trips are confirmed by 21:00 the night before; crew and vehicle changes lock at 06:00 on the departure day."}
           </Typography.Text>
         </Flex>
         <Flex
           align="center"
           gap={8}
           wrap
+          className="portal-filters"
           style={{ width: isMobile ? "100%" : undefined }}
         >
           <Button
@@ -605,7 +752,10 @@ export default function RoleTripsPage({
           )}
           <Button
             icon={<ReloadOutlined />}
-            onClick={loadAssignments}
+            onClick={() => {
+              void loadAssignments();
+              void loadHolds();
+            }}
             loading={loading}
             style={{ flex: isMobile ? 1 : undefined }}
           >
@@ -633,6 +783,52 @@ export default function RoleTripsPage({
           />
         </Flex>
       </Flex>
+
+      {mode === "guide" && holds.length > 0 && (
+        <Card
+          size="small"
+          style={{
+            marginBottom: 16,
+            borderLeft: `3px solid ${HOLD_COLOR}`,
+          }}
+          styles={{ body: { padding: 14 } }}
+        >
+          <Flex vertical gap={8}>
+            <Typography.Text strong>
+              <LockOutlined style={{ color: HOLD_COLOR }} /> Upcoming holds
+              (reserved)
+            </Typography.Text>
+            {holds.map((hold) => (
+              <Flex
+                key={hold.id}
+                justify="space-between"
+                align="center"
+                wrap
+                gap={8}
+              >
+                <Typography.Text>
+                  {dayjs(hold.startDate).format("DD MMM YYYY")} →{" "}
+                  {dayjs(hold.endDate).format("DD MMM YYYY")}
+                </Typography.Text>
+                <Flex align="center" gap={8} wrap>
+                  {hold.note ? (
+                    <Typography.Text type="secondary">
+                      {hold.note}
+                    </Typography.Text>
+                  ) : null}
+                  <Tag color="magenta" style={{ margin: 0 }}>
+                    Reserved
+                  </Tag>
+                </Flex>
+              </Flex>
+            ))}
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              You cannot be assigned to tours on these dates. Contact the
+              operator if you think this is wrong.
+            </Typography.Text>
+          </Flex>
+        </Card>
+      )}
 
       <Drawer
         title={
@@ -711,6 +907,7 @@ export default function RoleTripsPage({
           </Typography.Title>
 
           <Table
+            className="portal-table"
             rowKey="id"
             size={isMobile ? "small" : "middle"}
             columns={tripColumns}
@@ -951,6 +1148,32 @@ export default function RoleTripsPage({
           </div>
         </div>
       )}
+
+      <Modal
+        title="Mark yourself unavailable"
+        open={!!declineTrip}
+        okText="Send to operator"
+        okButtonProps={{ danger: true, loading: confirmationBusy === declineTrip?.id }}
+        onOk={submitDeclineTrip}
+        onCancel={() => setDeclineTrip(null)}
+        destroyOnHidden
+      >
+        <Typography.Paragraph style={{ marginBottom: 8 }}>
+          {declineTrip?.tourName ?? declineTrip?.code ?? "This trip"} ·{" "}
+          {declineTrip ? dayjs(declineTrip.startDate).format("DD/MM/YYYY") : ""}
+        </Typography.Paragraph>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          The operator will be notified and can reassign another guide.
+        </Typography.Text>
+        <Input.TextArea
+          rows={3}
+          value={declineReason}
+          onChange={(e) => setDeclineReason(e.target.value)}
+          placeholder="Reason (optional)"
+          style={{ marginTop: 10 }}
+          maxLength={500}
+        />
+      </Modal>
     </div>
   );
 }

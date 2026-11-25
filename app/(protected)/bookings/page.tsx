@@ -39,6 +39,7 @@ import {
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
+import { isUnpaidPayPalBooking } from "@/lib/unpaid";
 import DispatchBoard from "@/components/dispatch-board";
 
 const BOOKING_STATUS = ["PENDING", "ASSIGNED", "CANCELED"];
@@ -111,6 +112,7 @@ export default function BookingsPage() {
   const [bookingsPage, setBookingsPage] = useState(1);
   const [bookingsPageSize, setBookingsPageSize] = useState(20);
   const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [unpaidOnly, setUnpaidOnly] = useState(false);
   const [cancelWindowHours, setCancelWindowHours] = useState(
     DEFAULT_CANCEL_WINDOW_HOURS,
   );
@@ -130,6 +132,7 @@ export default function BookingsPage() {
 
   const [tours, setTours] = useState<any[]>([]);
   const [coordinates, setCoordinates] = useState<any[]>([]);
+  const [hotels, setHotels] = useState<any[]>([]);
   const [unassignedBookings, setUnassignedBookings] = useState<any[]>([]);
 
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -513,7 +516,11 @@ export default function BookingsPage() {
     setBookingsLoading(true);
     api
       .get("/bookings", {
-        params: { page: bookingsPage, limit: bookingsPageSize },
+        params: {
+          page: bookingsPage,
+          limit: bookingsPageSize,
+          ...(unpaidOnly ? { unpaid: true } : {}),
+        },
       })
       .then((r) => {
         setBookings(r.data.items ?? []);
@@ -633,7 +640,7 @@ export default function BookingsPage() {
 
   useEffect(() => {
     if (hasPermission("booking.read")) loadBookings();
-  }, [bookingsPage, bookingsPageSize]);
+  }, [bookingsPage, bookingsPageSize, unpaidOnly]);
 
   useEffect(() => {
     if (hasPermission("assignment.read")) loadAssignments();
@@ -642,6 +649,7 @@ export default function BookingsPage() {
   useEffect(() => {
     api.get("/tours", { params: { limit: 100 } }).then((r) => setTours(r.data.items ?? []));
     api.get("/coordinates", { params: { limit: 1000 } }).then((r) => setCoordinates(r.data.items ?? []));
+    api.get("/hotels/public").then((r) => setHotels(r.data ?? [])).catch(() => {});
     loadCancellationWindow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1016,14 +1024,45 @@ export default function BookingsPage() {
       filters: BOOKING_CHANNELS.map((c) => ({ text: c, value: c })),
       onFilter: (v: any, r: any) => r.channel === v,
     },
-{
+    {
       title: "Payment",
       dataIndex: "payment",
       key: "payment",
       width: 90,
-      render: (v: string | null) => (v ? <Tag color="green" style={{ margin: 0, fontSize: 10 }}>{v}</Tag> : "—"),
-      filters: PAYMENT_STATUS.map((s) => ({ text: s, value: s })),
-      onFilter: (v: any, r: any) => r.payment === v,
+      render: (v: string | null, r: any) => {
+        if (isUnpaidPayPalBooking(r)) {
+          return (
+            <Tooltip title="PayPal payment not completed — this booking is auto-cancelled after the grace window (or before the dispatch cutoff).">
+              <Tag color="orange" style={{ margin: 0, fontSize: 10 }}>
+                UNPAID
+              </Tag>
+            </Tooltip>
+          );
+        }
+        if (v === "PENDING" && r.payLater) {
+          return (
+            <Tag color="gold" style={{ margin: 0, fontSize: 10 }}>
+              PAY LATER
+            </Tag>
+          );
+        }
+        return v ? (
+          <Tag
+            color={v === "PAID" ? "green" : v === "REFUNDED" ? "blue" : "gold"}
+            style={{ margin: 0, fontSize: 10 }}
+          >
+            {v}
+          </Tag>
+        ) : (
+          "—"
+        );
+      },
+      filters: [
+        ...PAYMENT_STATUS.map((s) => ({ text: s, value: s })),
+        { text: "UNPAID (PayPal)", value: "UNPAID" },
+      ],
+      onFilter: (v: any, r: any) =>
+        v === "UNPAID" ? isUnpaidPayPalBooking(r) : r.payment === v,
     },
     {
       title: "Note",
@@ -1488,6 +1527,21 @@ export default function BookingsPage() {
                 title="Bookings"
                 extra={
                   <Flex wrap gap={8} align="center">
+                    <Tooltip title="Show only website bookings whose PayPal payment has not completed. They are auto-cancelled after the grace window or before the dispatch cutoff.">
+                      <Flex align="center" gap={6}>
+                        <Switch
+                          size="small"
+                          checked={unpaidOnly}
+                          onChange={(value) => {
+                            setUnpaidOnly(value);
+                            setBookingsPage(1);
+                          }}
+                        />
+                        <Typography.Text style={{ fontSize: 12 }}>
+                          Unpaid only
+                        </Typography.Text>
+                      </Flex>
+                    </Tooltip>
                     {canUpdateBooking && (
                       <Tooltip title="How many hours before departure a manual cancellation is free. Inside the window only an administrator can override.">
                         <Button
@@ -1776,7 +1830,9 @@ extra={
                             }
                             options={groupCrew.drivers.map((driver: any) => ({
                               value: driver.id,
-                              label: driver.name,
+                              label: driver.provider?.name
+                                ? `${driver.name} · ${driver.provider.name}`
+                                : driver.name,
                             }))}
                           />
                         </Col>
@@ -1875,7 +1931,12 @@ extra={
             required
           >
             <AutoComplete
-              options={coordinates.map((c: any) => ({ value: c.hotelName }))}
+              options={Array.from(
+                new Set([
+                  ...coordinates.map((c: any) => c.hotelName),
+                  ...hotels.map((h: any) => h.name),
+                ]),
+              ).map((value) => ({ value }))}
               filterOption={(input, option) =>
                 String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())
               }
@@ -1890,8 +1951,13 @@ extra={
                     longitude: c.longitude,
                   });
                 } else {
+                  const h = hotels.find(
+                    (x: any) =>
+                      x.name.toLowerCase() ===
+                      String(value ?? "").trim().toLowerCase(),
+                  );
                   bookingForm.setFieldsValue({
-                    address: undefined,
+                    address: h?.address ?? undefined,
                     latitude: undefined,
                     longitude: undefined,
                   });
@@ -2281,7 +2347,9 @@ extra={
                           }
                           options={groupCrew.drivers.map((driver: any) => ({
                             value: driver.id,
-                            label: driver.name,
+                            label: driver.provider?.name
+                              ? `${driver.name} · ${driver.provider.name}`
+                              : driver.name,
                           }))}
                         />
                       </Col>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
   Alert,
   Button,
@@ -11,6 +12,7 @@ import {
   Flex,
   Input,
   Segmented,
+  Select,
   Space,
   Table,
   Tag,
@@ -30,6 +32,7 @@ import {
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import { api } from "@/lib/api";
+import { isUnpaidPayPalBooking } from "@/lib/unpaid";
 import type { BoardItem } from "./types";
 import { STATUS_COLORS, TYPE_META, sortByDate } from "./types";
 
@@ -41,6 +44,8 @@ type SealInfo = {
   autoMode: boolean;
   cutoffTime: string;
   cutoffAt: string;
+  openTime: string;
+  windowOpen: boolean;
   timezone: string;
 };
 
@@ -51,14 +56,32 @@ type Leave = {
   status: "PENDING" | "APPROVED" | "REJECTED";
 };
 
+type Hold = {
+  id: string;
+  startDate: string;
+  endDate: string;
+  note?: string | null;
+};
+
 type AvailabilityMember = {
   id: string;
   leaves?: Leave[];
+  holds?: Hold[];
 };
 
 type FilterKey = "all" | "issues" | "missing" | "provider" | "leave" | "waiting";
 
+const FILTER_OPTIONS: Array<{ label: string; value: FilterKey }> = [
+  { label: "All", value: "all" },
+  { label: "Needs attention", value: "issues" },
+  { label: "Missing crew", value: "missing" },
+  { label: "Provider", value: "provider" },
+  { label: "Leave", value: "leave" },
+  { label: "Waiting list", value: "waiting" },
+];
+
 const EMPTY_LEAVES = new Map<string, Leave[]>();
+const EMPTY_HOLDS = new Map<string, Hold[]>();
 
 const PROVIDER_STATUS_META: Record<string, { label: string; color: string }> = {
   NOT_REQUIRED: { label: "No request", color: "default" },
@@ -128,7 +151,23 @@ function findLeave(
   return match ?? null;
 }
 
-function evaluate(item: BoardItem, leaves: Map<string, Leave[]>): Readiness {
+function findHold(
+  holds: Map<string, Hold[]>,
+  item: BoardItem,
+  userId?: string | null,
+) {
+  if (!userId) return null;
+  const match = (holds.get(userId) ?? []).find((hold) =>
+    overlaps(hold.startDate, hold.endDate, item.startDate, item.endDate),
+  );
+  return match ?? null;
+}
+
+function evaluate(
+  item: BoardItem,
+  leaves: Map<string, Leave[]>,
+  holds: Map<string, Hold[]>,
+): Readiness {
   const red: string[] = [];
   const orange: string[] = [];
   const info: string[] = [];
@@ -154,6 +193,19 @@ function evaluate(item: BoardItem, leaves: Map<string, Leave[]>): Readiness {
 
   if (waiting) orange.push("Waiting list — place after 05:00");
 
+  const unpaidBookings = (item.bookings ?? []).filter((booking) =>
+    isUnpaidPayPalBooking(booking),
+  );
+  if (unpaidBookings.length > 0) {
+    const refs = unpaidBookings
+      .map((booking) => booking.bookingRef)
+      .filter(Boolean)
+      .join(", ");
+    red.push(
+      `Unpaid PayPal booking${unpaidBookings.length > 1 ? "s" : ""}${refs ? ` (${refs})` : ""} — cannot dispatch`,
+    );
+  }
+
   if (outsourced) {
     info.push("Outsourced partner");
   } else if (!waiting) {
@@ -167,6 +219,21 @@ function evaluate(item: BoardItem, leaves: Map<string, Leave[]>): Readiness {
           leaveIssue = true;
           const label = `Guide on ${leave.status === "APPROVED" ? "approved" : "pending"} leave`;
           (leave.status === "APPROVED" ? red : orange).push(label);
+        }
+        const hold = findHold(holds, item, item.guide.id);
+        if (hold) {
+          red.push(
+            `Guide on hold ${dayjs(hold.startDate).format("DD MMM")} → ${dayjs(
+              hold.endDate,
+            ).format("DD MMM")}${hold.note ? ` (${hold.note})` : ""}`,
+          );
+        }
+        const freelanceGuide =
+          (item.guide?.guideProfile?.type ?? "FREELANCE") !== "OFFICIAL";
+        if (item.guideDeclinedAt) {
+          red.push("Guide declined the assignment");
+        } else if (freelanceGuide && !item.guideConfirmedAt) {
+          orange.push("Freelance guide has not confirmed yet");
         }
       }
     }
@@ -273,11 +340,16 @@ export default function AssignmentListDrawer({
     key: string;
     map: Map<string, Leave[]>;
   }>({ key: "", map: EMPTY_LEAVES });
+  const [holdsState, setHoldsState] = useState<{
+    key: string;
+    map: Map<string, Hold[]>;
+  }>({ key: "", map: EMPTY_HOLDS });
   const [now, setNow] = useState(() => Date.now());
 
   const dayKey = date.format("YYYY-MM-DD");
   const seal = sealState?.key === dayKey ? sealState.info : null;
   const leaves = leavesState.key === dayKey ? leavesState.map : EMPTY_LEAVES;
+  const holds = holdsState.key === dayKey ? holdsState.map : EMPTY_HOLDS;
 
   const resetView = () => {
     setDate(dayjs().add(1, "day").startOf("day"));
@@ -311,18 +383,24 @@ export default function AssignmentListDrawer({
       })
       .then((r) => {
         if (!alive) return;
-        const map = new Map<string, Leave[]>();
+        const leaveMap = new Map<string, Leave[]>();
+        const holdMap = new Map<string, Hold[]>();
         const members = [
           ...(r.data?.guides ?? []),
           ...(r.data?.drivers ?? []),
         ] as AvailabilityMember[];
         for (const member of members) {
-          if (member?.id) map.set(member.id, member.leaves ?? []);
+          if (!member?.id) continue;
+          leaveMap.set(member.id, member.leaves ?? []);
+          if (member.holds?.length) holdMap.set(member.id, member.holds);
         }
-        setLeavesState({ key: dayKey, map });
+        setLeavesState({ key: dayKey, map: leaveMap });
+        setHoldsState({ key: dayKey, map: holdMap });
       })
       .catch(() => {
-        if (alive) setLeavesState({ key: dayKey, map: EMPTY_LEAVES });
+        if (!alive) return;
+        setLeavesState({ key: dayKey, map: EMPTY_LEAVES });
+        setHoldsState({ key: dayKey, map: EMPTY_HOLDS });
       });
 
     return () => {
@@ -348,9 +426,9 @@ export default function AssignmentListDrawer({
       dayItems.map((item) => ({
         key: item.id,
         item,
-        readiness: evaluate(item, leaves),
+        readiness: evaluate(item, leaves, holds),
       })),
-    [dayItems, leaves],
+    [dayItems, leaves, holds],
   );
 
   const counts = useMemo(
@@ -404,31 +482,35 @@ export default function AssignmentListDrawer({
 
   const sealTag = useMemo(() => {
     if (!seal) return null;
-    if (!seal.autoMode) {
+    if (seal.sealed) {
       return (
-        <Tooltip title="Auto-dispatch is off or the board is in Manual mode. There is no 23:00 seal, so the board stays editable.">
-          <Tag icon={<UnlockOutlined />} style={{ margin: 0 }}>
-            Manual mode — no seal
+        <Tooltip title={`Both Manual and Auto mode seal the departure date at ${seal.cutoffTime} HCM on the day before. Crew/vehicle changes and recall stay open until the 06:00 cutoff on the departure day.`}>
+          <Tag color="red" icon={<LockOutlined />} style={{ margin: 0 }}>
+            Sealed at {seal.cutoffTime}
           </Tag>
         </Tooltip>
       );
     }
-    if (seal.sealed) {
+    if (!seal.windowOpen && remainingMs > 0) {
       return (
-        <Tag color="red" icon={<LockOutlined />} style={{ margin: 0 }}>
-          Sealed at {seal.cutoffTime}
-        </Tag>
+        <Tooltip title={`Dispatch opens ${seal.openTime} HCM on the day before departure. No ADMIN override before the window opens.`}>
+          <Tag icon={<UnlockOutlined />} style={{ margin: 0 }}>
+            Opens {seal.openTime} · cutoff {seal.cutoffTime}
+          </Tag>
+        </Tooltip>
       );
     }
     if (remainingMs > 0) {
       return (
-        <Tag
-          color={seal.urgent ? "orange" : "blue"}
-          icon={<ClockCircleOutlined />}
-          style={{ margin: 0 }}
-        >
-          Dispatch cutoff in {formatRemaining(remainingMs)} · {seal.cutoffTime}
-        </Tag>
+        <Tooltip title={`Dispatch window is open until ${seal.cutoffTime} HCM in both Manual and Auto mode.`}>
+          <Tag
+            color={seal.urgent ? "orange" : "blue"}
+            icon={<ClockCircleOutlined />}
+            style={{ margin: 0 }}
+          >
+            Dispatch cutoff in {formatRemaining(remainingMs)} · {seal.cutoffTime}
+          </Tag>
+        </Tooltip>
       );
     }
     return <Tag color="orange" style={{ margin: 0 }}>Cutoff passed</Tag>;
@@ -519,6 +601,21 @@ export default function AssignmentListDrawer({
                 </Tag>
               </Tooltip>
             )}
+            {item.guideDeclinedAt ? (
+              <Tooltip title={item.guideDeclineReason || undefined}>
+                <Tag color="red" style={{ margin: 0, fontSize: 11 }}>
+                  Declined
+                </Tag>
+              </Tooltip>
+            ) : item.guideConfirmedAt ? (
+              <Tag color="green" style={{ margin: 0, fontSize: 11 }}>
+                Confirmed
+              </Tag>
+            ) : item.guideConfirmationRequestedAt ? (
+              <Tag color="orange" style={{ margin: 0, fontSize: 11 }}>
+                Awaiting
+              </Tag>
+            ) : null}
           </Space>
         );
       },
@@ -663,6 +760,7 @@ export default function AssignmentListDrawer({
 
   return (
     <Drawer
+      className="assignment-readiness-drawer"
       title={
         <Space wrap>
           <UnorderedListOutlined style={{ color: token.colorPrimary }} />
@@ -699,6 +797,7 @@ export default function AssignmentListDrawer({
       )}
 
       <Card
+        className="assignment-readiness-card"
         size="small"
         style={{ borderRadius: 14, marginBottom: 12 }}
         styles={{ body: { padding: "12px 16px" } }}
@@ -767,19 +866,26 @@ export default function AssignmentListDrawer({
         </Space>
       </Card>
 
-      <Flex wrap gap={8} justify="space-between" align="center" style={{ marginBottom: 10 }}>
+      <Flex
+        className="assignment-readiness-filters"
+        wrap
+        gap={8}
+        justify="space-between"
+        align="center"
+        style={{ marginBottom: 10 }}
+      >
         <Segmented
           size="small"
           value={filter}
           onChange={(value) => setFilter(value as FilterKey)}
-          options={[
-            { label: "All", value: "all" },
-            { label: "Needs attention", value: "issues" },
-            { label: "Missing crew", value: "missing" },
-            { label: "Provider", value: "provider" },
-            { label: "Leave", value: "leave" },
-            { label: "Waiting list", value: "waiting" },
-          ]}
+          options={FILTER_OPTIONS}
+        />
+        <Select
+          className="assignment-readiness-filter-select"
+          size="small"
+          value={filter}
+          onChange={(value) => setFilter(value as FilterKey)}
+          options={FILTER_OPTIONS}
         />
         <Input
           allowClear
@@ -791,7 +897,173 @@ export default function AssignmentListDrawer({
         />
       </Flex>
 
+      <div className="assignment-readiness-mobile">
+        {shown.length === 0 ? (
+          <Empty
+            description={
+              counts.total === 0
+                ? `No buses start on ${date.format("DD MMM YYYY")}`
+                : "No bus matches this filter"
+            }
+          />
+        ) : (
+          shown.map((row) => {
+            const item = row.item;
+            const meta = TYPE_META[item.tourType ?? "OTHER"] ?? TYPE_META.OTHER;
+            const outsourced = isOutsourced(item);
+            const driverOnly = item.executionMode === "COMPANY_DRIVER_ONLY";
+            const externalProvider =
+              !!item.providerId && item.provider?.isCompany === false;
+            const providerStatus = item.providerRequestStatus ?? "NOT_REQUIRED";
+            const providerMeta = PROVIDER_STATUS_META[providerStatus];
+            const issues = [
+              ...row.readiness.red.map((label) => (
+                <Tag key={`red-${label}`} color="red" style={{ margin: 0 }}>
+                  {label}
+                </Tag>
+              )),
+              ...row.readiness.orange.map((label) => (
+                <Tag key={`orange-${label}`} color="orange" style={{ margin: 0 }}>
+                  {label}
+                </Tag>
+              )),
+              ...row.readiness.info.map((label) => (
+                <Tag key={`info-${label}`} color="blue" style={{ margin: 0 }}>
+                  {label}
+                </Tag>
+              )),
+            ];
+            if (row.readiness.ready) {
+              issues.unshift(
+                <Tag key="ready" color="green" icon={<CheckCircleOutlined />} style={{ margin: 0 }}>
+                  Ready
+                </Tag>,
+              );
+            }
+            const field = (label: string, value: ReactNode) => (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "72px minmax(0, 1fr)",
+                  gap: 6,
+                  alignItems: "start",
+                  padding: "3px 0",
+                }}
+              >
+                <Text type="secondary" style={{ fontSize: 11, lineHeight: "18px" }}>
+                  {label}
+                </Text>
+                <div style={{ minWidth: 0 }}>{value}</div>
+              </div>
+            );
+            return (
+              <Card
+                className="assignment-readiness-card"
+                key={row.key}
+                size="small"
+                style={{
+                  borderRadius: 10,
+                  background:
+                    row.readiness.red.length > 0
+                      ? token.colorErrorBg
+                      : row.readiness.orange.length > 0
+                        ? token.colorWarningBg
+                        : undefined,
+                }}
+                title={
+                  <Space size={6} wrap>
+                    <Text strong style={{ fontSize: 13 }}>
+                      {item.code}
+                    </Text>
+                    <Tag color={meta.color} style={{ margin: 0, fontSize: 11 }}>
+                      {meta.label}
+                    </Tag>
+                    <Tag color={STATUS_COLORS[item.status] ?? "default"} style={{ margin: 0, fontSize: 11 }}>
+                      {item.status.replace(/_/g, " ")}
+                    </Tag>
+                  </Space>
+                }
+              >
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {item.tourName}
+                </Text>
+                {field(
+                  "Departure",
+                  <Text style={{ fontSize: 12 }}>{item.departureTime ?? "—"}</Text>,
+                )}
+                {field(
+                  "Pax",
+                  <Text style={{ fontSize: 12 }}>{item.totalPax ?? 0}</Text>,
+                )}
+                {field(
+                  "Guide",
+                  outsourced ? (
+                    <Text type="secondary" style={{ fontSize: 12 }}>Partner</Text>
+                  ) : driverOnly ? (
+                    <Text type="secondary" style={{ fontSize: 12 }}>Not required</Text>
+                  ) : !item.guide?.name ? (
+                    <Tag color="red" style={{ margin: 0 }}>Missing</Tag>
+                  ) : (
+                    <Space size={4} wrap>
+                      <Text style={{ fontSize: 12 }}>{item.guide.name}</Text>
+                      {item.guideDeclinedAt ? (
+                        <Tag color="red" style={{ margin: 0, fontSize: 11 }}>Declined</Tag>
+                      ) : item.guideConfirmedAt ? (
+                        <Tag color="green" style={{ margin: 0, fontSize: 11 }}>Confirmed</Tag>
+                      ) : item.guideConfirmationRequestedAt ? (
+                        <Tag color="orange" style={{ margin: 0, fontSize: 11 }}>Awaiting</Tag>
+                      ) : null}
+                    </Space>
+                  ),
+                )}
+                {field(
+                  "Driver",
+                  outsourced ? (
+                    <Text type="secondary" style={{ fontSize: 12 }}>Partner</Text>
+                  ) : !item.driver?.name ? (
+                    externalProvider &&
+                    (providerStatus === "REQUESTED" || providerStatus === "VIEWED") ? (
+                      <Tag color="orange" style={{ margin: 0 }}>Provider to assign</Tag>
+                    ) : (
+                      <Tag color="red" style={{ margin: 0 }}>Missing</Tag>
+                    )
+                  ) : (
+                    <Text style={{ fontSize: 12 }}>{item.driver.name}</Text>
+                  ),
+                )}
+                {field(
+                  "Vehicle",
+                  <Text style={{ fontSize: 12 }}>
+                    {item.vehicle?.plateNumber ?? "—"}
+                    {item.vehicle?.capacity ? ` · ${item.vehicle.capacity} seats` : ""}
+                  </Text>,
+                )}
+                {field(
+                  "Provider",
+                  <Space size={4} wrap>
+                    <Text style={{ fontSize: 12 }}>
+                      {item.provider?.name ?? "Company fleet"}
+                    </Text>
+                    {externalProvider && providerMeta && (
+                      <Tag color={providerMeta.color} style={{ margin: 0, fontSize: 11 }}>
+                        {providerMeta.label}
+                      </Tag>
+                    )}
+                  </Space>,
+                )}
+                <div style={{ marginTop: 6 }}>
+                  <Flex wrap gap={4}>
+                    {issues.length ? issues : <Text type="secondary">—</Text>}
+                  </Flex>
+                </div>
+              </Card>
+            );
+          })
+        )}
+      </div>
+
       <Table<ReadinessRow>
+        className="assignment-readiness-table"
         size="small"
         rowKey="key"
         columns={columns}

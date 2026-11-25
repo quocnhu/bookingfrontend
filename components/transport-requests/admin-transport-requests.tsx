@@ -552,7 +552,7 @@ export default function AdminTransportRequests() {
           style={{ marginTop: 12 }}
           type="info"
           showIcon
-          message="Requests are sent automatically to the assigned third-party provider with a suggested driver and vehicle. The provider accepts the suggestion or swaps in another driver. The standard deadline is 23:00 the day before; travel-agent changes are locked at the 06:00 recall cutoff on the departure day."
+          message="Requests are sent automatically to the assigned third-party provider with a suggested driver and vehicle. The provider accepts the suggestion or swaps in another driver. The standard deadline is 21:00 the day before; travel-agent changes are locked at the 06:00 recall cutoff on the departure day."
         />
       </Card>
 

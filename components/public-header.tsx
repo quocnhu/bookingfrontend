@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Flex, Typography } from "antd";
-import { CompassOutlined, LoginOutlined, DashboardOutlined } from "@ant-design/icons";
+import { CompassOutlined, LoginOutlined, DashboardOutlined, ScheduleOutlined } from "@ant-design/icons";
 import { useApp } from "@/lib/app-context";
 
 export default function PublicHeader() {
@@ -54,9 +54,28 @@ export default function PublicHeader() {
           All tours
         </Link>
         {authLoading ? null : user ? (
-          <Button type="primary" icon={<DashboardOutlined />} onClick={() => router.push("/dashboard")}>
-            Dashboard
-          </Button>
+          user.role === "CUSTOMER" ? (
+            <Button
+              type="primary"
+              icon={<ScheduleOutlined />}
+              onClick={() => router.push("/my-bookings")}
+            >
+              My bookings
+            </Button>
+          ) : (
+            <Flex gap={8} align="center">
+              <Button icon={<ScheduleOutlined />} onClick={() => router.push("/my-bookings")}>
+                My bookings
+              </Button>
+              <Button
+                type="primary"
+                icon={<DashboardOutlined />}
+                onClick={() => router.push("/dashboard")}
+              >
+                Dashboard
+              </Button>
+            </Flex>
+          )
         ) : (
           <Button icon={<LoginOutlined />} onClick={() => router.push("/login")}>
             Sign in

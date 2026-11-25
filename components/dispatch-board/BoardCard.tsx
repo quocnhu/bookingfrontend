@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -47,6 +47,7 @@ import type { BoardCrew, BoardItem, BookingItem, TourMeta } from "./types";
 import MarqueeText from "@/components/MarqueeText";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
+import { isUnpaidPayPalBooking } from "@/lib/unpaid";
 import { STATUS_COLORS, LEAVE_COLOR } from "./types";
 
 const { Text } = Typography;
@@ -146,6 +147,8 @@ const GUIDE_FAILBACK = "#52c41a";
 const DRIVER_FAILBACK = "#1677ff";
 const GUIDE_COMPANY_COLOR = "#0caf7a";
 const GUIDE_FREELANCE_COLOR = "#8a3ffc";
+const BUSY_COLOR = "#fa8c16";
+const HOLD_COLOR = "#eb2f96";
 const DRIVER_PALETTE = ["#1677ff", "#13c2c2", "#fa8c16", "#eb2f96", "#722ed1", "#a0d911", "#f5222d"];
 
 function boxStyle(color: string) {
@@ -159,7 +162,15 @@ function boxStyle(color: string) {
 function statusText(status?: string) {
   if (!status) return null;
   const color =
-    status === "On duty" ? "#fa8c16" : status === "On leave" ? LEAVE_COLOR : "#52c41a";
+    status === "On duty"
+      ? "#fa8c16"
+      : status === "On leave"
+        ? LEAVE_COLOR
+        : status.startsWith("Busy")
+          ? BUSY_COLOR
+          : status.startsWith("Held")
+            ? HOLD_COLOR
+            : "#52c41a";
   return (
     <Text style={{ fontSize: 11, fontWeight: 600, color, whiteSpace: "nowrap" }}>
       {status}
@@ -217,6 +228,10 @@ function PersonSelect({
     attr?: string;
     plain?: string;
     isBusy?: boolean;
+    busy?: boolean;
+    busyText?: string | null;
+    held?: boolean;
+    holdText?: string | null;
     onLeave?: boolean;
     disabled?: boolean;
   }>;
@@ -224,21 +239,39 @@ function PersonSelect({
   onChange: (id: string | null) => void;
 }) {
   const box = boxStyle(boxColor);
-  const visible = options.filter(
-    (o) => !o.isBusy || o.id === currentId || o.onLeave,
-  );
+  // Show every crew member (including other providers' drivers) so the admin
+  // can see who exists; date clashes and leave are disabled but visible.
+  const visible = options;
   const selectOptions = visible.map((o) => {
-    const status = o.onLeave ? "On leave" : o.id === currentId ? "On duty" : "Available";
+    const status = o.onLeave
+      ? "On leave"
+      : o.held
+        ? o.holdText ?? "Held"
+        : o.busy
+          ? o.busyText ?? "Busy"
+          : o.id === currentId
+            ? "On duty"
+            : "Available";
     return {
       value: o.id,
       label: optionLabel({
         name: o.name,
         attr: o.attr,
-        color: o.onLeave ? LEAVE_COLOR : o.color,
+        color: o.onLeave
+          ? LEAVE_COLOR
+          : o.held
+            ? HOLD_COLOR
+            : o.busy
+              ? BUSY_COLOR
+              : o.color,
         status,
       }),
       plain: [o.plain, o.attr, status].filter(Boolean).join(" "),
-      disabled: o.onLeave === true || o.disabled === true,
+      disabled:
+        o.onLeave === true ||
+        o.disabled === true ||
+        o.busy === true ||
+        o.held === true,
     };
   });
 
@@ -270,6 +303,7 @@ function PersonSelect({
           allowClear
           style={{ flex: 1, minWidth: 0 }}
           popupMatchSelectWidth={false}
+          dropdownClassName="board-crew-dropdown"
           dropdownStyle={{ minWidth: 380 }}
           placeholder={currentName ?? "Unassigned"}
           value={currentId ?? null}
@@ -497,7 +531,7 @@ function BookingInfoCell({
 }
 
 // Shared across cards: a row dragged from a WAITING_LIST bus may be dropped
-// onto a bus even after the 23:00 seal.
+// onto a bus even after the dispatch cutoff seal.
 let draggingFromWaitingList = false;
 
 export default function BoardCard({
@@ -508,6 +542,8 @@ export default function BoardCard({
   confirming,
   canConfirm,
   recallCutoff = "06:00",
+  dispatchOpenTime = "12:00",
+  dispatchCutoffTime = "21:00",
   readOnly,
   sealed,
   onConfirm,
@@ -536,6 +572,8 @@ export default function BoardCard({
   confirming: boolean;
   canConfirm: boolean;
   recallCutoff?: string;
+  dispatchOpenTime?: string;
+  dispatchCutoffTime?: string;
   readOnly?: boolean;
   sealed?: boolean;
   onConfirm: (assignment: BoardItem) => void;
@@ -594,10 +632,27 @@ export default function BoardCard({
       Boolean((b.mail ?? "").trim()),
   ).length;
   const isToday = dayjs(a.startDate).startOf("day").isSame(today);
-  const activeTodayMs = today.startOf("day").valueOf();
-  const startDayMs = dayjs(a.startDate).startOf("day").valueOf();
-  const endDayMs = dayjs(a.endDate ?? a.startDate).startOf("day").valueOf();
-  const isActiveToday = startDayMs <= activeTodayMs && endDayMs >= activeTodayMs;
+  // A bus can only be dispatched in the 12:00–cutoff window on the day BEFORE
+  // departure, in both Manual and Auto mode. There is no ADMIN exemption for
+  // the window, and a trip that starts today can no longer be dispatched.
+  const dispatchDay = dayjs(a.startDate).startOf("day").subtract(1, "day");
+  const [windowOpenHour, windowOpenMinute] = dispatchOpenTime
+    .split(":")
+    .map(Number);
+  const [windowCloseHour, windowCloseMinute] = dispatchCutoffTime
+    .split(":")
+    .map(Number);
+  const windowOpensAt = dispatchDay
+    .add(windowOpenHour || 0, "hour")
+    .add(windowOpenMinute || 0, "minute")
+    .valueOf();
+  const windowClosesAt = dispatchDay
+    .add(windowCloseHour || 0, "hour")
+    .add(windowCloseMinute || 0, "minute")
+    .valueOf();
+  const nowMs = Date.now();
+  const canDispatchWindow =
+    nowMs >= windowOpensAt && nowMs <= windowClosesAt;
   const [recallHours, recallMinutes] = recallCutoff.split(":").map(Number);
   const recallLocked =
     Date.now() >
@@ -740,30 +795,92 @@ export default function BoardCard({
     [a.startDate, a.endDate],
   );
 
+  /**
+   * Busy means an overlapping ACTIVE trip on this card's dates, not "has any
+   * future trip". A provider driver assigned to another date must still be
+   * selectable and visible here.
+   */
+  const busyTripForDate = useCallback(
+    (assignments?: BoardCrew["guides"][number]["assignments"]) => {
+      if (!assignments?.length) return null;
+      const s = dayjs(a.startDate).startOf("day").valueOf();
+      const e = dayjs(a.endDate).startOf("day").valueOf();
+      const hit = assignments.find((trip) => {
+        if (trip.id === a.id) return false;
+        if (trip.status === "CANCELED") return false;
+        const ts = dayjs(trip.startDate).startOf("day").valueOf();
+        const te = dayjs(trip.endDate).startOf("day").valueOf();
+        return ts <= e && te >= s;
+      });
+      return hit ?? null;
+    },
+    [a.startDate, a.endDate, a.id],
+  );
+
+  /** A manager hold overlapping this card's dates blocks assignment. */
+  const holdForDate = useCallback(
+    (holds?: BoardCrew["guides"][number]["holds"]) => {
+      if (!holds?.length) return null;
+      const s = dayjs(a.startDate).startOf("day").valueOf();
+      const e = dayjs(a.endDate).startOf("day").valueOf();
+      const hit = holds.find((hold) => {
+        const hs = dayjs(hold.startDate).startOf("day").valueOf();
+        const he = dayjs(hold.endDate).startOf("day").valueOf();
+        return hs <= e && he >= s;
+      });
+      return hit ?? null;
+    },
+    [a.startDate, a.endDate],
+  );
+
   const guidMembers = useMemo(
     () =>
       (crew?.guides ?? []).map((g) => {
         const leaveText = onLeaveForDate(g.leaves);
         const onLeave = !!leaveText;
+        const busyTrip = busyTripForDate(g.assignments);
+        const busy = !!busyTrip;
+        const busyText = busyTrip
+          ? `Busy ${busyTrip.code ?? "trip"}`
+          : null;
+        const hold = holdForDate(g.holds);
+        const held = !!hold;
+        const holdText = hold
+          ? `Held ${dayjs(hold.startDate).format("DD MMM")} → ${dayjs(hold.endDate).format("DD MMM")}`
+          : null;
         const base = g.type === "OFFICIAL" ? "Company" : "Freelance";
         const attr = onLeave ? `On leave ${leaveText}` : base;
         return {
           ...g,
           color: onLeave
             ? LEAVE_COLOR
-            : g.type === "OFFICIAL"
-              ? GUIDE_COMPANY_COLOR
-              : GUIDE_FREELANCE_COLOR,
+            : held
+              ? HOLD_COLOR
+              : busy
+                ? BUSY_COLOR
+                : g.type === "OFFICIAL"
+                  ? GUIDE_COMPANY_COLOR
+                  : GUIDE_FREELANCE_COLOR,
           attr,
-          plain: [g.name, attr, onLeave ? "On leave" : ""]
+          plain: [
+            g.name,
+            attr,
+            holdText,
+            busyText,
+            onLeave ? "On leave" : "",
+          ]
             .filter(Boolean)
             .join(" "),
-          isBusy: !!g.isBusy,
+          isBusy: busy || (g.assignments ? false : !!g.isBusy),
+          busy,
+          busyText,
+          held,
+          holdText,
           onLeave,
-          disabled: onLeave,
+          disabled: onLeave || busy || held,
         };
       }),
-    [crew, onLeaveForDate],
+    [crew, onLeaveForDate, busyTripForDate, holdForDate],
   );
 
   const driverMembers = useMemo(
@@ -771,26 +888,39 @@ export default function BoardCard({
       (crew?.drivers ?? []).map((d) => {
         const leaveText = onLeaveForDate(d.leaves);
         const onLeave = !!leaveText;
+        const busyTrip = busyTripForDate(d.assignments);
+        const busy = !!busyTrip;
+        const busyText = busyTrip
+          ? `Busy ${busyTrip.code ?? "trip"}`
+          : null;
         const color = onLeave
           ? LEAVE_COLOR
-          : d.provider?.name
-            ? (driverProviderColors[d.provider.name] ?? DRIVER_FAILBACK)
-            : DRIVER_FAILBACK;
+          : busy
+            ? BUSY_COLOR
+            : d.provider?.name
+              ? (driverProviderColors[d.provider.name] ?? DRIVER_FAILBACK)
+              : DRIVER_FAILBACK;
         return {
           ...d,
           color,
-          attr: onLeave
-            ? `On leave ${leaveText}`
-            : d.provider?.name ?? undefined,
-          plain: [d.name, onLeave ? "On leave" : d.provider?.name, leaveText]
+          attr: onLeave ? `On leave ${leaveText}` : d.provider?.name ?? undefined,
+          plain: [
+            d.name,
+            d.provider?.name,
+            leaveText,
+            busyText,
+            onLeave ? "On leave" : "",
+          ]
             .filter(Boolean)
             .join(" "),
-          isBusy: !!d.isBusy,
+          isBusy: busy || (d.assignments ? false : !!d.isBusy),
+          busy,
+          busyText,
           onLeave,
-          disabled: onLeave,
+          disabled: onLeave || busy,
         };
       }),
-    [crew, driverProviderColors, onLeaveForDate],
+    [crew, driverProviderColors, onLeaveForDate, busyTripForDate],
   );
 
   const currentGuide = guidMembers.find((g) => g.id === a.guide?.id);
@@ -940,6 +1070,7 @@ export default function BoardCard({
       )}
 
       <div
+        className="board-card-heading"
         style={{
           display: "flex",
           alignItems: "center",
@@ -952,11 +1083,16 @@ export default function BoardCard({
           flexWrap: "wrap",
         }}
       >
-        <Tag color={color} style={{ margin: 0, fontWeight: 600 }}>
+        <Tag
+          className="board-card-code"
+          color={color}
+          style={{ margin: 0, fontWeight: 600 }}
+        >
           {a.code}
         </Tag>
         {a.vehicle?.plateNumber && (
           <Tag
+            className="board-card-plate"
             icon={<CarOutlined />}
             color="default"
             style={{ margin: 0, fontWeight: 600 }}
@@ -965,6 +1101,7 @@ export default function BoardCard({
           </Tag>
         )}
         <span
+          className="board-card-tour"
           style={{
             flex: 1,
             minWidth: 0,
@@ -979,13 +1116,18 @@ export default function BoardCard({
           </Text>
         </span>
         {isToday && (
-          <Tag color="red" style={{ fontSize: 10, margin: 0 }}>
+          <Tag
+            className="board-card-today"
+            color="red"
+            style={{ fontSize: 10, margin: 0 }}
+          >
             Today
           </Tag>
         )}
         {onTemplate && (
           <Tooltip title="Print the tour manifest (stamp for year-end audit)">
             <Button
+              className="board-card-print"
               type="text"
               size="small"
               icon={<PrinterOutlined />}
@@ -995,12 +1137,14 @@ export default function BoardCard({
           </Tooltip>
         )}
         <Tag
+          className="board-card-pax"
           color={color === "blue" ? "geekblue" : "magenta"}
           style={{ margin: 0 }}
         >
           {a.totalPax}/{capacity} pax
         </Tag>
         <Tag
+          className="board-card-status"
           color={procColor ?? "default"}
           style={{ fontSize: 10, margin: 0 }}
         >
@@ -1143,37 +1287,70 @@ export default function BoardCard({
           }
         />
       ) : (
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            marginBottom: 10,
-            flexWrap: "wrap",
-          }}
-        >
-          {needsGuide && (
+        <>
+          <div
+            className="board-card-crew"
+            style={{
+              display: "flex",
+              gap: 8,
+              marginBottom: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            {needsGuide && (
+              <PersonSelect
+                label="Guide"
+                icon={<UserOutlined />}
+                boxColor={guideBoxColor}
+                currentId={a.guide?.id}
+                currentName={a.guide?.name}
+                options={guidMembers}
+                canEdit={["PENDING", "DRAFT_ASSIGNED", "TRANSFERRED"].includes(a.status) && !!onCrewChange}
+                onChange={(id) => onCrewChange?.(a, "guideId", id)}
+              />
+            )}
             <PersonSelect
-              label="Guide"
-              icon={<UserOutlined />}
-              boxColor={guideBoxColor}
-              currentId={a.guide?.id}
-              currentName={a.guide?.name}
-              options={guidMembers}
-              canEdit={a.status === "PENDING" && !!onCrewChange}
-              onChange={(id) => onCrewChange?.(a, "guideId", id)}
+              label="Driver"
+              icon={<CarOutlined />}
+              boxColor={driverBoxColor}
+              currentId={a.driver?.id}
+              currentName={a.driver?.name}
+              options={driverMembers}
+              canEdit={["PENDING", "DRAFT_ASSIGNED", "TRANSFERRED"].includes(a.status) && !!onCrewChange}
+              onChange={(id) => onCrewChange?.(a, "driverId", id)}
             />
-          )}
-          <PersonSelect
-            label="Driver"
-            icon={<CarOutlined />}
-            boxColor={driverBoxColor}
-            currentId={a.driver?.id}
-            currentName={a.driver?.name}
-            options={driverMembers}
-            canEdit={a.status === "PENDING" && !!onCrewChange}
-            onChange={(id) => onCrewChange?.(a, "driverId", id)}
-          />
-        </div>
+          </div>
+          {needsGuide &&
+            a.guide?.id &&
+            (a.guideDeclinedAt ||
+              a.guideConfirmedAt ||
+              a.guide.guideProfile?.type === "OFFICIAL" ||
+              a.guideConfirmationRequestedAt) && (
+              <div style={{ margin: "-4px 0 10px" }}>
+                {a.guideDeclinedAt ? (
+                  <Tooltip
+                    title={
+                      a.guideDeclineReason ||
+                      "The guide marked this trip as not available"
+                    }
+                  >
+                    <Tag color="red" style={{ margin: 0, fontSize: 10 }}>
+                      Guide not available
+                    </Tag>
+                  </Tooltip>
+                ) : a.guideConfirmedAt ||
+                  a.guide.guideProfile?.type === "OFFICIAL" ? (
+                  <Tag color="green" style={{ margin: 0, fontSize: 10 }}>
+                    Guide confirmed
+                  </Tag>
+                ) : (
+                  <Tag color="orange" style={{ margin: 0, fontSize: 10 }}>
+                    Guide awaiting confirmation
+                  </Tag>
+                )}
+              </div>
+            )}
+        </>
       )}
       <Text
         type="secondary"
@@ -1185,7 +1362,7 @@ export default function BoardCard({
         {activeBookings.length ? (
           <>
 <div
-                className="board-bk-grid"
+                className="board-bk-grid board-bk-header"
                 style={{
                   display: "grid",
                   // Must match the template of the rows below, otherwise the
@@ -1353,7 +1530,11 @@ export default function BoardCard({
                   />
                 )}
                 <div
-                  className="board-bk-grid"
+                  className={`board-bk-grid board-bk-row${
+                    interactive && !isWaitingList && activeBookings.length > 1
+                      ? " board-bk-row-sortable"
+                      : ""
+                  }`}
                   style={{
                     flex: 1,
                     display: "grid",
@@ -1396,6 +1577,7 @@ export default function BoardCard({
                       list. */}
                   {interactive && !isWaitingList && activeBookings.length > 1 && (
                     <div
+                      className="board-bk-field board-bk-arrow"
                       style={{
                         display: "flex",
                         flexDirection: "column",
@@ -1437,6 +1619,7 @@ export default function BoardCard({
                   )}
                   {interactive ? (
                     <Text
+                      className="board-bk-field board-bk-index"
                       strong
                       style={{
                         fontSize: 11,
@@ -1449,6 +1632,7 @@ export default function BoardCard({
                     </Text>
                   ) : (
                     <Text
+                      className="board-bk-field board-bk-index"
                       strong
                       style={{
                         fontSize: 11,
@@ -1461,7 +1645,13 @@ export default function BoardCard({
                     </Text>
                   )}
 
-                  <Flex vertical gap={2} style={{ minWidth: 0 }}>
+                  <Flex
+                    className="board-bk-field board-bk-customer"
+                    data-label="CUSTOMER"
+                    vertical
+                    gap={2}
+                    style={{ minWidth: 0 }}
+                  >
                     <Text
                       strong
                       ellipsis
@@ -1482,6 +1672,21 @@ export default function BoardCard({
                         }}
                       >
                         LATE
+                      </Tag>
+                    )}
+                    {isUnpaidPayPalBooking(b) && (
+                      <Tag
+                        color="volcano"
+                        title="PayPal payment not completed — this bus cannot be dispatched"
+                        style={{
+                          margin: 0,
+                          fontSize: 9,
+                          lineHeight: "16px",
+                          padding: "0 4px",
+                          width: "fit-content",
+                        }}
+                      >
+                        UNPAID
                       </Tag>
                     )}
                     {isMoved && (
@@ -1506,6 +1711,8 @@ export default function BoardCard({
                   </Flex>
 
                   <Text
+                    className="board-bk-field board-bk-ref"
+                    data-label="REF"
                     type="secondary"
                     style={{
                       fontSize: 10,
@@ -1521,6 +1728,8 @@ export default function BoardCard({
                   </Text>
 
                   <span
+                    className="board-bk-field board-bk-pickup"
+                    data-label="PICKUP"
                     style={{
                       display: "inline-flex",
                       flexDirection: "column",
@@ -1622,6 +1831,8 @@ export default function BoardCard({
                   </span>
 
                   <Text
+                    className="board-bk-field board-bk-distance"
+                    data-label="DISTANCE"
                     type="secondary"
                     style={{
                       fontSize: 10,
@@ -1635,6 +1846,8 @@ export default function BoardCard({
                   </Text>
 
                   <Tag
+                    className="board-bk-field board-bk-pax"
+                    data-label="PAX"
                     color="orange"
                     style={{
                       margin: 0,
@@ -1651,6 +1864,8 @@ export default function BoardCard({
                   </Tag>
 
                   <span
+                    className="board-bk-field board-bk-info"
+                    data-label="INFO"
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
@@ -1681,8 +1896,8 @@ export default function BoardCard({
                 ? needsGuide
                   ? "Assign a tour guide and a driver first — a bus cannot depart without crew."
                   : "Assign a driver first — driver-only trips do not need a guide."
-                : !isActiveToday
-                  ? "Only tours active today can be dispatched — future departures wait until their tour day."
+                : !canDispatchWindow
+                  ? `Dispatch is open ${dispatchOpenTime}–${dispatchCutoffTime} HCM on the day before departure only (no ADMIN override).`
                   : undefined
             }
           >
@@ -1693,7 +1908,9 @@ export default function BoardCard({
               icon={<SendOutlined />}
               loading={dispatching}
               disabled={
-                !isActiveToday || (needsGuide && !a.guide?.id) || !a.driver?.id
+                !canDispatchWindow ||
+                (needsGuide && !a.guide?.id) ||
+                !a.driver?.id
               }
               onClick={() => onDispatch(a)}
             >

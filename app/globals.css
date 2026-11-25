@@ -102,6 +102,31 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 
 /* ===== Responsive (mobile / tablet) ===== */
 
+/* Shared company / role portals */
+.app-shell,
+.role-shell {
+  min-width: 0;
+}
+.app-shell .ant-layout-header,
+.role-shell .ant-layout-header {
+  padding-inline: 16px;
+}
+.app-shell .ant-layout-content,
+.role-shell .ant-layout-content {
+  min-width: 0;
+}
+.app-shell-header-row,
+.role-shell-header-row {
+  flex-wrap: nowrap;
+}
+.app-shell-header-actions,
+.role-shell-header-actions {
+  flex-shrink: 0;
+}
+.ant-notification-notice {
+  max-width: calc(100vw - 24px);
+}
+
 /* Let every antd table scroll horizontally instead of blowing up the layout */
 .ant-table-content {
   overflow-x: auto;
@@ -121,9 +146,386 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 .board-bk-grid {
   min-width: 420px;
 }
+.assignment-readiness-mobile,
+.dispatch-board-mode-label,
+.provider-requests-mobile-list {
+  display: none;
+}
 @media (min-width: 992px) {
   .board-bk-grid {
     min-width: 0;
+  }
+}
+
+@media (max-width: 767px) {
+  /* Shells: compact header, no clipped welcome text or crowded actions. */
+  .app-shell .ant-layout-header,
+  .role-shell .ant-layout-header {
+    height: auto;
+    min-height: 56px;
+    padding-block: 6px;
+  }
+  .app-shell-header-row,
+  .role-shell-header-row {
+    width: 100%;
+  }
+  .app-shell-header-actions .ant-btn,
+  .role-shell-header-actions .ant-btn {
+    padding-inline: 6px;
+  }
+  .app-shell .ant-layout-content,
+  .role-shell .ant-layout-content {
+    padding: 10px !important;
+  }
+  .app-shell .ant-card-head-wrapper,
+  .role-shell .ant-card-head-wrapper,
+  .portal-page .ant-card-head-wrapper {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .app-shell .ant-card-extra,
+  .role-shell .ant-card-extra,
+  .portal-page .ant-card-extra {
+    margin-inline-start: 0 !important;
+  }
+  .app-shell .ant-card-head-title,
+  .role-shell .ant-card-head-title,
+  .portal-page .ant-card-head-title {
+    white-space: normal !important;
+    line-height: 1.35;
+  }
+  .app-shell .ant-card-body,
+  .role-shell .ant-card-body,
+  .portal-page .ant-card-body {
+    padding: 12px;
+  }
+  .app-shell .ant-table-cell,
+  .role-shell .ant-table-cell,
+  .portal-page .ant-table-cell {
+    white-space: normal;
+  }
+  .app-shell .ant-picker,
+  .role-shell .ant-picker,
+  .portal-page .ant-picker {
+    max-width: 100%;
+  }
+
+  /* Shared page building blocks used by provider / hotel / role pages. */
+  .portal-page {
+    min-width: 0;
+  }
+  .portal-page .portal-page-header,
+  .portal-page .portal-filters {
+    width: 100%;
+  }
+  .portal-page .portal-page-header > .ant-flex,
+  .portal-page .portal-filters {
+    flex-wrap: wrap;
+  }
+  .portal-page .portal-filters > * {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    max-width: 100%;
+  }
+  .portal-page .portal-filters .ant-picker {
+    width: 100% !important;
+  }
+  .portal-page .portal-stats > .ant-col {
+    min-width: 0;
+  }
+  .portal-page .portal-card .ant-card-extra {
+    width: 100%;
+    margin-top: 6px;
+  }
+  .portal-page .portal-card .ant-card-extra > * {
+    width: 100%;
+  }
+  .portal-page .portal-card .ant-card-extra .ant-btn {
+    flex: 1 1 0;
+  }
+  .portal-page .ant-segmented {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .portal-page .portal-drawer .ant-drawer-body {
+    padding: 12px;
+  }
+  .portal-page .portal-drawer .ant-drawer-extra {
+    flex-wrap: wrap;
+  }
+  .trip-money-add {
+    align-items: stretch !important;
+  }
+  .trip-money-add > .ant-flex {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+  }
+  .trip-money-add .ant-select,
+  .trip-money-add .ant-input-number,
+  .trip-money-add .ant-input {
+    width: 100% !important;
+  }
+  .trip-money-add > .ant-btn {
+    width: 100%;
+  }
+  .trip-money-sheet .ant-table-content {
+    max-width: 100%;
+  }
+  .provider-requests-table {
+    display: none !important;
+  }
+  .provider-requests-mobile-list {
+    display: flex !important;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .provider-request-mobile-card .ant-card-body {
+    padding: 10px 12px;
+  }
+  .provider-request-mobile-card .ant-tag {
+    margin: 0;
+  }
+
+  .dispatch-board-drawer .ant-drawer-header {
+    padding: 10px 12px;
+  }
+  .dispatch-board-drawer .ant-drawer-title {
+    font-size: 13px;
+    line-height: 18px;
+  }
+  .dispatch-board-drawer .ant-drawer-body {
+    padding: 8px !important;
+  }
+  .dispatch-board-filter-card .ant-card-body {
+    padding: 10px 10px !important;
+  }
+  .dispatch-board-filter-card .ant-picker {
+    width: 100%;
+    max-width: 220px;
+  }
+  .dispatch-board-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px !important;
+    width: 100%;
+  }
+  .dispatch-board-actions .ant-btn {
+    width: 100%;
+  }
+  .dispatch-board-actions .ant-tag {
+    justify-self: stretch;
+  }
+  .dispatch-board-actions > .dispatch-board-mode {
+    justify-self: stretch;
+    width: 100%;
+  }
+  .dispatch-board-actions .ant-switch-inner {
+    display: none !important;
+  }
+  .dispatch-board-mode-label {
+    display: inline !important;
+    font-size: 12px;
+  }
+  .dispatch-board-drawer .ant-card-head-title {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+  .dispatch-board-schedule {
+    width: 100%;
+    align-items: flex-start !important;
+  }
+  .dispatch-board-seal-alert .ant-alert-action {
+    width: 100%;
+    margin-top: 8px;
+  }
+  .dispatch-board-seal-alert .ant-alert-action .ant-btn {
+    width: 100%;
+  }
+  .board-card-crew > div {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+  }
+  .board-card-crew .ant-select {
+    width: 100%;
+  }
+  .board-card-crew .ant-select-selection-item,
+  .board-card-crew .ant-select-selection-item span,
+  .board-card-crew .ant-typography {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    animation: none !important;
+    transform: none !important;
+  }
+  .board-crew-dropdown {
+    min-width: min(380px, calc(100vw - 24px)) !important;
+    max-width: calc(100vw - 24px);
+  }
+  .assignment-readiness-drawer .ant-drawer-body,
+  .waiting-list-drawer .ant-drawer-body {
+    padding: 8px !important;
+  }
+  .assignment-readiness-table {
+    display: none;
+  }
+  .assignment-readiness-mobile {
+    display: flex !important;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .assignment-readiness-filters {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .assignment-readiness-filters .ant-segmented {
+    display: none;
+  }
+  .assignment-readiness-filter-select,
+  .assignment-readiness-filters .ant-input {
+    width: 100% !important;
+  }
+  .assignment-readiness-card .ant-card-body {
+    padding: 10px !important;
+  }
+  .waiting-list-drawer .ant-space-compact {
+    flex-wrap: wrap;
+  }
+  .waiting-list-drawer .ant-space-compact > * {
+    flex: 1 1 100%;
+  }
+}
+
+@media (max-width: 575px) {
+  .board-booking-table {
+    overflow: visible;
+  }
+  .board-booking-table .ant-list {
+    min-width: 0;
+  }
+  .board-bk-header {
+    display: none !important;
+  }
+
+  /* Card heading: two tidy rows instead of many wrapped tags. */
+  .board-card-heading {
+    gap: 6px !important;
+    padding: 6px 8px !important;
+  }
+  .board-card-code,
+  .board-card-plate,
+  .board-card-pax,
+  .board-card-status,
+  .board-card-print {
+    order: 1;
+  }
+  .board-card-today,
+  .board-card-tour {
+    order: 2;
+  }
+  .board-card-tour {
+    flex: 1 1 100% !important;
+    padding: 2px 8px !important;
+  }
+  .board-card-tour .ant-typography {
+    font-size: 12px !important;
+    line-height: 1.3;
+  }
+  .board-card-heading .ant-tag {
+    font-size: 10px;
+  }
+
+  /* Booking rows: fixed row order, compact grid, no giant vertical stack. */
+  .board-bk-row {
+    display: grid !important;
+    grid-template-columns: 20px minmax(0, 1fr) auto auto !important;
+    grid-template-areas:
+      "idx cust cust pax"
+      ". pickup pickup info"
+      ". ref dist dist";
+    gap: 4px 6px !important;
+    padding: 6px 4px !important;
+    align-items: center !important;
+    min-width: 0 !important;
+  }
+  .board-bk-arrow,
+  .board-bk-index {
+    grid-area: idx;
+  }
+  .board-bk-row-sortable .board-bk-index {
+    display: none !important;
+  }
+  .board-bk-customer {
+    grid-area: cust;
+    flex: 1 1 auto !important;
+    align-items: flex-start;
+  }
+  .board-bk-pickup {
+    grid-area: pickup;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 2px 8px !important;
+    align-items: center !important;
+  }
+  .board-bk-info {
+    grid-area: info;
+    justify-self: end !important;
+    width: auto !important;
+  }
+  .board-bk-ref {
+    grid-area: ref;
+    justify-self: start !important;
+    text-align: left !important;
+    width: auto !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  .board-bk-distance {
+    grid-area: dist;
+    justify-self: end !important;
+    width: auto !important;
+  }
+  .board-bk-pax {
+    grid-area: pax;
+    justify-self: end !important;
+    min-width: 0 !important;
+    width: auto !important;
+  }
+  .board-bk-field {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+  .board-bk-field::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    color: #8c8c8c;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+  }
+  .board-bk-arrow::before,
+  .board-bk-index::before,
+  .board-bk-customer::before,
+  .board-bk-pickup::before,
+  .board-bk-info::before {
+    display: none;
+  }
+  .board-bk-customer .ant-typography,
+  .board-bk-pickup span,
+  .board-bk-pickup .ant-typography {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    animation: none !important;
+    transform: none !important;
+    word-break: break-word;
+  }
+  .board-bk-pickup > a,
+  .board-bk-pickup > span {
+    max-width: 100%;
   }
 }
 
@@ -159,6 +561,21 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   }
   .ant-form-item .ant-form-item-label > label {
     font-size: 13px;
+  }
+  .app-shell-header-actions .ant-btn-icon-only,
+  .role-shell-header-actions .ant-btn-icon-only {
+    width: 30px;
+    height: 30px;
+    padding-inline: 0;
+  }
+  .portal-page .ant-descriptions-item-label {
+    width: 96px;
+  }
+  .portal-page .ant-statistic-title {
+    font-size: 12px;
+  }
+  .portal-page .ant-statistic-content {
+    font-size: 18px !important;
   }
 }
 

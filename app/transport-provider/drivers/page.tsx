@@ -132,8 +132,8 @@ export default function ProviderDriversPage() {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="Roster freezes at 22:00 daily"
-        description="Finish assigning drivers before 23:00 — the 23:00 auto crew + next-day dispatch runs on the settled roster."
+        message="Roster freezes at 21:00 daily"
+        description="Finish assigning drivers before 21:00 — tomorrow's buses are dispatched and sealed at 21:00 HCM."
       />
 
       <Card size="small">

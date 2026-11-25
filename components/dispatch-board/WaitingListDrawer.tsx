@@ -77,6 +77,7 @@ export default function WaitingListDrawer({
 
   return (
     <Drawer
+      className="waiting-list-drawer"
       title={
         <Space>
           <ClockCircleOutlined style={{ color: "#fa8c16" }} />

@@ -3,8 +3,8 @@ import dayjs, { Dayjs } from "dayjs";
 /** Normal leave must be requested this many calendar days before the first day off. */
 export const LEAVE_NOTICE_DAYS = 2;
 
-/** Automatic dispatch runs at 04:00, so same-day emergencies must be in before then. */
-export const EMERGENCY_CUTOFF_HOUR = 4;
+/** Dispatch is sealed at 21:00 HCM on the day before departure in both modes. */
+export const EMERGENCY_CUTOFF_HOUR = 21;
 
 /** Inclusive calendar days covered by a leave range. */
 export function leaveDayCount(start: string | Date, end: string | Date) {
@@ -21,8 +21,12 @@ export function earliestNormalLeaveDate(now: Dayjs = dayjs()) {
   return now.startOf("day").add(LEAVE_NOTICE_DAYS, "day");
 }
 
-export function isEmergencyCutoffPassed(now: Dayjs = dayjs()) {
-  return now.hour() >= EMERGENCY_CUTOFF_HOUR;
+export function emergencyCutoffFor(date: Dayjs, now: Dayjs = dayjs()) {
+  return dayjs(date)
+    .startOf("day")
+    .subtract(1, "day")
+    .add(EMERGENCY_CUTOFF_HOUR, "hour")
+    .valueOf();
 }
 
 /**
@@ -39,13 +43,13 @@ export function isLeaveDateDisabled(
   if (day.isBefore(today)) return true;
 
   if (isEmergency) {
-    return day.isSame(today, "day") && isEmergencyCutoffPassed(now);
+    return now.valueOf() >= emergencyCutoffFor(day, now);
   }
   return day.isBefore(earliestNormalLeaveDate(now));
 }
 
 export function leaveTimingHint(isEmergency: boolean) {
   return isEmergency
-    ? "Emergency requests are for last-minute leave. Same-day requests must be submitted before 04:00, before automatic dispatch runs."
+    ? "Emergency requests are for last-minute leave. Submit before 21:00 HCM on the day before the first day off, when dispatch is sealed."
     : `Normal requests must start at least ${LEAVE_NOTICE_DAYS} days from today. Tick Emergency only for last-minute leave.`;
 }

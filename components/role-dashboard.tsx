@@ -242,8 +242,15 @@ export default function RoleDashboard({
   }
 
   return (
-    <div>
-      <Flex justify="space-between" align="center" wrap gap={12} style={{ marginBottom: 16 }}>
+    <div className="portal-page role-dashboard">
+      <Flex
+        justify="space-between"
+        align="center"
+        wrap
+        gap={12}
+        className="portal-page-header"
+        style={{ marginBottom: 16 }}
+      >
         <Flex vertical gap={2}>
           <Typography.Title level={4} style={{ margin: 0 }}>
             {title}
@@ -252,7 +259,13 @@ export default function RoleDashboard({
             {subtitle}
           </Typography.Text>
         </Flex>
-        <Flex align="center" gap={8} wrap style={{ width: isMobile ? "100%" : undefined }}>
+        <Flex
+          align="center"
+          gap={8}
+          wrap
+          className="portal-filters"
+          style={{ width: isMobile ? "100%" : undefined }}
+        >
           <Button
             icon={<BarChartOutlined />}
             onClick={() => setStatsOpen(true)}
@@ -508,6 +521,7 @@ export default function RoleDashboard({
               <Empty description="No passenger bookings on upcoming trips" />
             ) : (
               <Table
+                className="portal-table"
                 rowKey="id"
                 size={isMobile ? "small" : "middle"}
                 columns={bookingColumns}

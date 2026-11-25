@@ -26,6 +26,8 @@ function renderItems(props: {
   recallingId: string | null;
   canConfirm: boolean;
   recallCutoff?: string;
+  dispatchOpenTime?: string;
+  dispatchCutoffTime?: string;
   readOnly?: boolean;
   sealed?: boolean;
   onConfirm: (assignment: BoardItem) => void;
@@ -68,6 +70,8 @@ function renderItems(props: {
       recalling={props.recallingId === a.id}
       canConfirm={props.canConfirm}
       recallCutoff={props.recallCutoff}
+      dispatchOpenTime={props.dispatchOpenTime}
+      dispatchCutoffTime={props.dispatchCutoffTime}
       readOnly={props.readOnly}
       sealed={props.sealed}
       onConfirm={props.onConfirm}
@@ -154,6 +158,8 @@ export default function BoardColumn({
   recallingId,
   canConfirm,
   recallCutoff,
+  dispatchOpenTime,
+  dispatchCutoffTime,
   readOnly,
   sealed,
   groupByDeparture,
@@ -182,6 +188,8 @@ export default function BoardColumn({
   recallingId: string | null;
   canConfirm: boolean;
   recallCutoff?: string;
+  dispatchOpenTime?: string;
+  dispatchCutoffTime?: string;
   readOnly?: boolean;
   sealed?: boolean;
   groupByDeparture?: boolean;
@@ -258,6 +266,8 @@ export default function BoardColumn({
           recallingId,
           canConfirm,
           recallCutoff,
+          dispatchOpenTime,
+          dispatchCutoffTime,
           readOnly,
           sealed,
           onConfirm,

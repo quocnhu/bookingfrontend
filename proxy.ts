@@ -18,6 +18,7 @@ const PROTECTED_PREFIXES = [
   "/notifications",
   "/accounting",
   "/service",
+  "/my-bookings",
   "/driver",
   "/tour-guide",
   "/transport-provider",

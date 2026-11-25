@@ -10,6 +10,7 @@ import {
   Drawer,
   Empty,
   Flex,
+  Modal,
   Row,
   Space,
   Statistic,
@@ -29,6 +30,7 @@ import {
   LoadingOutlined,
   MailOutlined,
   SendOutlined,
+  ThunderboltOutlined,
   ScheduleOutlined,
   SyncOutlined,
   TeamOutlined,
@@ -41,6 +43,7 @@ import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
 dayjs.extend(isSameOrBefore);
 dayjs.extend(isSameOrAfter);
 import { api, getErrorMessage } from "@/lib/api";
+import { useApp } from "@/lib/app-context";
 import type { BoardCrew, BoardItem } from "./types";
 import { TYPE_META, sortByDate } from "./types";
 import AssignmentListDrawer from "./AssignmentListDrawer";
@@ -130,6 +133,8 @@ export default function DispatchBoard({
 }) {
   const { token } = antdTheme.useToken();
   const { on } = useSocket();
+  const { user } = useApp();
+  const isAdmin = user?.role === "ADMIN";
 
   const [boardData, setBoardData] = useState<BoardItem[]>([]);
   const [boardLoading, setBoardLoading] = useState(true);
@@ -137,8 +142,12 @@ export default function DispatchBoard({
   const [sealInfo, setSealInfo] = useState<{
     sealed: boolean;
     urgent: boolean;
+    autoMode: boolean;
     cutoffTime: string;
     cutoffAt: string;
+    openTime: string;
+    windowOpen: boolean;
+    windowOpensAt: string;
   } | null>(null);
   const [waitingOpen, setWaitingOpen] = useState(false);
   const [assigningWaitingKey, setAssigningWaitingKey] = useState<string | null>(
@@ -148,6 +157,7 @@ export default function DispatchBoard({
   const [crew, setCrew] = useState<BoardCrew>({ guides: [], drivers: [] });
   const [confirmingId] = useState<string | null>(null);
   const [dispatchingId, setDispatchingId] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
   const [finishing, setFinishing] = useState<BoardItem | null>(null);
   const [verifyTarget, setVerifyTarget] = useState<BoardItem | null>(null);
   const [filterDate, setFilterDate] = useState<Dayjs>(() => dayjs().add(7, "hour").startOf("day"));
@@ -161,6 +171,8 @@ export default function DispatchBoard({
   const [autoDispatch, setAutoDispatch] =
     useState<AutoDispatchSettings | null>(null);
   const [autoDispatchSaving, setAutoDispatchSaving] = useState(false);
+  const [dispatchOpen, setDispatchOpen] = useState("12:00");
+  const [dispatchOpenSaving, setDispatchOpenSaving] = useState(false);
   const [recallCutoff, setRecallCutoff] = useState("06:00");
   const [recallCutoffSaving, setRecallCutoffSaving] = useState(false);
   const [pickupReminder, setPickupReminder] =
@@ -229,6 +241,10 @@ export default function DispatchBoard({
         .then((r) => setAutoDispatch(r.data ?? null))
         .catch(() => setAutoDispatch(null));
       api
+        .get("/assignments/board/dispatch-window")
+        .then((r) => setDispatchOpen(r.data?.time ?? "12:00"))
+        .catch(() => setDispatchOpen("12:00"));
+      api
         .get("/assignments/board/recall-cutoff")
         .then((r) => setRecallCutoff(r.data?.time ?? "06:00"))
         .catch(() => setRecallCutoff("06:00"));
@@ -269,6 +285,24 @@ export default function DispatchBoard({
       message.error(getErrorMessage(e, "Failed to update auto-dispatch"));
     } finally {
       setAutoDispatchSaving(false);
+    }
+  };
+
+  const saveDispatchOpen = async (time: Dayjs) => {
+    if (!canUpdateAssignment) return;
+    const value = time.format("HH:mm");
+    setDispatchOpenSaving(true);
+    try {
+      const r = await api.put("/assignments/board/dispatch-window", {
+        time: value,
+      });
+      setDispatchOpen(r.data?.time ?? value);
+      message.success("Dispatch window opening time updated");
+      void refreshSeal();
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to update dispatch opening time"));
+    } finally {
+      setDispatchOpenSaving(false);
     }
   };
 
@@ -414,11 +448,15 @@ export default function DispatchBoard({
     }
   };
 
-  const dispatchAssignment = async (assignment: BoardItem) => {
+  const dispatchAssignment = async (
+    assignment: BoardItem,
+    override = false,
+  ) => {
     setDispatchingId(assignment.id);
     try {
       await api.put(`/assignments/${assignment.id}/status`, {
         status: "DISPATCHED",
+        ...(override ? { override: true } : {}),
       });
       message.success(
         `Bus "${assignment.code}" dispatched — bookings set to ASSIGNED`,
@@ -426,7 +464,23 @@ export default function DispatchBoard({
       loadBoard(true);
       onChanged?.();
     } catch (e) {
-      message.error(getErrorMessage(e, "Failed to dispatch bus"));
+      const text = getErrorMessage(e, "Failed to dispatch bus");
+      if (
+        !override &&
+        isAdmin &&
+        /not confirmed|provider has not assigned/i.test(text)
+      ) {
+        Modal.confirm({
+          title: "Dispatch anyway?",
+          content: `${text} As an administrator you can override this; a driver${
+            assignment.providerId ? " and vehicle" : ""
+          } is still required.`,
+          okText: "Override and dispatch",
+          onOk: () => dispatchAssignment(assignment, true),
+        });
+        return;
+      }
+      message.error(text);
     } finally {
       setDispatchingId(null);
     }
@@ -460,18 +514,27 @@ export default function DispatchBoard({
 
   const [dispatchingAll, setDispatchingAll] = useState(false);
 
-  const dispatchAllBuses = async () => {
+  const dispatchAllBuses = async (override = false) => {
     setDispatchingAll(true);
     try {
       const r = await api.post(`/assignments/board/dispatch-all`, {
         date: filterDate.format("YYYY-MM-DD"),
+        ...(override ? { override: true } : {}),
       });
       const dispatched = r.data?.dispatched ?? 0;
       const skipped = r.data?.skipped ?? 0;
       const skippedOnLeave = r.data?.skippedOnLeave ?? 0;
+      const skippedUnpaid = r.data?.skippedUnpaid ?? 0;
+      const skippedUnconfirmed = r.data?.skippedUnconfirmed ?? 0;
+      const skippedProvider = r.data?.skippedProvider ?? 0;
       const skipNotes = [
         skipped > 0 ? `${skipped} no guide/driver` : "",
-        skippedOnLeave > 0 ? `${skippedOnLeave} crew on leave` : "",
+        skippedOnLeave > 0 ? `${skippedOnLeave} crew unavailable (leave/hold/overlap)` : "",
+        skippedUnpaid > 0 ? `${skippedUnpaid} unpaid PayPal` : "",
+        skippedUnconfirmed > 0
+          ? `${skippedUnconfirmed} freelance guide unconfirmed`
+          : "",
+        skippedProvider > 0 ? `${skippedProvider} provider incomplete` : "",
       ]
         .filter(Boolean)
         .join(", ");
@@ -487,10 +550,77 @@ export default function DispatchBoard({
       } else {
         message.info("No buses available to dispatch");
       }
+      if (
+        !override &&
+        isAdmin &&
+        (skippedUnconfirmed > 0 || skippedProvider > 0)
+      ) {
+        Modal.confirm({
+          title: "Dispatch the remaining buses?",
+          content: `${skippedUnconfirmed} freelance guide(s) unconfirmed and ${skippedProvider} provider/vehicle issue(s). An admin override dispatches buses that still have a driver and vehicle; buses missing crew are skipped.`,
+          okText: "Override and dispatch",
+          onOk: () => dispatchAllBuses(true),
+        });
+      }
     } catch (e) {
       message.error(getErrorMessage(e, "Failed to dispatch all buses"));
     } finally {
       setDispatchingAll(false);
+    }
+  };
+
+  const prepareTomorrow = async () => {
+    if (!canUpdateAssignment) return;
+    setPreparing(true);
+    try {
+      const r = await api.post("/transport-requests/prepare", {});
+      const d = r.data ?? {};
+      const summary = [
+        `${d.buses ?? 0} bus(es)`,
+        `${d.crewAssigned ?? 0} crew assigned`,
+        `${d.guideRequestsSent ?? 0} guide request(s)`,
+        `${d.companyGuidesAutoConfirmed ?? 0} company guide(s) auto-confirmed`,
+        `${d.providersReserved ?? 0} provider(s) reserved`,
+        `${d.providerRequestsSent ?? 0} provider request(s)`,
+      ].join(" · ");
+      const missing = Array.isArray(d.missing) ? d.missing : [];
+      if (missing.length > 0) {
+        Modal.info({
+          title: `Prepared ${d.date ?? "tomorrow"} — review needed`,
+          width: 620,
+          content: (
+            <div>
+              <div style={{ marginBottom: 8 }}>{summary}</div>
+              <div
+                style={{
+                  maxHeight: 320,
+                  overflowY: "auto",
+                  paddingRight: 4,
+                }}
+              >
+                {missing.map((item: any) => (
+                  <div key={item.assignmentId} style={{ marginBottom: 8 }}>
+                    <strong>{item.code ?? item.assignmentId}</strong>
+                    {item.tourName ? ` · ${item.tourName}` : ""}
+                    <div style={{ fontSize: 12, color: "#fa8c16" }}>
+                      {(item.issues ?? []).join(" · ")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ),
+        });
+      } else {
+        message.success(`Prepared ${d.date ?? "tomorrow"}: ${summary}`);
+      }
+      setFilterDate(dayjs().add(1, "day").startOf("day"));
+      loadBoard(true);
+      onChanged?.();
+    } catch (e) {
+      message.error(getErrorMessage(e, "Failed to prepare tomorrow"));
+    } finally {
+      setPreparing(false);
     }
   };
 
@@ -729,8 +859,55 @@ export default function DispatchBoard({
 
   const scheduleSettings = (
     <>
+            <Flex
+              className="dispatch-board-schedule"
+              wrap
+              gap={10}
+              align="center"
+              justify="space-between"
+              style={{ marginTop: 12 }}
+            >
+              <Space wrap size={8} align="center">
+                <Tooltip title="Every bus must be dispatched between this opening time and the cutoff on the day before departure — in both Manual and Auto mode. ADMIN cannot override this time window. Changing it here applies immediately.">
+                  <ClockCircleOutlined style={{ color: token.colorPrimary }} />
+                </Tooltip>
+                <Text strong style={{ fontSize: 12 }}>
+                  Dispatch window
+                </Text>
+                <TimePicker
+                  size="small"
+                  value={hhmmToTime(dispatchOpen ?? sealInfo?.openTime ?? "12:00")}
+                  format="HH:mm"
+                  minuteStep={5}
+                  allowClear={false}
+                  disabled={!canUpdateAssignment || dispatchOpenSaving}
+                  onChange={(time) => {
+                    if (time) void saveDispatchOpen(time);
+                  }}
+                  style={{ width: 78 }}
+                />
+                <Text style={{ fontSize: 12 }}>
+                  – {sealInfo?.cutoffTime ?? "21:00"} HCM · day before
+                </Text>
+              </Space>
+              {sealInfo?.sealed ? (
+                <Tag color="red" style={{ margin: 0, fontSize: 11 }}>
+                  Date sealed
+                </Tag>
+              ) : sealInfo?.windowOpen ? (
+                <Tag color="green" style={{ margin: 0, fontSize: 11 }}>
+                  Open now
+                </Tag>
+              ) : (
+                <Tag color="orange" style={{ margin: 0, fontSize: 11 }}>
+                  Opens {sealInfo?.openTime ?? "12:00"} HCM
+                </Tag>
+              )}
+            </Flex>
+
             {autoDispatch && (
               <Flex
+                className="dispatch-board-schedule"
                 wrap
                 gap={10}
                 align="center"
@@ -742,7 +919,7 @@ export default function DispatchBoard({
                 }}
               >
                 <Space wrap size={8} align="center">
-                  <Tooltip title="Automatic dispatch — at this time it fills missing crew, then dispatches all pending trips that start the next day. New bookings after this time go to the waiting list.">
+                  <Tooltip title="Automatic dispatch — at this time it fills missing crew, then dispatches all ready trips that start the next day. The date seals at this time (default 21:00 HCM) in both Manual and Auto mode; new bookings then go to the waiting list.">
                     <ScheduleOutlined style={{ color: token.colorPrimary }} />
                   </Tooltip>
                   <Text strong style={{ fontSize: 12 }}>
@@ -778,7 +955,7 @@ export default function DispatchBoard({
                       </Text>
                     ) : null
                   ) : (
-                    <Tooltip title="Automatic dispatch is off — scheduled crew fill + dispatch are paused.">
+                    <Tooltip title="Automatic dispatch is off — the scheduled crew fill + dispatch job is paused, but the 21:00 dispatch window and date seal still apply. Dispatch the buses by hand.">
                       <Tag style={{ margin: 0, fontSize: 11 }}>Off</Tag>
                     </Tooltip>
                   )}
@@ -811,6 +988,7 @@ export default function DispatchBoard({
 
             {pickupReminder && (
               <Flex
+                className="dispatch-board-schedule"
                 wrap
                 gap={10}
                 align="center"
@@ -864,6 +1042,7 @@ export default function DispatchBoard({
 
   return (
     <Drawer
+      className="dispatch-board-drawer"
       title={
         <Space>
           <ScheduleOutlined style={{ color: token.colorPrimary }} />
@@ -885,6 +1064,7 @@ export default function DispatchBoard({
           {filtered.length === 0 ? (
             <>
             <Card
+              className="dispatch-board-filter-card"
               size="small"
               style={{ marginBottom: 16, borderRadius: 14 }}
               styles={{ body: { padding: "14px 18px" } }}
@@ -993,6 +1173,7 @@ export default function DispatchBoard({
               style={{ padding: "0 4px", position: "relative", minHeight: 120 }}
             >
           <Card
+            className="dispatch-board-filter-card"
             size="small"
             style={{ marginBottom: 16, borderRadius: 14 }}
             styles={{ body: { padding: "14px 18px" } }}
@@ -1051,20 +1232,25 @@ export default function DispatchBoard({
                 </Space>
               </Col>
               <Col xs={24} md={10}>
-                <Flex wrap gap={8} align="center" justify="flex-end">
-                  <Switch
-                    checkedChildren="Auto"
-                    unCheckedChildren="Manual"
-                    checked={autoAssign}
-                    onChange={(auto) => {
-                      setAllOrigin(auto ? "AUTO_ASSIGN" : "MANUAL");
-                    }}
-                    title={
-                      autoAssign
-                        ? "Auto-assign is ON — new bookings are grouped onto buses automatically"
-                        : "Manual mode — new bookings stay pending for hand assignment"
-                    }
-                  />
+                <Flex className="dispatch-board-actions" wrap gap={8} align="center" justify="flex-end">
+                  <Space className="dispatch-board-mode" size={6}>
+                    <Switch
+                      checkedChildren="Auto"
+                      unCheckedChildren="Manual"
+                      checked={autoAssign}
+                      onChange={(auto) => {
+                        setAllOrigin(auto ? "AUTO_ASSIGN" : "MANUAL");
+                      }}
+                      title={
+                        autoAssign
+                          ? "Auto-assign is ON — new bookings are grouped onto buses automatically"
+                          : "Manual mode — new bookings stay pending for hand assignment"
+                      }
+                    />
+                    <Text className="dispatch-board-mode-label" strong>
+                      {autoAssign ? "Auto" : "Manual"}
+                    </Text>
+                  </Space>
                   <Tag
                     style={{
                       borderRadius: 999,
@@ -1103,12 +1289,24 @@ export default function DispatchBoard({
                   >
                     Crew availability
                   </Button>
+                  {canUpdateAssignment && (
+                    <Tooltip title="Fill missing crew, send guide/provider requests for tomorrow's departures. Does not dispatch; works all day.">
+                      <Button
+                        icon={<ThunderboltOutlined />}
+                        loading={preparing}
+                        onClick={prepareTomorrow}
+                        style={{ borderRadius: 10 }}
+                      >
+                        Prepare tomorrow
+                      </Button>
+                    </Tooltip>
+                  )}
                   {canUpdateAssignment && filtered.some((a) => a.status === "PENDING" || a.status === "DRAFT_ASSIGNED" || a.status === "TRANSFERRED") && (
                     <Button
                       type="primary"
                       icon={<SendOutlined />}
                       loading={dispatchingAll}
-                      onClick={dispatchAllBuses}
+                      onClick={() => dispatchAllBuses()}
                       style={{ borderRadius: 10 }}
                     >
                       Dispatch all
@@ -1122,6 +1320,7 @@ export default function DispatchBoard({
 
             {sealInfo?.sealed && (
               <Alert
+                className="dispatch-board-seal-alert"
                 type="warning"
                 showIcon
                 style={{ marginTop: 12, borderRadius: 12 }}
@@ -1154,6 +1353,8 @@ export default function DispatchBoard({
                 recallingId={recallingId}
                 canConfirm={canUpdateAssignment}
                 recallCutoff={recallCutoff}
+                dispatchOpenTime={sealInfo?.openTime ?? "12:00"}
+                dispatchCutoffTime={sealInfo?.cutoffTime ?? "21:00"}
                 sealed={sealInfo?.sealed}
                 groupByDeparture
                 onConfirm={confirmTour}
@@ -1182,6 +1383,8 @@ export default function DispatchBoard({
                 recallingId={recallingId}
                 canConfirm={canUpdateAssignment}
                 recallCutoff={recallCutoff}
+                dispatchOpenTime={sealInfo?.openTime ?? "12:00"}
+                dispatchCutoffTime={sealInfo?.cutoffTime ?? "21:00"}
                 sealed={sealInfo?.sealed}
                 groupByDeparture
                 onConfirm={confirmTour}
@@ -1211,6 +1414,8 @@ export default function DispatchBoard({
                   recallingId={recallingId}
                   canConfirm={canUpdateAssignment}
                   recallCutoff={recallCutoff}
+                  dispatchOpenTime={sealInfo?.openTime ?? "12:00"}
+                  dispatchCutoffTime={sealInfo?.cutoffTime ?? "21:00"}
                   sealed={sealInfo?.sealed}
                   groupByDeparture
                   onConfirm={confirmTour}
@@ -1235,6 +1440,7 @@ export default function DispatchBoard({
           </Card>
 
           <Alert
+            className="dispatch-board-summary"
             type="info"
             showIcon
             icon={<CheckCircleOutlined />}

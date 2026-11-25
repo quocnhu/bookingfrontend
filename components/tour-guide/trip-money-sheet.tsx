@@ -211,7 +211,7 @@ export default function TripMoneySheet({
   const locked = money.locked;
 
   return (
-    <Flex vertical gap={12}>
+    <Flex vertical gap={12} className="trip-money-sheet">
       <Flex gap={8} wrap>
         <TagBox label="Collect" value={money.collected} tone="#0f766e" />
         <TagBox label="Company expense" value={money.paid} tone="#b91c1c" />
@@ -265,7 +265,7 @@ export default function TripMoneySheet({
       ) : null}
 
       {!locked && (
-        <Flex gap={8} wrap align="flex-end">
+        <Flex gap={8} wrap align="flex-end" className="trip-money-add">
           <Flex vertical gap={4}>
             <Text type="secondary" style={{ fontSize: 11 }}>
               Category

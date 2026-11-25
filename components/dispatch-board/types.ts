@@ -13,6 +13,8 @@ export interface BookingItem {
   departureTime?: string | null;
   pickupReminderSentAt?: string | null;
   payment?: string | null;
+  paymentMethod?: string | null;
+  payLater?: boolean | null;
   latitude?: number | null;
   longitude?: number | null;
   notes?: string | null;
@@ -93,7 +95,17 @@ export interface BoardItem {
   providerRequestStatus?: string | null;
   providerDeadline?: string | null;
   driver?: { id?: string; name?: string; email?: string } | null;
-  guide?: { id?: string; name?: string; email?: string } | null;
+  guide?: {
+    id?: string;
+    name?: string;
+    email?: string;
+    guideProfile?: { type?: "OFFICIAL" | "FREELANCE" } | null;
+  } | null;
+  guideConfirmationRequestedAt?: string | null;
+  guideConfirmationEmailSentAt?: string | null;
+  guideConfirmedAt?: string | null;
+  guideDeclinedAt?: string | null;
+  guideDeclineReason?: string | null;
   reportVerifier?: { name?: string } | null;
   bookings?: BookingItem[];
   // Tour report (submitted by the guide after the trip ends)
@@ -151,6 +163,21 @@ export interface LeaveRange {
   status: "PENDING" | "APPROVED" | "REJECTED";
 }
 
+export interface CrewTripRange {
+  id: string;
+  code?: string | null;
+  status?: string | null;
+  startDate: string;
+  endDate: string;
+}
+
+export interface CrewHoldRange {
+  id: string;
+  startDate: string;
+  endDate: string;
+  note?: string | null;
+}
+
 export interface CrewMember {
   id: string;
   name?: string | null;
@@ -160,7 +187,9 @@ export interface CrewMember {
   rating?: number | null;
   provider?: { id?: string; name?: string } | null;
   isBusy?: boolean;
+  assignments?: CrewTripRange[];
   leaves?: LeaveRange[];
+  holds?: CrewHoldRange[];
 }
 
 export interface BoardCrew {

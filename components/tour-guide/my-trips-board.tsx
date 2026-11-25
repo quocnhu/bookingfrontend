@@ -358,7 +358,7 @@ export default function MyTripsBoard({
 
       <Flex justify="center" style={{ marginTop: 12 }}>
         <Text type="secondary" style={{ fontSize: 11 }}>
-          <ScheduleOutlined /> Trips are confirmed by 23:00 the night before and
+          <ScheduleOutlined /> Trips are confirmed by 21:00 the night before and
           locked at 06:00 on the departure day. This board is read-only — admin or
           operations manage changes.
         </Text>

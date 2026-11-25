@@ -23,6 +23,7 @@ import {
   BarChartOutlined,
   CheckOutlined,
   CloseOutlined,
+  LockOutlined,
   PlusOutlined,
   TableOutlined,
   ThunderboltOutlined,
@@ -32,6 +33,7 @@ import { useApp } from "@/lib/app-context";
 import { indexColumn, PAGE_SIZE_OPTIONS } from "@/lib/table";
 import LeaveSummaryCards from "@/components/leave-summary";
 import EmployeeTimesheetDrawer from "@/components/employee-timesheet-drawer";
+import GuideHoldsDrawer from "@/components/guide-holds-drawer";
 import {
   formatLeaveDayCount,
   isLeaveDateDisabled,
@@ -216,6 +218,7 @@ export default function LeavesAdminPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [timesheetOpen, setTimesheetOpen] = useState(false);
+  const [guideHoldsOpen, setGuideHoldsOpen] = useState(false);
   const [createForm] = Form.useForm();
   const createEmergency = Form.useWatch("isEmergency", createForm) === true;
   const [savingCreate, setSavingCreate] = useState(false);
@@ -529,6 +532,10 @@ export default function LeavesAdminPage() {
         open={timesheetOpen}
         onClose={() => setTimesheetOpen(false)}
       />
+      <GuideHoldsDrawer
+        open={guideHoldsOpen}
+        onClose={() => setGuideHoldsOpen(false)}
+      />
       <Card
         title={
           <Flex align="center" justify="space-between" wrap gap={8}>
@@ -537,12 +544,20 @@ export default function LeavesAdminPage() {
             </Typography.Title>
             <Flex align="center" gap={8} wrap>
               {isStaff && (
-                <Button
-                  icon={<TableOutlined />}
-                  onClick={() => setTimesheetOpen(true)}
-                >
-                  Employee Timesheet
-                </Button>
+                <>
+                  <Button
+                    icon={<TableOutlined />}
+                    onClick={() => setTimesheetOpen(true)}
+                  >
+                    Employee Timesheet
+                  </Button>
+                  <Button
+                    icon={<LockOutlined />}
+                    onClick={() => setGuideHoldsOpen(true)}
+                  >
+                    Guide holds
+                  </Button>
+                </>
               )}
               <Button
                 icon={<BarChartOutlined />}

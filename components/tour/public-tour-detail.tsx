@@ -104,6 +104,7 @@ export default function PublicTourDetail({
   const [savingBooking, setSavingBooking] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [coordinates, setCoordinates] = useState<any[]>([]);
+  const [hotels, setHotels] = useState<any[]>([]);
   const [payChoice, setPayChoice] = useState<"paynow" | "paylater">("paynow");
   const [quote, setQuote] = useState<any>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
@@ -213,6 +214,10 @@ export default function PublicTourDetail({
     api
       .get("/coordinates", { params: { limit: 1000 } })
       .then((r) => setCoordinates(r.data.items ?? []))
+      .catch(() => {});
+    api
+      .get("/hotels/public")
+      .then((r) => setHotels(r.data ?? []))
       .catch(() => {});
   }, []);
 
@@ -978,7 +983,14 @@ children: tour.insurancePolicy ? (
               type="success"
               showIcon
               message="Booking created — payment is the last step"
-              description="Complete the PayPal payment below. The booking stays unpaid until PayPal confirms the capture."
+              description={
+                <>
+                  Complete the PayPal payment below. The booking stays unpaid until
+                  PayPal confirms the capture. If you close this window, you can
+                  finish the payment in{" "}
+                  <Link href="/my-bookings">My bookings</Link>.
+                </>
+              }
             />
             <Card size="small" style={PRICE_CARD_STYLE}>
               <Flex justify="space-between" align="baseline">
@@ -1160,7 +1172,12 @@ children: tour.insurancePolicy ? (
                 required
               >
                 <AutoComplete
-                  options={coordinates.map((c: any) => ({ value: c.hotelName }))}
+                  options={Array.from(
+                    new Set([
+                      ...coordinates.map((c: any) => c.hotelName),
+                      ...hotels.map((h: any) => h.name),
+                    ]),
+                  ).map((value) => ({ value }))}
                   filterOption={(input, option) =>
                     String(option?.value ?? "")
                       .toLowerCase()
@@ -1179,8 +1196,13 @@ children: tour.insurancePolicy ? (
                         longitude: c.longitude,
                       });
                     } else {
+                      const h = hotels.find(
+                        (x: any) =>
+                          x.name.toLowerCase() ===
+                          String(value ?? "").trim().toLowerCase(),
+                      );
                       bookingForm.setFieldsValue({
-                        address: undefined,
+                        address: h?.address ?? undefined,
                         latitude: undefined,
                         longitude: undefined,
                       });
@@ -1208,7 +1230,7 @@ children: tour.insurancePolicy ? (
                   showIcon
                   style={{ marginBottom: 12 }}
                   message="Late booking — waiting list"
-                  description={`This departure was sealed at ${quote.dispatchCutoffTime ?? "23:00"}. Your booking will wait on a waiting-list bus and we will reply after 05:00 on the departure day. If no seat is available, the booking can be cancelled.`}
+                  description={`This departure was sealed at ${quote.dispatchCutoffTime ?? "21:00"}. Your booking will wait on a waiting-list bus and we will reply after 05:00 on the departure day. If no seat is available, the booking can be cancelled.`}
                 />
               ) : quote?.urgentBooking ? (
                 <Alert
@@ -1216,7 +1238,7 @@ children: tour.insurancePolicy ? (
                   showIcon
                   style={{ marginBottom: 12 }}
                   message="Urgent booking"
-                  description="This departure is close to the daily 23:00 dispatch cutoff. Please complete your booking now so we can arrange the bus and driver."
+                  description="This departure is close to the daily 21:00 dispatch cutoff. Please complete your booking now so we can arrange the bus and driver."
                 />
               ) : null}
               {quote?.lateBooking && (
