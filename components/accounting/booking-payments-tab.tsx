@@ -19,7 +19,6 @@ import {
 } from "antd";
 import {
   CheckCircleOutlined,
-  ReloadOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
 import { message } from "@/lib/antd-message";
@@ -443,9 +442,6 @@ export default function BookingPaymentsTab() {
               title="Payment records"
               extra={
                 <Space>
-                  <Button size="small" icon={<ReloadOutlined />} onClick={load}>
-                    Refresh
-                  </Button>
                   {latestPayPal(selected)?.providerOrderId &&
                     selected.payment !== "PAID" && (
                       <Button

@@ -161,6 +161,18 @@ export default function HotelDashboardPage() {
         );
       },
     },
+    {
+      title: "Payout",
+      key: "payout",
+      render: (_: unknown, row: HotelBookingRow) =>
+        !row.commissionEarned ? (
+          <Tag>Not earned</Tag>
+        ) : row.commissionPaid ? (
+          <Tag color="green">Paid</Tag>
+        ) : (
+          <Tag color="gold">Unpaid</Tag>
+        ),
+    },
   ];
 
   return (
@@ -237,10 +249,9 @@ export default function HotelDashboardPage() {
         <Col xs={12} md={8} xl={4}>
           <Card size="small">
             <Statistic
-              title="Commission earned"
-              value={data?.totals.earned ?? 0}
-              valueStyle={{ color: token.colorSuccess }}
-              prefix={<DollarOutlined />}
+              title="Earned (unpaid)"
+              value={data?.totals.unpaid ?? 0}
+              valueStyle={{ color: token.colorWarning }}
               formatter={(value) => formatVnd(value)}
               loading={loading}
             />
@@ -249,9 +260,10 @@ export default function HotelDashboardPage() {
         <Col xs={12} md={8} xl={4}>
           <Card size="small">
             <Statistic
-              title="Commission pending"
-              value={data?.totals.pending ?? 0}
-              valueStyle={{ color: token.colorWarning }}
+              title="Commission paid"
+              value={data?.totals.paid ?? 0}
+              valueStyle={{ color: token.colorSuccess }}
+              prefix={<DollarOutlined />}
               formatter={(value) => formatVnd(value)}
               loading={loading}
             />

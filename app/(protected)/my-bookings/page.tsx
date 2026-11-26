@@ -16,7 +16,7 @@ import {
   theme as antdTheme,
 } from "antd";
 import { CalendarOutlined, CreditCardOutlined, EnvironmentOutlined } from "@ant-design/icons";
-import PublicHeader from "@/components/public-header";
+/* tourist page rendered inside AppShell */
 import PayPalCheckout from "@/components/paypal-checkout";
 import { api, getErrorMessage } from "@/lib/api";
 import { message } from "@/lib/antd-message";
@@ -107,9 +107,8 @@ export default function MyBookingsPage() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: token.colorBgLayout }}>
-      <PublicHeader />
-      <main style={{ maxWidth: 1080, margin: "0 auto", padding: "32px 20px 64px" }}>
+    <div style={{ padding: "24px", background: token.colorBgLayout, minHeight: "100%" }}>
+      <div style={{ maxWidth: 1080, margin: "0 auto" }}>
         <Flex justify="space-between" align="center" wrap gap={12} style={{ marginBottom: 20 }}>
           <div>
             <Typography.Title level={2} style={{ margin: 0 }}>
@@ -244,7 +243,7 @@ export default function MyBookingsPage() {
             })}
           </Flex>
         )}
-      </main>
+      </div>
 
       <Modal
         open={!!payBooking}

@@ -19,7 +19,7 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { message } from "@/lib/antd-message";
-import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { PlusOutlined } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";
 
@@ -272,9 +272,6 @@ export default function GuideHoldsDrawer({
             ]}
           />
           <Space>
-            <Button icon={<ReloadOutlined />} onClick={() => void load()}>
-              Refresh
-            </Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
               New hold
             </Button>

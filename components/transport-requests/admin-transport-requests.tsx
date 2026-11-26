@@ -25,7 +25,6 @@ import {
   CarOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
-  ReloadOutlined,
   SendOutlined,
   SettingOutlined,
   StopOutlined,
@@ -563,11 +562,7 @@ export default function AdminTransportRequests() {
             <span>Transport requests</span>
           </Space>
         }
-        extra={
-          <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
-            Refresh
-          </Button>
-        }
+        extra={null}
       >
         <Flex wrap gap={8} style={{ marginBottom: 12 }}>
           <Input.Search

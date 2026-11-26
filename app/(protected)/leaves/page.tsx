@@ -50,7 +50,7 @@ const ROLE_LABEL: Record<string, string> = {
   TOUR_GUIDE: "Tour Guide",
   DRIVER: "Driver",
   TRANSPORT_PROVIDER: "Transport Provider",
-  CUSTOMER: "Customer",
+  TOURIST: "Tourist",
 };
 
 const ROLE_COLOR: Record<string, string> = {
@@ -59,7 +59,7 @@ const ROLE_COLOR: Record<string, string> = {
   TOUR_GUIDE: "green",
   DRIVER: "cyan",
   TRANSPORT_PROVIDER: "purple",
-  CUSTOMER: "default",
+  TOURIST: "default",
 };
 
 const STATUS_TEXT: Record<string, string> = {

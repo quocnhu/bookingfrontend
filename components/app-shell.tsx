@@ -66,6 +66,7 @@ const menuItems = [
       { key: "/accounting/payments", icon: <CreditCardOutlined />, label: <MenuLabel text="Customer payments" /> },
       { key: "/accounting/period", icon: <DownloadOutlined />, label: <MenuLabel text="Period check & export" /> },
       { key: "/accounting/queue", icon: <LockOutlined />, label: <MenuLabel text="Verification queue" /> },
+      { key: "/accounting/hotel-commissions", icon: <HomeOutlined />, label: <MenuLabel text="Hotel commissions" /> },
       { key: "/accounting/history", icon: <HistoryOutlined />, label: <MenuLabel text="Payment history" /> },
     ],
   },
@@ -108,7 +109,7 @@ const roleColors: Record<string, { tag: string; avatar: string }> = {
   DRIVER: { tag: "cyan", avatar: "#06B6D4" },
   TRANSPORT_PROVIDER: { tag: "purple", avatar: "#8B5CF6" },
   HOTEL: { tag: "gold", avatar: "#D97706" },
-  CUSTOMER: { tag: "pink", avatar: "#EC4899" },
+  TOURIST: { tag: "pink", avatar: "#EC4899" },
 };
 
 const ADMIN_ONLY_KEYS = new Set(["/users", "/notifications", "/audit", "/auth-activities", "/company-profile"]);
@@ -159,15 +160,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   })();
   const roleColor = roleColors[user.role] ?? { tag: "blue", avatar: "#6366F1" };
 
-  const filteredMenuItems = menuItems.filter((item) => {
-    // Accounting Room: only when the accounting.read permission is held (or ADMIN).
-    if (item.key === "/accounting") {
-      return user.role === "ADMIN" || user.permissions?.includes("accounting.read");
-    }
-    if (user.role === "ADMIN" || user.role === "OFFICE") return true;
-    if (item.children && item.children.length > 0) return false;
-    return !ADMIN_ONLY_KEYS.has(item.key);
-  });
+  const touristMenuItems = [
+    { key: "/dashboard", icon: <DashboardOutlined />, label: <MenuLabel text="Dashboard" /> },
+    { key: "/my-bookings", icon: <FileTextOutlined />, label: <MenuLabel text="Bookings" /> },
+  ];
+  const finalMenuItems =
+    user.role === "TOURIST"
+      ? touristMenuItems
+      : menuItems.filter((item) => {
+          if (item.key === "/accounting") {
+            return user.role === "ADMIN" || user.permissions?.includes("accounting.read");
+          }
+          if (user.role === "ADMIN" || user.role === "OFFICE") return true;
+          if (item.children && item.children.length > 0) return false;
+          return !ADMIN_ONLY_KEYS.has(item.key);
+        });
 
   const navigate = (key: string) => {
     router.push(key);
@@ -178,7 +185,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <Menu
       mode="inline"
       selectedKeys={[selectedKey]}
-      items={filteredMenuItems}
+      items={finalMenuItems}
       onClick={({ key }) => navigate(key)}
       style={{ borderInlineEnd: "none", paddingBlock: 8 }}
     />

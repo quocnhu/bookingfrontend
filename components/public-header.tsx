@@ -54,7 +54,7 @@ export default function PublicHeader() {
           All tours
         </Link>
         {authLoading ? null : user ? (
-          user.role === "CUSTOMER" ? (
+          user.role === "TOURIST" ? (
             <Button
               type="primary"
               icon={<ScheduleOutlined />}

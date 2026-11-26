@@ -336,9 +336,7 @@ export default function GuideBookingsPanel({
             </Text>
           </Text>
         )}
-        <Button size="small" onClick={() => void loadMoney()} loading={loading}>
-          Refresh
-        </Button>
+        {/* refresh button removed */}
       </Flex>
 
       {money?.locked && (

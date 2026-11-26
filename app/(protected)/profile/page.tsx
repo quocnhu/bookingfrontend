@@ -44,7 +44,7 @@ const roleColors: Record<string, { tag: string; avatar: string }> = {
   TOUR_GUIDE: { tag: "green", avatar: "#10B981" },
   DRIVER: { tag: "cyan", avatar: "#06B6D4" },
   TRANSPORT_PROVIDER: { tag: "purple", avatar: "#8B5CF6" },
-  CUSTOMER: { tag: "pink", avatar: "#EC4899" },
+  TOURIST: { tag: "pink", avatar: "#EC4899" },
 };
 
 const providerLabel: Record<string, string> = {
@@ -200,7 +200,6 @@ export default function ProfilePage() {
                 <Tag color={roleColor.tag} style={{ fontWeight: 700, textTransform: "uppercase" }}>
                   {user.role}
                 </Tag>
-                {user.userType && <Tag>{user.userType}</Tag>}
                 {user.authProvider && (
                   <Tag icon={<CheckCircleOutlined />}>
                     {providerLabel[user.authProvider] ?? user.authProvider}

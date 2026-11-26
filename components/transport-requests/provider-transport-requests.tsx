@@ -22,7 +22,6 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   CloseCircleOutlined,
-  ReloadOutlined,
   TeamOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
@@ -507,9 +506,6 @@ export default function ProviderTransportRequests() {
             <Button icon={<TeamOutlined />} onClick={openWorkload}>
               Driver workload
             </Button>
-            <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
-              Refresh
-            </Button>
           </Space>
         }
       >
@@ -574,16 +570,7 @@ export default function ProviderTransportRequests() {
         open={workloadOpen}
         onClose={() => setWorkloadOpen(false)}
         width={620}
-        extra={
-          <Button
-            size="small"
-            icon={<ReloadOutlined />}
-            onClick={loadWorkload}
-            loading={workloadLoading}
-          >
-            Refresh
-          </Button>
-        }
+        extra={null}
       >
         <Text type="secondary">
           Tour days = distinct calendar days a driver is on a trip in the last /

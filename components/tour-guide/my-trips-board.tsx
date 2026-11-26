@@ -19,7 +19,6 @@ import type { DatePickerProps } from "antd";
 import {
   CalendarOutlined,
   CheckCircleOutlined,
-  ReloadOutlined,
   ScheduleOutlined,
 } from "@ant-design/icons";
 import dayjs, { Dayjs } from "dayjs";
@@ -205,16 +204,6 @@ export default function MyTripsBoard({
               >
                 {filtered.length} trip{filtered.length === 1 ? "" : "s"}
               </Tag>
-              {onRefresh && (
-                <Button
-                  icon={<ReloadOutlined />}
-                  onClick={onRefresh}
-                  loading={loading}
-                  style={{ borderRadius: 10 }}
-                >
-                  Refresh
-                </Button>
-              )}
             </Flex>
           </Col>
         </Row>

@@ -28,7 +28,6 @@ import {
   FolderAddOutlined,
   FolderFilled,
   HomeOutlined,
-  ReloadOutlined,
   UploadOutlined,
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
@@ -56,11 +55,21 @@ interface DriveFile {
   url: string;
 }
 
+interface PendingEvidenceFile extends DriveFile {
+  assignmentId: string;
+  assignmentCode: string;
+  tourName: string;
+  startDate: string;
+  assignmentStatus: string;
+  reportStatus: string;
+}
+
 interface DriveState {
   current: DriveFolder | null;
   breadcrumb: { id: string | null; name: string }[];
   folders: DriveFolder[];
   files: DriveFile[];
+  pendingEvidence?: PendingEvidenceFile[];
   quota: {
     unlimited: boolean;
     quotaBytes: number | null;
@@ -72,6 +81,55 @@ interface DriveState {
 }
 
 const AVATAR_HINT = "PNG/JPG of any size — auto-resized to 515×515.";
+const DRIVE_ROLE_COLOR: Record<string, string> = {
+  TOUR_GUIDE: "green",
+  DRIVER: "cyan",
+  OFFICE: "geekblue",
+  ACCOUNTING: "orange",
+  TRANSPORT_PROVIDER: "purple",
+  HOTEL: "gold",
+  TOURIST: "magenta",
+  CUSTOMER: "default",
+};
+const DRIVE_ROLE_ORDER: Record<string, number> = {
+  TOUR_GUIDE: 1,
+  DRIVER: 2,
+  OFFICE: 3,
+  ACCOUNTING: 4,
+  TRANSPORT_PROVIDER: 5,
+  HOTEL: 6,
+  TOURIST: 7,
+  CUSTOMER: 8,
+};
+type DriveUser = {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  role: string;
+  provider?: { isCompany?: boolean } | null;
+  guideProfile?: { type?: "OFFICIAL" | "FREELANCE" } | null;
+  driverProfile?: { type?: "COMPANY" | "FREELANCE" | "PROVIDER" } | null;
+};
+const driveUserEmployment = (u: DriveUser) => {
+  if (u.role === "TOUR_GUIDE") {
+    return u.guideProfile?.type === "OFFICIAL"
+      ? { label: "Company", order: 1, color: "green" }
+      : { label: "Freelancer", order: 2, color: "lime" };
+  }
+  if (u.role === "DRIVER") {
+    const t = u.driverProfile?.type;
+    if (t === "COMPANY") return { label: "Company", order: 1, color: "blue" };
+    if (t === "PROVIDER" || u.provider?.isCompany === false)
+      return { label: "Provider", order: 3, color: "purple" };
+    return { label: "Freelancer", order: 2, color: "cyan" };
+  }
+  if (u.role === "TRANSPORT_PROVIDER") {
+    return u.provider?.isCompany === false
+      ? { label: "Provider", order: 2, color: "purple" }
+      : { label: "Company", order: 1, color: "geekblue" };
+  }
+  return null;
+};
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -90,7 +148,15 @@ export default function DrivePage() {
   const isAdmin = user?.role === "ADMIN";
   const [data, setData] = useState<DriveState | null>(null);
   const [driveUsers, setDriveUsers] = useState<
-    { id: string; name?: string | null; email?: string | null; role: string }[]
+    {
+      id: string;
+      name?: string | null;
+      email?: string | null;
+      role: string;
+      provider?: { isCompany?: boolean } | null;
+      guideProfile?: { type?: "OFFICIAL" | "FREELANCE" } | null;
+      driverProfile?: { type?: "COMPANY" | "FREELANCE" | "PROVIDER" } | null;
+    }[]
   >([]);
   const [selectedUserId, setSelectedUserId] = useState<string | undefined>();
 
@@ -343,25 +409,50 @@ export default function DrivePage() {
                 <Select
                   size="small"
                   allowClear
-                  style={{ minWidth: 240 }}
+                  style={{ minWidth: 320 }}
                   placeholder="My Drive — choose a user to browse"
                   value={selectedUserId}
                   onChange={(value) => setSelectedUserId(value)}
-                  options={driveUsers
+                  optionLabelProp="label"
+                  options={[...driveUsers]
                     .filter((u) => u.role !== "ADMIN")
-                    .map((u) => ({
-                      value: u.id,
-                      label: `${u.name ?? u.email ?? u.id} · ${u.role}`,
-                    }))}
+                    .sort((a, b) => {
+                      const roleDiff =
+                        (DRIVE_ROLE_ORDER[a.role] ?? 99) - (DRIVE_ROLE_ORDER[b.role] ?? 99);
+                      if (roleDiff !== 0) return roleDiff;
+                      const empDiff =
+                        (driveUserEmployment(a)?.order ?? 99) -
+                        (driveUserEmployment(b)?.order ?? 99);
+                      if (empDiff !== 0) return empDiff;
+                      return (a.name ?? a.email ?? "").localeCompare(b.name ?? b.email ?? "");
+                    })
+                    .map((u) => {
+                      const roleColor = DRIVE_ROLE_COLOR[u.role] ?? "default";
+                      const employment = driveUserEmployment(u);
+                      const label = u.name ?? u.email ?? u.id;
+                      return {
+                        value: u.id,
+                        label: (
+                          <Flex align="center" gap={8} wrap>
+                            <span>{label}</span>
+                            <Tag color={roleColor} style={{ marginInlineEnd: 0 }}>{u.role}</Tag>
+                            {employment && (
+                              <Tag color={employment.color} style={{ marginInlineEnd: 0 }}>
+                                {employment.label}
+                              </Tag>
+                            )}
+                          </Flex>
+                        ),
+                        searchLabel:
+                          `${label} ${u.role} ${employment?.label ?? ""} ${u.email ?? ""}`.toLowerCase(),
+                      };
+                    })}
+                  showSearch
+                  filterOption={(input, option) =>
+                    String((option as any)?.searchLabel ?? "").includes(input.toLowerCase())
+                  }
                 />
               )}
-              <Button
-                size="small"
-                icon={<ReloadOutlined />}
-                onClick={() => load(currentFolderId)}
-              >
-                Refresh
-              </Button>
               <Button
                 size="small"
                 icon={<FolderAddOutlined />}
@@ -495,6 +586,97 @@ export default function DrivePage() {
                 </Flex>
               ))}
             </Flex>
+          )}
+
+          {(data?.pendingEvidence?.length ?? 0) > 0 && (
+            <Card
+              size="small"
+              title={
+                <Flex align="center" gap={8}>
+                  <FileImageOutlined style={{ color: "#fa8c16" }} />
+                  <span>Pending tour evidence (not yet verified)</span>
+                  <Tag color="orange">{data!.pendingEvidence!.length}</Tag>
+                </Flex>
+              }
+            >
+              <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+                These files were uploaded by the guide/driver but are still in pending evidence.
+                They will move into the tour folder automatically after Admin/Accounting verifies the report.
+              </Typography.Paragraph>
+              <Table
+                rowKey="id"
+                size="small"
+                pagination={false}
+                scroll={{ x: "max-content" }}
+                dataSource={data!.pendingEvidence}
+                columns={centerColumns([
+                  indexColumn(1, 999),
+                  {
+                    title: "File",
+                    dataIndex: "name",
+                    key: "name",
+                    render: (name: string, file: PendingEvidenceFile) => (
+                      <Flex align="center" gap={8}>
+                        {fileIcon(file.mimeType, file.name)}
+                        <Typography.Text
+                          style={{ cursor: file.mimeType?.startsWith("image/") ? "pointer" : undefined }}
+                          onClick={() => file.mimeType?.startsWith("image/") && setPreviewFile(file)}
+                        >
+                          {name}
+                        </Typography.Text>
+                      </Flex>
+                    ),
+                  },
+                  {
+                    title: "Tour / Assignment",
+                    key: "assignment",
+                    render: (_: unknown, file: PendingEvidenceFile) => (
+                      <Flex vertical gap={0}>
+                        <Typography.Text>{file.tourName}</Typography.Text>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          {file.assignmentCode} · {new Date(file.startDate).toLocaleDateString()}
+                        </Typography.Text>
+                      </Flex>
+                    ),
+                  },
+                  {
+                    title: "Report",
+                    dataIndex: "reportStatus",
+                    key: "reportStatus",
+                    render: (v: string) => (
+                      <Tag color={v === "SUBMITTED" ? "blue" : v === "REJECTED" ? "red" : "default"}>
+                        {v}
+                      </Tag>
+                    ),
+                  },
+                  {
+                    title: "Size",
+                    dataIndex: "size",
+                    key: "size",
+                    render: (s: number) => formatBytes(s),
+                  },
+                  {
+                    title: "Actions",
+                    key: "actions",
+                    render: (_: unknown, file: PendingEvidenceFile) => (
+                      <Flex gap={4}>
+                        {file.mimeType?.startsWith("image/") && (
+                          <Button type="text" size="small" icon={<EyeOutlined />} onClick={() => setPreviewFile(file)} />
+                        )}
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<FileOutlined />}
+                          href={file.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        />
+                      </Flex>
+                    ),
+                  },
+                ])}
+              />
+            </Card>
           )}
 
           <Table

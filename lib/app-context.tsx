@@ -11,7 +11,6 @@ export interface SessionUser {
   name?: string | null;
   avatarUrl?: string | null;
   role: string;
-  userType?: string | null;
   authProvider?: string | null;
   isActive?: boolean;
   createdAt?: string | null;
@@ -27,7 +26,7 @@ const ROLE_DEFAULT_ROUTES: Record<string, string> = {
   OFFICE: "/dashboard",
   TRANSPORT_PROVIDER: "/transport-provider/dashboard",
   HOTEL: "/hotel/dashboard",
-  CUSTOMER: "/",
+  TOURIST: "/my-bookings",
 };
 
 export function getDefaultRoute(role: string): string {

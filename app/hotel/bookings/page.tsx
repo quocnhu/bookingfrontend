@@ -16,7 +16,7 @@ import {
   Typography,
   theme as antdTheme,
 } from "antd";
-import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { SearchOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";
 import {
@@ -128,8 +128,7 @@ export default function HotelBookingsPage() {
         <Flex vertical align="end">
           <Text strong>{formatVnd(row.commissionAmount)}</Text>
           <Text type="secondary" style={{ fontSize: 11 }}>
-            {row.commissionPercent}% ·{" "}
-            {row.commissionEarned ? "earned" : "pending"}
+            {row.commissionPercent}%
           </Text>
         </Flex>
       ),
@@ -146,6 +145,27 @@ export default function HotelBookingsPage() {
         );
       },
     },
+    {
+      title: "Commission payout",
+      key: "commissionPaid",
+      render: (_: unknown, row: HotelBookingRow) => {
+        if (!row.commissionEarned) return <Tag>Not earned</Tag>;
+        if (row.commissionPaid) {
+          return (
+            <Flex vertical gap={2}>
+              <Tag color="green" style={{ margin: 0 }}>
+                Paid
+              </Tag>
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {row.commissionPaidAt ? dayjs(row.commissionPaidAt).format("DD/MM/YYYY") : ""}
+                {row.commissionPaymentReference ? ` · ${row.commissionPaymentReference}` : ""}
+              </Text>
+            </Flex>
+          );
+        }
+        return <Tag color="gold">Unpaid</Tag>;
+      },
+    },
   ];
 
   const summary = data?.summary;
@@ -154,8 +174,9 @@ export default function HotelBookingsPage() {
       { title: "Bookings", value: summary?.bookings ?? 0 },
       { title: "Guests", value: summary?.pax ?? 0 },
       { title: "Booking value", value: formatVnd(summary?.revenue ?? 0) },
-      { title: "Commission earned", value: formatVnd(summary?.earned ?? 0) },
-      { title: "Commission pending", value: formatVnd(summary?.pending ?? 0) },
+      { title: "Earned (unpaid)", value: formatVnd(summary?.unpaid ?? 0) },
+      { title: "Commission paid", value: formatVnd(summary?.paid ?? 0) },
+      { title: "Pending eligibility", value: formatVnd(summary?.pending ?? 0) },
     ],
     [summary],
   );
@@ -213,16 +234,6 @@ export default function HotelBookingsPage() {
               setPage(1);
             }}
           />
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => {
-              setLoading(true);
-              void load();
-            }}
-            loading={loading}
-          >
-            Refresh
-          </Button>
         </Flex>
       </Flex>
 

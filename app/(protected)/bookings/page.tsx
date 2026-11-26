@@ -32,7 +32,6 @@ import {
   ClockCircleOutlined,
   MailOutlined,
   PlusOutlined,
-  ReloadOutlined,
   ScheduleOutlined,
   WarningOutlined,
 } from "@ant-design/icons";
@@ -1488,9 +1487,6 @@ export default function BookingsPage() {
                       title="RawDataMail"
                       extra={
                         <Flex wrap gap={8} align="center">
-                          <Button icon={<ReloadOutlined />} onClick={loadRawData}>
-                            Refresh
-                          </Button>
                         </Flex>
                       }
                     >

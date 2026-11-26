@@ -6,6 +6,8 @@ import {
   Card,
   Col,
   Avatar,
+  Descriptions,
+  Drawer,
   Dropdown,
   Flex,
   Form,
@@ -31,13 +33,13 @@ import {
   PlusOutlined,
   DeleteOutlined,
   EditOutlined,
+  EyeOutlined,
   LoadingOutlined,
   SafetyOutlined,
   UploadOutlined,
   UserOutlined,
   MailOutlined,
   MoreOutlined,
-  ReloadOutlined,
 } from "@ant-design/icons";
 import { api, API_URL, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
@@ -63,10 +65,43 @@ interface User {
   name: string | null;
   email: string;
   avatarUrl?: string | null;
-  userType: string;
+
   isActive: boolean;
   authProvider?: string | null;
   role?: string | null;
+  lastLogin?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  hotelId?: string | null;
+  providerId?: string | null;
+  hotel?: {
+    id: string;
+    name: string;
+    contactName?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    address?: string | null;
+    commissionPercent?: number | string | null;
+    isActive?: boolean;
+  } | null;
+  provider?: {
+    id: string;
+    name: string;
+    isCompany?: boolean;
+    assignmentMode?: string | null;
+  } | null;
+  guideProfile?: {
+    id: string;
+    type?: string | null;
+    languages?: string[];
+    rating?: number | null;
+  } | null;
+  driverProfile?: {
+    id: string;
+    licenseNumber?: string | null;
+    type?: string | null;
+    rating?: number | null;
+  } | null;
   roles?: { role: { id: string; name: string } }[];
   permissions?: { permission: { id: string; code: string } }[];
   storageQuotaMb?: number;
@@ -88,16 +123,10 @@ const ROLE_OPTIONS = [
   { value: "TOUR_GUIDE", label: "Tour Guide" },
   { value: "DRIVER", label: "Driver" },
   { value: "TRANSPORT_PROVIDER", label: "Transport Provider" },
-  { value: "CUSTOMER", label: "Customer" },
+  { value: "TOURIST", label: "Tourist" },
 ];
 
-const USER_TYPE_OPTIONS = [
-  { value: "admin", label: "Admin" },
-  { value: "office", label: "Office" },
-  { value: "driver", label: "Driver" },
-  { value: "guide", label: "Guide" },
-  { value: "customer", label: "Customer" },
-];
+
 
 const TAG_COLORS = [
   "magenta",
@@ -193,7 +222,6 @@ export default function UsersPage() {
   const [userForm] = Form.useForm();
   const [savingUser, setSavingUser] = useState(false);
   const [roleFilter, setRoleFilter] = useState<string | undefined>();
-  const [userTypeFilter, setUserTypeFilter] = useState<string | undefined>();
   const [statusFilter, setStatusFilter] = useState<boolean | undefined>();
   const [userPage, setUserPage] = useState(1);
   const [userPageSize, setUserPageSize] = useState(20);
@@ -204,6 +232,8 @@ export default function UsersPage() {
   const [permTable, setPermTable] = useState<Permission[]>([]);
   const [permTotal, setPermTotal] = useState(0);
   const [permLoading, setPermLoading] = useState(false);
+  const [providers, setProviders] = useState<{ id: string; name: string; isCompany?: boolean }[]>([]);
+  const [hotels, setHotels] = useState<{ id: string; name: string }[]>([]);
 
   const [activeTab, setActiveTab] = useState("users");
   const tableHeight = useFillHeight({
@@ -217,6 +247,7 @@ export default function UsersPage() {
   const [editForm] = Form.useForm();
   const [savingEdit, setSavingEdit] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [detailUser, setDetailUser] = useState<User | null>(null);
 
   const [permUser, setPermUser] = useState<User | null>(null);
   const [permModalOpen, setPermModalOpen] = useState(false);
@@ -231,24 +262,30 @@ export default function UsersPage() {
   const [savingRole, setSavingRole] = useState(false);
 
   const load = async () => {
-    const userParams: Record<string, any> = {};
+    const userParams: Record<string, any> = { limit: 100 };
     if (roleFilter) userParams.role = roleFilter;
-    if (userTypeFilter) userParams.userType = userTypeFilter;
     if (statusFilter !== undefined) userParams.isActive = statusFilter;
-    const roleParams: Record<string, any> = {};
-    const [u, r, p] = await Promise.all([
-      api.get("/users", { params: userParams }),
-      api.get("/roles", { params: roleParams }),
-      api.get("/permissions/all"),
-    ]);
-    setUsers(u.data.items ?? u.data ?? []);
-    setRoles(r.data.items ?? r.data ?? []);
-    setPerms(p.data ?? []);
+    try {
+      const [u, r, p, pr, h] = await Promise.all([
+        api.get("/users", { params: userParams }),
+        canManageRoles ? api.get("/roles") : Promise.resolve({ data: [] }),
+        canManageRoles ? api.get("/permissions/all") : Promise.resolve({ data: [] }),
+        canManageUsers ? api.get("/transportation-providers").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+        canManageUsers ? api.get("/hotels").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+      ]);
+      setUsers(u.data.items ?? u.data ?? []);
+      setRoles(r.data.items ?? r.data ?? []);
+      setPerms(p.data ?? []);
+      setProviders((pr.data ?? []).map((x: any) => ({ id: x.id, name: x.name, isCompany: x.isCompany })));
+      setHotels((h.data ?? []).map((x: any) => ({ id: x.id, name: x.name })));
+    } catch (e) {
+      message.error(getErrorMessage(e));
+    }
   };
 
   useEffect(() => {
-    if (canManageUsers || canManageRoles) load().catch((e) => message.error(getErrorMessage(e)));
-  }, [roleFilter, userTypeFilter, statusFilter]);
+    if (canManageUsers || canManageRoles) load().catch(() => {});
+  }, [roleFilter, statusFilter]);
 
   const canManageMailbox = hasPermission("gmail.manage");
 
@@ -388,10 +425,30 @@ export default function UsersPage() {
     editForm.setFieldsValue({
       name: u.name ?? "",
       avatarUrl: u.avatarUrl ?? "",
-      userType: u.userType ?? undefined,
+
       role: u.role ?? undefined,
       isActive: u.isActive,
       storageQuotaMb: u.storageQuotaMb ?? 3072,
+      hotelId: u.hotelId ?? undefined,
+      hotelCommissionPercent:
+        u.hotel?.commissionPercent !== undefined && u.hotel?.commissionPercent !== null
+          ? Number(u.hotel.commissionPercent)
+          : undefined,
+      providerId: u.providerId ?? undefined,
+      guideProfile: u.guideProfile
+        ? {
+            type: u.guideProfile.type ?? undefined,
+            languages: u.guideProfile.languages ?? [],
+            rating: u.guideProfile.rating ?? 5,
+          }
+        : undefined,
+      driverProfile: u.driverProfile
+        ? {
+            licenseNumber: u.driverProfile.licenseNumber ?? "",
+            type: u.driverProfile.type ?? undefined,
+            rating: u.driverProfile.rating ?? 5,
+          }
+        : undefined,
     });
     setEditModalOpen(true);
   };
@@ -417,9 +474,18 @@ export default function UsersPage() {
   const saveEdit = async () => {
     const values = await editForm.validateFields();
     if (!editingUser) return;
+    const role = values.role ?? editingUser.role;
+    const payload: any = { ...values };
+    if (role !== "TOUR_GUIDE") delete payload.guideProfile;
+    if (role !== "DRIVER") delete payload.driverProfile;
+    if (role !== "HOTEL") {
+      payload.hotelId = null;
+      delete payload.hotelCommissionPercent;
+    }
+    if (role !== "TRANSPORT_PROVIDER") payload.providerId = null;
     setSavingEdit(true);
     try {
-      await api.put(`/users/${editingUser.id}`, values);
+      await api.put(`/users/${editingUser.id}`, payload);
       message.success("User updated");
       setEditModalOpen(false);
       load();
@@ -497,14 +563,6 @@ export default function UsersPage() {
       onFilter: (v: any, r: User) => (r.authProvider ?? "LOCAL") === v,
     },
     {
-      title: "Type",
-      dataIndex: "userType",
-      key: "userType",
-      render: (v: string) => <Tag color={colorFor(v)}>{v}</Tag>,
-      filters: Array.from(new Set(users.map((u) => u.userType).filter(Boolean))).map((t) => ({ text: t!, value: t! })),
-      onFilter: (v: any, r: User) => r.userType === v,
-    },
-    {
       title: "Role",
       dataIndex: "role",
       key: "role",
@@ -558,6 +616,12 @@ export default function UsersPage() {
       key: "actions",
       render: (_: any, r: User) => (
         <Space size={8}>
+          <Button
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() => setDetailUser(r)}
+            aria-label={`View ${r.email}`}
+          />
           {canManageUsers && (
             <Button
               size="small"
@@ -716,17 +780,14 @@ export default function UsersPage() {
                   items: [
                     {
                       key: "test",
-                      icon: <ReloadOutlined />,
                       label: "Test connection",
                     },
                     {
                       key: "renew",
-                      icon: <ReloadOutlined />,
                       label: "Renew watch",
                     },
                     {
                       key: "reconnect",
-                      icon: <ReloadOutlined />,
                       label: "Reconnect",
                     },
                     { type: "divider" as const },
@@ -891,9 +952,6 @@ export default function UsersPage() {
                       variant="borderless"
                       extra={
                         <Flex gap={8} align="center">
-                          <Button icon={<ReloadOutlined />} onClick={loadMailboxes}>
-                            Refresh
-                          </Button>
                           <Tooltip
                             title={
                               mailboxes.length >= 1
@@ -949,15 +1007,7 @@ export default function UsersPage() {
                       onChange={setRoleFilter}
                       options={ROLE_OPTIONS}
                     />
-                    <Select
-                      allowClear
-                      size="small"
-                      placeholder="Type"
-                      style={{ width: 130 }}
-                      value={userTypeFilter}
-                      onChange={setUserTypeFilter}
-                      options={USER_TYPE_OPTIONS}
-                    />
+
                     <Select
                       allowClear
                       size="small"
@@ -1079,9 +1129,6 @@ export default function UsersPage() {
           <Form.Item name="name" label="Name">
             <Input />
           </Form.Item>
-          <Form.Item name="avatarUrl" label="Avatar URL">
-            <Input placeholder="https://example.com/avatar.jpg" />
-          </Form.Item>
           <Form.Item
             name="email"
             label="Email"
@@ -1096,19 +1143,74 @@ export default function UsersPage() {
           >
             <Input.Password />
           </Form.Item>
-          <Form.Item name="userType" label="User type" initialValue="admin">
-            <Select
-              options={[
-                { value: "admin", label: "Admin" },
-                { value: "office", label: "Office" },
-                { value: "driver", label: "Driver" },
-                { value: "guide", label: "Guide" },
-                { value: "customer", label: "Customer" },
-              ]}
-            />
-          </Form.Item>
           <Form.Item name="role" label="Role" initialValue="OFFICE">
             <Select options={ROLE_OPTIONS} />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.role !== cur.role}>
+            {({ getFieldValue }) =>
+              getFieldValue("role") === "TOUR_GUIDE" ? (
+                <Form.Item name={["guideProfile", "type"]} label="Guide type">
+                  <Select
+                    allowClear
+                    options={[
+                      { value: "OFFICIAL", label: "Company (Official)" },
+                      { value: "FREELANCE", label: "Freelancer" },
+                    ]}
+                  />
+                </Form.Item>
+              ) : null
+            }
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.role !== cur.role}>
+            {({ getFieldValue }) =>
+              getFieldValue("role") === "DRIVER" ? (
+                <>
+                  <Form.Item name={["driverProfile", "type"]} label="Driver type">
+                    <Select
+                      allowClear
+                      options={[
+                        { value: "OFFICIAL", label: "Company (Official)" },
+                        { value: "FREELANCE", label: "Freelancer" },
+                      ]}
+                    />
+                  </Form.Item>
+                  <Form.Item name="providerId" label="Transportation provider">
+                    <Select
+                      allowClear
+                      showSearch
+                      optionFilterProp="label"
+                      options={providers.map((p) => ({
+                        value: p.id,
+                        label: `${p.name}${p.isCompany ? " (Company)" : ""}`,
+                      }))}
+                    />
+                  </Form.Item>
+                </>
+              ) : null
+            }
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.role !== cur.role}>
+            {({ getFieldValue }) =>
+              getFieldValue("role") === "HOTEL" ? (
+                <>
+                  <Form.Item name="hotelId" label="Hotel">
+                    <Select
+                      allowClear
+                      showSearch
+                      optionFilterProp="label"
+                      options={hotels.map((h) => ({ value: h.id, label: h.name }))}
+                    />
+                  </Form.Item>
+                  <Form.Item
+                    name="hotelCommissionPercent"
+                    label="Commission %"
+                    extra="Applied to every completed, paid booking linked to this hotel."
+                  >
+                    <InputNumber min={0} max={100} step={0.5} style={{ width: "100%" }} />
+                  </Form.Item>
+                </>
+              ) : null
+            }
           </Form.Item>
         </Form>
       </Modal>
@@ -1149,20 +1251,7 @@ export default function UsersPage() {
                   Upload picture (auto 515×515)
                 </Button>
               </Upload>
-              <Input placeholder="Or paste an avatar URL" />
             </Flex>
-          </Form.Item>
-          <Form.Item name="userType" label="User type">
-            <Select
-              allowClear
-              options={[
-                { value: "admin", label: "Admin" },
-                { value: "office", label: "Office" },
-                { value: "driver", label: "Driver" },
-                { value: "guide", label: "Guide" },
-                { value: "customer", label: "Customer" },
-              ]}
-            />
           </Form.Item>
           {editingUser?.id !== me?.id && (
             <Form.Item name="role" label="Role">
@@ -1181,6 +1270,81 @@ export default function UsersPage() {
               <InputNumber min={1} max={2097152} style={{ width: "100%" }} />
             </Form.Item>
           )}
+
+          <Form.Item noStyle shouldUpdate={(p, c) => p.role !== c.role}>
+            {({ getFieldValue }) => {
+              const role = getFieldValue("role") ?? editingUser?.role;
+              if (role === "TOUR_GUIDE") {
+                return (
+                  <>
+                    <Typography.Title level={5}>Guide profile</Typography.Title>
+                    <Form.Item name={["guideProfile", "type"]} label="Guide type">
+                      <Select options={[{ value: "OFFICIAL", label: "Official" }, { value: "FREELANCE", label: "Freelance" }]} />
+                    </Form.Item>
+                    <Form.Item name={["guideProfile", "languages"]} label="Languages">
+                      <Select mode="tags" tokenSeparators={[","]} placeholder="English, Vietnamese" />
+                    </Form.Item>
+                    <Form.Item name={["guideProfile", "rating"]} label="Rating">
+                      <InputNumber min={0} max={5} step={0.1} style={{ width: "100%" }} />
+                    </Form.Item>
+                  </>
+                );
+              }
+              if (role === "DRIVER") {
+                return (
+                  <>
+                    <Typography.Title level={5}>Driver profile</Typography.Title>
+                    <Form.Item name={["driverProfile", "licenseNumber"]} label="License number">
+                      <Input />
+                    </Form.Item>
+                    <Form.Item name={["driverProfile", "type"]} label="Driver type">
+                      <Select options={[{ value: "COMPANY", label: "Company" }, { value: "FREELANCE", label: "Freelance" }]} />
+                    </Form.Item>
+                    <Form.Item name={["driverProfile", "rating"]} label="Rating">
+                      <InputNumber min={0} max={5} step={0.1} style={{ width: "100%" }} />
+                    </Form.Item>
+                  </>
+                );
+              }
+              if (role === "TRANSPORT_PROVIDER") {
+                return (
+                  <Form.Item name="providerId" label="Transportation provider">
+                    <Select
+                      allowClear
+                      showSearch
+                      optionFilterProp="label"
+                      options={providers.map((p) => ({
+                        value: p.id,
+                        label: `${p.name}${p.isCompany ? " (Company)" : ""}`,
+                      }))}
+                    />
+                  </Form.Item>
+                );
+              }
+              if (role === "HOTEL") {
+                return (
+                  <>
+                    <Form.Item name="hotelId" label="Hotel">
+                      <Select
+                        allowClear
+                        showSearch
+                        optionFilterProp="label"
+                        options={hotels.map((h) => ({ value: h.id, label: h.name }))}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      name="hotelCommissionPercent"
+                      label="Commission %"
+                      extra="Applies to every completed, paid booking linked to this hotel."
+                    >
+                      <InputNumber min={0} max={100} step={0.5} style={{ width: "100%" }} />
+                    </Form.Item>
+                  </>
+                );
+              }
+              return null;
+            }}
+          </Form.Item>
         </Form>
       </Modal>
 
@@ -1272,6 +1436,120 @@ export default function UsersPage() {
             />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title={detailUser ? `User Details: ${detailUser.name ?? detailUser.email}` : "User Details"}
+        open={!!detailUser}
+        onCancel={() => setDetailUser(null)}
+        footer={
+          <Space>
+            {canManageUsers && detailUser && (
+              <Button
+                onClick={() => {
+                  const u = detailUser;
+                  setDetailUser(null);
+                  openEditModal(u);
+                }}
+              >
+                Edit
+              </Button>
+            )}
+            <Button type="primary" onClick={() => setDetailUser(null)}>Close</Button>
+          </Space>
+        }
+        width={760}
+      >
+        {detailUser && (
+          <Flex vertical gap={16}>
+            <Descriptions bordered size="small" column={2} title="Account">
+              <Descriptions.Item label="Name">{detailUser.name ?? "—"}</Descriptions.Item>
+              <Descriptions.Item label="Email">{detailUser.email}</Descriptions.Item>
+              <Descriptions.Item label="Role">
+                {detailUser.role ? <Tag color={colorFor(detailUser.role)}>{detailUser.role}</Tag> : <Tag color="red">None</Tag>}
+              </Descriptions.Item>
+
+              <Descriptions.Item label="Status">
+                {detailUser.isActive ? <Tag color="green">Active</Tag> : <Tag color="red">Disabled</Tag>}
+              </Descriptions.Item>
+              <Descriptions.Item label="Provider">
+                {detailUser.authProvider === "GOOGLE" ? <Tag color="blue">Google</Tag> : <Tag>Local</Tag>}
+              </Descriptions.Item>
+              <Descriptions.Item label="Last Login">
+                {detailUser.lastLogin ? new Date(detailUser.lastLogin).toLocaleString() : "—"}
+              </Descriptions.Item>
+              <Descriptions.Item label="Created At">
+                {detailUser.createdAt ? new Date(detailUser.createdAt).toLocaleString() : "—"}
+              </Descriptions.Item>
+              <Descriptions.Item label="Storage Quota">
+                {detailUser.role === "ADMIN" ? <Tag color="gold">Unlimited</Tag> : `${detailUser.storageQuotaMb ?? 3072} MB`}
+              </Descriptions.Item>
+              <Descriptions.Item label="Storage Used">
+                {formatBytes(detailUser.storageUsedBytes ?? 0)}
+              </Descriptions.Item>
+            </Descriptions>
+
+            <Descriptions bordered size="small" column={2} title="Role Information">
+              {detailUser.role === "TOUR_GUIDE" && (
+                <>
+                  <Descriptions.Item label="Guide Type">{detailUser.guideProfile?.type ?? "—"}</Descriptions.Item>
+                  <Descriptions.Item label="Rating">{detailUser.guideProfile?.rating ?? "—"}</Descriptions.Item>
+                  <Descriptions.Item label="Languages" span={2}>
+                    {detailUser.guideProfile?.languages?.length ? detailUser.guideProfile.languages.join(", ") : "—"}
+                  </Descriptions.Item>
+                </>
+              )}
+              {detailUser.role === "DRIVER" && (
+                <>
+                  <Descriptions.Item label="Driver Type">{detailUser.driverProfile?.type ?? "—"}</Descriptions.Item>
+                  <Descriptions.Item label="License Number">{detailUser.driverProfile?.licenseNumber ?? "—"}</Descriptions.Item>
+                  <Descriptions.Item label="Rating">{detailUser.driverProfile?.rating ?? "—"}</Descriptions.Item>
+                </>
+              )}
+              {detailUser.role === "TRANSPORT_PROVIDER" && (
+                <>
+                  <Descriptions.Item label="Provider Name">{detailUser.provider?.name ?? "—"}</Descriptions.Item>
+                  <Descriptions.Item label="Company Fleet">
+                    {detailUser.provider ? (detailUser.provider.isCompany ? <Tag color="green">Yes</Tag> : <Tag>No</Tag>) : "—"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Assignment Mode">{detailUser.provider?.assignmentMode ?? "—"}</Descriptions.Item>
+                  <Descriptions.Item label="Provider ID">{detailUser.providerId ?? "—"}</Descriptions.Item>
+                </>
+              )}
+              {detailUser.role === "HOTEL" && (
+                <>
+                  <Descriptions.Item label="Hotel Name">{detailUser.hotel?.name ?? "—"}</Descriptions.Item>
+                  <Descriptions.Item label="Contact Name">{detailUser.hotel?.contactName ?? "—"}</Descriptions.Item>
+                  <Descriptions.Item label="Phone">{detailUser.hotel?.phone ?? "—"}</Descriptions.Item>
+                  <Descriptions.Item label="Email">{detailUser.hotel?.email ?? "—"}</Descriptions.Item>
+                  <Descriptions.Item label="Address" span={2}>{detailUser.hotel?.address ?? "—"}</Descriptions.Item>
+                  <Descriptions.Item label="Commission %">{detailUser.hotel?.commissionPercent ?? "—"}</Descriptions.Item>
+                  <Descriptions.Item label="Hotel Active">
+                    {detailUser.hotel ? (detailUser.hotel.isActive ? <Tag color="green">Active</Tag> : <Tag color="red">Inactive</Tag>) : "—"}
+                  </Descriptions.Item>
+                </>
+              )}
+              {!["TOUR_GUIDE", "DRIVER", "TRANSPORT_PROVIDER", "HOTEL"].includes(detailUser.role ?? "") && (
+                <Descriptions.Item label="Additional Profile" span={2}>
+                  No additional role-specific profile information.
+                </Descriptions.Item>
+              )}
+            </Descriptions>
+
+            <Descriptions bordered size="small" column={1} title="Access">
+              <Descriptions.Item label="Roles">
+                <Flex gap={4} wrap="wrap">
+                  {(detailUser.roles ?? []).length
+                    ? detailUser.roles!.map((r) => <Tag key={r.role.id} color={colorFor(r.role.name)}>{r.role.name}</Tag>)
+                    : "—"}
+                </Flex>
+              </Descriptions.Item>
+              <Descriptions.Item label="Extra Permissions">
+                {(detailUser.permissions ?? []).length ? `${detailUser.permissions!.length} permission(s)` : "—"}
+              </Descriptions.Item>
+            </Descriptions>
+          </Flex>
+        )}
       </Modal>
 
     </div>

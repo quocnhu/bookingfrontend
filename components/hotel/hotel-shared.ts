@@ -15,6 +15,11 @@ export interface HotelBookingRow {
   commissionPercent: number;
   commissionAmount: number;
   commissionEarned: boolean;
+  commissionPaid?: boolean;
+  commissionPaidAt?: string | null;
+  commissionPaidByName?: string | null;
+  commissionPaymentMethod?: string | null;
+  commissionPaymentReference?: string | null;
 }
 
 export interface HotelTourSummary {
@@ -25,6 +30,8 @@ export interface HotelTourSummary {
   revenue: number;
   earned: number;
   pending: number;
+  paid?: number;
+  unpaid?: number;
 }
 
 export interface HotelDashboardData {
@@ -35,6 +42,8 @@ export interface HotelDashboardData {
     revenue: number;
     earned: number;
     pending: number;
+    paid?: number;
+    unpaid?: number;
     tours: number;
   };
   byTour: HotelTourSummary[];
@@ -52,6 +61,8 @@ export interface HotelBookingsData {
     revenue: number;
     earned: number;
     pending: number;
+    paid?: number;
+    unpaid?: number;
   };
 }
 
@@ -62,7 +73,9 @@ export const formatVnd = (value: number | string | null | undefined) =>
 
 export const hotelBookingStatus = (row: HotelBookingRow) => {
   if (row.status === "CANCELED") return { label: "Canceled", color: "red" };
-  if (row.commissionEarned) return { label: "Commission earned", color: "green" };
+  if (row.commissionEarned && row.commissionPaid)
+    return { label: "Commission paid", color: "green" };
+  if (row.commissionEarned) return { label: "Earned - unpaid", color: "gold" };
   if (row.assignmentStatus === "COMPLETED") {
     return { label: "Awaiting payment", color: "orange" };
   }

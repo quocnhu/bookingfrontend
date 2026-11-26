@@ -34,7 +34,7 @@ const ROLE_LABEL: Record<string, string> = {
   TOUR_GUIDE: "Tour Guide",
   DRIVER: "Driver",
   TRANSPORT_PROVIDER: "Transport Provider",
-  CUSTOMER: "Customer",
+  TOURIST: "Tourist",
 };
 
 const ROLE_COLOR: Record<string, string> = {
@@ -43,7 +43,7 @@ const ROLE_COLOR: Record<string, string> = {
   TOUR_GUIDE: "green",
   DRIVER: "cyan",
   TRANSPORT_PROVIDER: "purple",
-  CUSTOMER: "default",
+  TOURIST: "default",
 };
 
 const LEAVE_COLOR: Record<string, string> = {
@@ -157,7 +157,6 @@ interface TimesheetEmployee {
   name: string;
   email: string;
   role: string;
-  userType?: string | null;
   isActive: boolean;
   group?: string | null;
   provider?: { id?: string; name?: string; isCompany?: boolean } | null;

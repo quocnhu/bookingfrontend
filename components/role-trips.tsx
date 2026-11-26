@@ -32,7 +32,6 @@ import {
   FileTextOutlined,
   HomeOutlined,
   LockOutlined,
-  ReloadOutlined,
   TeamOutlined,
   UserOutlined,
 } from "@ant-design/icons";
@@ -750,17 +749,6 @@ export default function RoleTripsPage({
               style={{ width: isMobile ? "100%" : undefined }}
             />
           )}
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => {
-              void loadAssignments();
-              void loadHolds();
-            }}
-            loading={loading}
-            style={{ flex: isMobile ? 1 : undefined }}
-          >
-            Refresh
-          </Button>
           {mode === "driver" && (
             <Button
               icon={<DownloadOutlined />}

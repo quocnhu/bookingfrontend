@@ -31,7 +31,6 @@ import {
   DeleteOutlined,
   DollarOutlined,
   PictureOutlined,
-  ReloadOutlined,
   SendOutlined,
   UserOutlined,
   UploadOutlined,
@@ -199,14 +198,6 @@ export default function SubmitReportPage() {
         <Typography.Title level={4} style={{ margin: 0 }}>
           <FileTextOutlined /> Submit Tour Report
         </Typography.Title>
-        <Button
-          icon={<ReloadOutlined />}
-          onClick={load}
-          loading={loading}
-          block={isMobile}
-        >
-          Refresh
-        </Button>
       </Flex>
 
       <Typography.Text type="secondary" style={{ display: "block", marginBottom: 16 }}>

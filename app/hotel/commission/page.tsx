@@ -68,30 +68,29 @@ export default function HotelCommissionPage() {
       render: (value: number) => formatVnd(value),
     },
     {
-      title: "Commission earned",
-      dataIndex: "earned",
-      key: "earned",
+      title: "Earned (unpaid)",
+      dataIndex: "unpaid",
+      key: "unpaid",
+      align: "right" as const,
+      render: (value: number) => <Text type="warning">{formatVnd(value ?? 0)}</Text>,
+    },
+    {
+      title: "Paid to hotel",
+      dataIndex: "paid",
+      key: "paid",
       align: "right" as const,
       render: (value: number) => (
         <Text type="success" strong>
-          {formatVnd(value)}
+          {formatVnd(value ?? 0)}
         </Text>
       ),
     },
     {
-      title: "Commission pending",
+      title: "Pending eligibility",
       dataIndex: "pending",
       key: "pending",
       align: "right" as const,
-      render: (value: number) => <Text type="warning">{formatVnd(value)}</Text>,
-    },
-    {
-      title: "Total commission",
-      key: "total",
-      align: "right" as const,
-      render: (_: unknown, row: HotelTourSummary) => (
-        <Text strong>{formatVnd(row.earned + row.pending)}</Text>
-      ),
+      render: (value: number) => <Text>{formatVnd(value)}</Text>,
     },
   ];
 
@@ -124,11 +123,22 @@ export default function HotelCommissionPage() {
       )}
 
       <Row gutter={[12, 12]} className="portal-stats" style={{ marginBottom: 16 }}>
-        <Col xs={12} md={8}>
+        <Col xs={12} md={6}>
           <Card size="small">
             <Statistic
-              title="Commission earned"
-              value={data?.totals.earned ?? 0}
+              title="Earned (unpaid)"
+              value={data?.totals.unpaid ?? 0}
+              valueStyle={{ color: token.colorWarning }}
+              formatter={(value) => formatVnd(value)}
+              loading={loading}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card size="small">
+            <Statistic
+              title="Paid to hotel"
+              value={data?.totals.paid ?? 0}
               prefix={<DollarOutlined />}
               valueStyle={{ color: token.colorSuccess }}
               formatter={(value) => formatVnd(value)}
@@ -136,22 +146,21 @@ export default function HotelCommissionPage() {
             />
           </Card>
         </Col>
-        <Col xs={12} md={8}>
+        <Col xs={12} md={6}>
           <Card size="small">
             <Statistic
-              title="Commission pending"
+              title="Pending eligibility"
               value={data?.totals.pending ?? 0}
-              valueStyle={{ color: token.colorWarning }}
               formatter={(value) => formatVnd(value)}
               loading={loading}
             />
           </Card>
         </Col>
-        <Col xs={24} md={8}>
+        <Col xs={12} md={6}>
           <Card size="small">
             <Statistic
-              title="Total commission"
-              value={(data?.totals.earned ?? 0) + (data?.totals.pending ?? 0)}
+              title="Total earned"
+              value={data?.totals.earned ?? 0}
               formatter={(value) => formatVnd(value)}
               loading={loading}
             />

@@ -73,7 +73,8 @@ export type PayeeType =
   | "COMPANY_GUIDE"
   | "COMPANY_DRIVER"
   | "FREELANCE"
-  | "PARTNER";
+  | "PARTNER"
+  | "HOTEL";
 
 export const PAYEE_GROUP_LABELS: Record<PayeeType, string> = {
   TRANSPORT_PROVIDER: "Transportation Provider",
@@ -81,6 +82,7 @@ export const PAYEE_GROUP_LABELS: Record<PayeeType, string> = {
   COMPANY_DRIVER: "Company Driver",
   FREELANCE: "Freelance (driver & guide)",
   PARTNER: "Partner agency",
+  HOTEL: "Hotel commission",
 };
 
 export interface Person {
@@ -90,7 +92,6 @@ export interface Person {
   name: string;
   email: string | null;
   role: Role;
-  userType?: string | null;
   providerName?: string | null;
   providerIsCompany?: boolean | null;
   payeeType: PayeeType;
@@ -217,7 +218,7 @@ export interface QueueItem {
 }
 
 export interface HistoryRow {
-  recordType?: "CREW" | "PARTNER";
+  recordType?: "CREW" | "PARTNER" | "HOTEL";
   direction: Direction;
   paidAt?: string | null;
   paidByName?: string | null;
@@ -229,7 +230,7 @@ export interface HistoryRow {
   voidedByName?: string | null;
   voidReason?: string | null;
   person: { id: string; name: string; role: string | null };
-  payeeType?: PayeeType | null;
+  payeeType?: PayeeType | "PARTNER" | "HOTEL" | null;
   fromDate: string;
   toDate: string;
   tourCount: number;
@@ -277,9 +278,11 @@ export interface Settlement {
 const DirectionTag = ({
   direction,
   partner,
+  hotel,
 }: {
   direction: string;
   partner?: boolean;
+  hotel?: boolean;
 }) => {
   if (direction === "PERSON_TO_COMPANY")
     return (
@@ -290,7 +293,11 @@ const DirectionTag = ({
   if (direction === "COMPANY_TO_PERSON")
     return (
       <Tag color="blue">
-        {partner ? "Company pays partner" : "Company pays guide/driver"}
+        {hotel
+          ? "Company pays hotel"
+          : partner
+            ? "Company pays partner"
+            : "Company pays guide/driver"}
       </Tag>
     );
   if (direction === "COMPANY_TO_PROVIDER")
@@ -749,11 +756,7 @@ export function PeriodTab({
               {preview && <DirectionTag direction={preview.direction} />}
             </Flex>
           }
-          extra={
-            <Button size="small" onClick={load} loading={loading}>
-              Refresh
-            </Button>
-          }
+          extra={null}
         >
           {!payeeId ? (
             <Empty description="Select a payee to view the period" />
@@ -1800,6 +1803,7 @@ export function HistoryTab({
   const markPaid = (r: HistoryRow) => {
     let reference = "";
     const isPartner = r.recordType === "PARTNER";
+    const isHotel = r.recordType === "HOTEL";
     modal.confirm({
       title: `Mark payout to ${r.person.name} as paid?`,
       content: (
@@ -1876,9 +1880,7 @@ export function HistoryTab({
                 .map((p) => ({ value: p.id, label: `${p.name} · ${PAYEE_GROUP_LABELS[t]}` })),
             )}
           />
-          <Button size="small" onClick={load} loading={loading}>
-            Refresh
-          </Button>
+          {/* refresh button removed */}
         </Space>
       }
     >
@@ -1952,11 +1954,13 @@ export function HistoryTab({
                     ? "External transport provider"
                     : r.person.role === "PARTNER"
                       ? "Partner agency"
-                      : r.person.role === "DRIVER"
-                        ? "Driver"
-                        : "Guide"}
+                      : r.person.role === "HOTEL"
+                        ? "Hotel"
+                        : r.person.role === "DRIVER"
+                          ? "Driver"
+                          : "Guide"}
                   {" · "}
-                  {r.payeeType ? PAYEE_GROUP_LABELS[r.payeeType as PayeeType] : "—"}
+                  {r.payeeType ? PAYEE_GROUP_LABELS[r.payeeType as PayeeType] ?? r.payeeType : "—"}
                 </Typography.Text>
               </>
             ),
@@ -1989,6 +1993,7 @@ export function HistoryTab({
               <DirectionTag
                 direction={r.direction}
                 partner={r.recordType === "PARTNER"}
+                hotel={r.recordType === "HOTEL"}
               />
             ),
           },
@@ -2028,12 +2033,12 @@ export function HistoryTab({
             align: "right",
             render: (_: unknown, r: HistoryRow) => (
               <Space>
-                {!r.voidedAt && !r.paidAt && canMarkPaid && (
+                {!r.voidedAt && !r.paidAt && canMarkPaid && r.recordType !== "HOTEL" && (
                   <Button size="small" type="primary" onClick={() => markPaid(r)}>
                     Mark paid
                   </Button>
                 )}
-                {r.recordType !== "PARTNER" &&
+                {r.recordType !== "PARTNER" && r.recordType !== "HOTEL" &&
                   (r.voidedAt ? (
                     <Tooltip title={`Voided by ${r.voidedByName ?? "—"}: ${r.voidReason ?? ""}`}>
                       <Tag color="red" style={{ margin: 0 }}>
@@ -2049,7 +2054,7 @@ export function HistoryTab({
                       </Tooltip>
                     )
                   ))}
-                {r.recordType !== "PARTNER" && (
+                {r.recordType !== "PARTNER" && r.recordType !== "HOTEL" && (
                   <>
                     <Button size="small" onClick={() => setOpen(r)}>
                       Export copy
