@@ -40,6 +40,7 @@ import { useApp } from "@/lib/app-context";
 import { centerColumns, indexColumn, PAGE_SIZE_OPTIONS, paginationChange } from "@/lib/table";
 import { isUnpaidPayPalBooking } from "@/lib/unpaid";
 import DispatchBoard from "@/components/dispatch-board";
+import PhoneInput from "@/components/phone-input";
 
 const BOOKING_STATUS = ["PENDING", "ASSIGNED", "CANCELED"];
 const ASSIGNMENT_STATUS = ["PENDING", "DISPATCHED", "COMPLETED", "CANCELED"];
@@ -237,6 +238,7 @@ export default function BookingsPage() {
   ]);
 
   const [paymentBusy, setPaymentBusy] = useState(false);
+  const [resendingConfirmation, setResendingConfirmation] = useState(false);
   const [otaOpen, setOtaOpen] = useState(false);
   const [otaSaving, setOtaSaving] = useState(false);
   const [otaBooking, setOtaBooking] = useState<any>(null);
@@ -477,6 +479,28 @@ export default function BookingsPage() {
       message.error(getErrorMessage(e, "Could not confirm the payment"));
     } finally {
       setPaymentBusy(false);
+    }
+  };
+
+  const resendBookingConfirmation = async () => {
+    if (!bookingDetail?.id) return;
+    setResendingConfirmation(true);
+    try {
+      const r = await api.post(
+        `/bookings/${bookingDetail.id}/resend-confirmation`,
+      );
+      if (r.data?.sent) {
+        message.success(`Confirmation email sent to ${r.data.recipient}`);
+      } else {
+        message.warning(
+          `Email was not sent${r.data?.reason ? `: ${r.data.reason}` : ""}`,
+        );
+      }
+      await reloadBookingDetail(bookingDetail.id);
+    } catch (e) {
+      message.error(getErrorMessage(e, "Could not resend the confirmation email"));
+    } finally {
+      setResendingConfirmation(false);
     }
   };
 
@@ -1979,10 +2003,19 @@ extra={
             required
             rules={[
               { required: true, message: "Phone is required" },
-              { pattern: /^[+]?[\d\s\-()]{7,20}$/, message: "Invalid phone format (7-20 chars, digits, spaces, +, -, parentheses)" },
+              {
+                validator: (_, value: string) => {
+                  const v = (value ?? "").trim();
+                  if (!v) return Promise.resolve();
+                  if (!/^\+[1-9]\d{6,14}$/.test(v)) {
+                    return Promise.reject(new Error("Select a country code and enter a valid phone number"));
+                  }
+                  return Promise.resolve();
+                },
+              },
             ]}
           >
-            <Input />
+            <PhoneInput />
           </Form.Item>
           <Form.Item
             name="mail"
@@ -2460,6 +2493,23 @@ extra={
             )}
           </Flex>
         )}
+        {bookingDetail &&
+          ["WEBSITE", "MANUAL"].includes(bookingDetail.channel) &&
+          canUpdateBooking && (
+            <Flex gap={8} align="center" style={{ marginTop: 16 }} wrap>
+              <Button
+                loading={resendingConfirmation}
+                onClick={resendBookingConfirmation}
+              >
+                Resend confirmation email
+              </Button>
+              {bookingDetail.confirmationEmailSentAt && (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  Last sent {fmtDate(new Date(bookingDetail.confirmationEmailSentAt))}
+                </Typography.Text>
+              )}
+            </Flex>
+          )}
         {Array.isArray(bookingDetail?.payments) && bookingDetail.payments.length > 0 && (
           <Card size="small" title="Payment records" style={{ marginTop: 16 }}>
             {bookingDetail.payments.map((p: any) => (

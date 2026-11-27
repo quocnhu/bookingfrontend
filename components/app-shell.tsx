@@ -163,6 +163,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const touristMenuItems = [
     { key: "/dashboard", icon: <DashboardOutlined />, label: <MenuLabel text="Dashboard" /> },
     { key: "/my-bookings", icon: <FileTextOutlined />, label: <MenuLabel text="Bookings" /> },
+    { key: "/profile", icon: <UserOutlined />, label: <MenuLabel text="Profile" /> },
   ];
   const finalMenuItems =
     user.role === "TOURIST"

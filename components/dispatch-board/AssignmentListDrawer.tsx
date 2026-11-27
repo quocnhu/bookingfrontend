@@ -33,8 +33,14 @@ import {
 import dayjs, { Dayjs } from "dayjs";
 import { api } from "@/lib/api";
 import { isUnpaidPayPalBooking } from "@/lib/unpaid";
+import { hcmDateKey, hcmDayRangesOverlap } from "@/lib/hcm-date";
 import type { BoardItem } from "./types";
 import { STATUS_COLORS, TYPE_META, sortByDate } from "./types";
+import {
+  driverSourceLabel,
+  guideSourceLabel,
+  providerSourceLabel,
+} from "./crew-source";
 
 const { Text } = Typography;
 
@@ -69,7 +75,14 @@ type AvailabilityMember = {
   holds?: Hold[];
 };
 
-type FilterKey = "all" | "issues" | "missing" | "provider" | "leave" | "waiting";
+type FilterKey =
+  | "all"
+  | "issues"
+  | "missing"
+  | "provider"
+  | "leave"
+  | "crew"
+  | "waiting";
 
 const FILTER_OPTIONS: Array<{ label: string; value: FilterKey }> = [
   { label: "All", value: "all" },
@@ -77,6 +90,7 @@ const FILTER_OPTIONS: Array<{ label: string; value: FilterKey }> = [
   { label: "Missing crew", value: "missing" },
   { label: "Provider", value: "provider" },
   { label: "Leave", value: "leave" },
+  { label: "Crew clash", value: "crew" },
   { label: "Waiting list", value: "waiting" },
 ];
 
@@ -100,6 +114,7 @@ interface Readiness {
   missingCrew: boolean;
   providerIssue: boolean;
   leaveIssue: boolean;
+  crewIssue: boolean;
   waiting: boolean;
   ready: boolean;
 }
@@ -116,11 +131,7 @@ function overlaps(
   startB: string,
   endB: string,
 ) {
-  const aStart = dayjs(startA).startOf("day").valueOf();
-  const aEnd = dayjs(endA).startOf("day").valueOf();
-  const bStart = dayjs(startB).startOf("day").valueOf();
-  const bEnd = dayjs(endB).startOf("day").valueOf();
-  return aStart <= bEnd && aEnd >= bStart;
+  return hcmDayRangesOverlap(startA, endA, startB, endB);
 }
 
 function formatRemaining(ms: number) {
@@ -163,10 +174,33 @@ function findHold(
   return match ?? null;
 }
 
+function duplicateCrewMap(items: BoardItem[]) {
+  const seen = new Map<string, Set<string>>();
+  for (const item of items) {
+    if (item.status === "CANCELED" || item.status === "WAITING_LIST") continue;
+    for (const [kind, userId] of [
+      ["guide", item.guide?.id],
+      ["driver", item.driver?.id],
+    ] as const) {
+      if (!userId) continue;
+      const key = `${kind}:${userId}`;
+      const buses = seen.get(key) ?? new Set<string>();
+      buses.add(item.code || item.id);
+      seen.set(key, buses);
+    }
+  }
+  const duplicates = new Map<string, string[]>();
+  for (const [key, buses] of seen) {
+    if (buses.size > 1) duplicates.set(key, [...buses]);
+  }
+  return duplicates;
+}
+
 function evaluate(
   item: BoardItem,
   leaves: Map<string, Leave[]>,
   holds: Map<string, Hold[]>,
+  duplicates: Map<string, string[]>,
 ): Readiness {
   const red: string[] = [];
   const orange: string[] = [];
@@ -174,6 +208,7 @@ function evaluate(
   let missingCrew = false;
   let providerIssue = false;
   let leaveIssue = false;
+  let crewIssue = false;
 
   const waiting = item.status === "WAITING_LIST";
   const outsourced = isOutsourced(item);
@@ -226,6 +261,13 @@ function evaluate(
             `Guide on hold ${dayjs(hold.startDate).format("DD MMM")} → ${dayjs(
               hold.endDate,
             ).format("DD MMM")}${hold.note ? ` (${hold.note})` : ""}`,
+          );
+        }
+        const guideClash = duplicates.get(`guide:${item.guide.id}`);
+        if (guideClash) {
+          crewIssue = true;
+          red.push(
+            `Guide assigned to ${guideClash.join(" and ")} on the same date`,
           );
         }
         const freelanceGuide =
@@ -288,6 +330,13 @@ function evaluate(
         const label = `Driver on ${leave.status === "APPROVED" ? "approved" : "pending"} leave`;
         (leave.status === "APPROVED" ? red : orange).push(label);
       }
+      const driverClash = duplicates.get(`driver:${item.driver.id}`);
+      if (driverClash) {
+        crewIssue = true;
+        red.push(
+          `Driver assigned to ${driverClash.join(" and ")} on the same date`,
+        );
+      }
       if (
         externalProvider &&
         providerStatus === "ASSIGNED" &&
@@ -312,6 +361,7 @@ function evaluate(
     missingCrew,
     providerIssue,
     leaveIssue,
+    crewIssue,
     waiting,
     ready: !waiting && red.length === 0 && orange.length === 0,
   };
@@ -411,24 +461,20 @@ export default function AssignmentListDrawer({
   const dayItems = useMemo(
     () =>
       items
-        .filter((item) =>
-          dayjs(item.startDate)
-            .add(7, "hour")
-            .startOf("day")
-            .isSame(date.startOf("day")),
-        )
+        .filter((item) => hcmDateKey(item.startDate) === dayKey)
         .sort(sortByDate),
-    [items, date],
+    [items, dayKey],
   );
 
+  const duplicates = useMemo(() => duplicateCrewMap(dayItems), [dayItems]);
   const rows = useMemo<ReadinessRow[]>(
     () =>
       dayItems.map((item) => ({
         key: item.id,
         item,
-        readiness: evaluate(item, leaves, holds),
+        readiness: evaluate(item, leaves, holds, duplicates),
       })),
-    [dayItems, leaves, holds],
+    [dayItems, leaves, holds, duplicates],
   );
 
   const counts = useMemo(
@@ -441,6 +487,7 @@ export default function AssignmentListDrawer({
       missing: rows.filter((row) => row.readiness.missingCrew).length,
       provider: rows.filter((row) => row.readiness.providerIssue).length,
       leave: rows.filter((row) => row.readiness.leaveIssue).length,
+      crew: rows.filter((row) => row.readiness.crewIssue).length,
       waiting: rows.filter((row) => row.readiness.waiting).length,
     }),
     [rows],
@@ -459,6 +506,7 @@ export default function AssignmentListDrawer({
       if (filter === "missing" && !readiness.missingCrew) return false;
       if (filter === "provider" && !readiness.providerIssue) return false;
       if (filter === "leave" && !readiness.leaveIssue) return false;
+      if (filter === "crew" && !readiness.crewIssue) return false;
       if (filter === "waiting" && !readiness.waiting) return false;
       if (!needle) return true;
       return [
@@ -586,9 +634,15 @@ export default function AssignmentListDrawer({
           return <Tag color="red">Missing</Tag>;
         }
         const leave = findLeave(leaves, item, item.guide.id);
+        const source = guideSourceLabel(item.guide);
         return (
           <Space size={4} wrap>
             <Text style={{ fontSize: 12 }}>{item.guide.name}</Text>
+            {source && (
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {source}
+              </Text>
+            )}
             {leave && (
               <Tooltip
                 title={`${dayjs(leave.startDate).format("DD MMM")} → ${dayjs(leave.endDate).format("DD MMM")} · ${leave.status}`}
@@ -639,9 +693,15 @@ export default function AssignmentListDrawer({
           return <Tag color="red">Missing</Tag>;
         }
         const leave = findLeave(leaves, item, item.driver.id);
+        const source = driverSourceLabel(item.driver, item.provider);
         return (
           <Space size={4} wrap>
             <Text style={{ fontSize: 12 }}>{item.driver.name}</Text>
+            {source && (
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {source}
+              </Text>
+            )}
             {leave && (
               <Tooltip
                 title={`${dayjs(leave.startDate).format("DD MMM")} → ${dayjs(leave.endDate).format("DD MMM")} · ${leave.status}`}
@@ -691,7 +751,7 @@ export default function AssignmentListDrawer({
         return (
           <Space direction="vertical" size={1}>
             <Text style={{ fontSize: 12 }}>
-              {item.provider?.name ?? "Company fleet"}
+              {providerSourceLabel(item.provider)}
             </Text>
             {external && meta && (
               <Tag color={meta.color} style={{ margin: 0, fontSize: 11 }}>
@@ -860,6 +920,9 @@ export default function AssignmentListDrawer({
           <Tag color="magenta" style={{ margin: 0 }}>
             {counts.leave} leave
           </Tag>
+          <Tag color={counts.crew ? "red" : "default"} style={{ margin: 0 }}>
+            {counts.crew} crew clash
+          </Tag>
           <Tag color="gold" style={{ margin: 0 }}>
             {counts.waiting} waiting
           </Tag>
@@ -1006,6 +1069,11 @@ export default function AssignmentListDrawer({
                   ) : (
                     <Space size={4} wrap>
                       <Text style={{ fontSize: 12 }}>{item.guide.name}</Text>
+                      {guideSourceLabel(item.guide) && (
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          {guideSourceLabel(item.guide)}
+                        </Text>
+                      )}
                       {item.guideDeclinedAt ? (
                         <Tag color="red" style={{ margin: 0, fontSize: 11 }}>Declined</Tag>
                       ) : item.guideConfirmedAt ? (
@@ -1028,7 +1096,14 @@ export default function AssignmentListDrawer({
                       <Tag color="red" style={{ margin: 0 }}>Missing</Tag>
                     )
                   ) : (
-                    <Text style={{ fontSize: 12 }}>{item.driver.name}</Text>
+                    <Space size={4} wrap>
+                      <Text style={{ fontSize: 12 }}>{item.driver.name}</Text>
+                      {driverSourceLabel(item.driver, item.provider) && (
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          {driverSourceLabel(item.driver, item.provider)}
+                        </Text>
+                      )}
+                    </Space>
                   ),
                 )}
                 {field(
@@ -1042,7 +1117,7 @@ export default function AssignmentListDrawer({
                   "Provider",
                   <Space size={4} wrap>
                     <Text style={{ fontSize: 12 }}>
-                      {item.provider?.name ?? "Company fleet"}
+                      {providerSourceLabel(item.provider)}
                     </Text>
                     {externalProvider && providerMeta && (
                       <Tag color={providerMeta.color} style={{ margin: 0, fontSize: 11 }}>

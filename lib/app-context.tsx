@@ -116,8 +116,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (user) void fetchCompany();
-    else setCompany(null);
+    if (user) {
+      void fetchCompany();
+      return;
+    }
+
+    let cancelled = false;
+    api
+      .get('/company-profile/public')
+      .then(({ data }) => {
+        if (!cancelled) setCompany(data ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setCompany(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   useEffect(() => {

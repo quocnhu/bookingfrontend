@@ -33,6 +33,7 @@ import {
 import dayjs, { type Dayjs } from "dayjs";
 import { message } from "@/lib/antd-message";
 import { api, getErrorMessage } from "@/lib/api";
+import { currentMonthRange } from "@/lib/date-range";
 import { useSocket } from "@/lib/use-socket";
 
 const { Text, Title } = Typography;
@@ -138,7 +139,9 @@ export default function AdminTransportRequests() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<RequestStatus | undefined>();
   const [search, setSearch] = useState("");
-  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(() =>
+    currentMonthRange(),
+  );
   const [providers, setProviders] = useState<ProviderOption[]>([]);
 
   const [settings, setSettings] = useState<Settings | null>(null);

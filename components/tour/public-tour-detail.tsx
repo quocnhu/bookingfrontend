@@ -54,6 +54,7 @@ import {
 } from "@/lib/tour-display";
 import PromoCountdown from "@/components/promo-countdown";
 import PayPalCheckout from "@/components/paypal-checkout";
+import PhoneInput from "@/components/phone-input";
 import PublicHeader from "@/components/public-header";
 import TourSlideshow from "@/components/tour-slideshow";
 import DayTimeline from "@/components/day-timeline";
@@ -73,6 +74,8 @@ const paypalUsd = (
   }
   return (Math.ceil((value / rate) * 100 - 1e-9) / 100).toFixed(2);
 };
+
+const ONLINE_MAX_PAX = 12;
 
 const PRICE_CARD_STYLE = {
   background: "linear-gradient(135deg, #ecfeff, #dbeafe)",
@@ -183,10 +186,7 @@ export default function PublicTourDetail({
   const privateMaxPax = privatePaxOptions.length
     ? Math.max(...privatePaxOptions)
     : 12;
-  const maxSelectablePax =
-    selectedType === "PRIVATE_TOUR" && privatePaxOptions.length
-      ? privateMaxPax
-      : 12;
+  const maxSelectablePax = ONLINE_MAX_PAX;
 
   useEffect(() => {
     if (!offeredTypes.includes(selectedType)) {
@@ -197,10 +197,7 @@ export default function PublicTourDetail({
 
   const selectTourType = (type: string) => {
     setSelectedType(type);
-    const nextMax =
-      type === "PRIVATE_TOUR" && privatePaxOptions.length
-        ? privateMaxPax
-        : 12;
+    const nextMax = ONLINE_MAX_PAX;
     const currentPax = Number(bookingForm.getFieldValue("totalPax") ?? 1);
     bookingForm.setFieldsValue({
       tourType: type,
@@ -1078,12 +1075,15 @@ children: tour.insurancePolicy ? (
                   <Form.Item
                     name="totalPax"
                     label="Total pax"
-                    extra={
-                      selectedType === "PRIVATE_TOUR" && privatePaxOptions.length
-                        ? `Available: ${privatePaxOptions.join(", ")} people`
-                        : undefined
-                    }
-                    rules={[{ required: true, message: "Total pax is required" }]}
+                    extra={`Online booking supports up to ${ONLINE_MAX_PAX} people.`}
+                    rules={[
+                      { required: true, message: "Total pax is required" },
+                      {
+                        type: "number",
+                        max: ONLINE_MAX_PAX,
+                        message: `Online booking supports up to ${ONLINE_MAX_PAX} people. Please contact the admin/office for a larger group.`,
+                      },
+                    ]}
                   >
                     <InputNumber
                       min={1}
@@ -1094,6 +1094,22 @@ children: tour.insurancePolicy ? (
                   </Form.Item>
                 </Col>
               </Row>
+              {(Number(watchedPax ?? 0) >= ONLINE_MAX_PAX ||
+                (selectedType === "PRIVATE_TOUR" &&
+                  privateMaxPax > ONLINE_MAX_PAX)) && (
+                <Alert
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message="Need more than 12 people?"
+                  description={
+                    selectedType === "PRIVATE_TOUR" &&
+                    privateMaxPax > ONLINE_MAX_PAX
+                      ? `This tour has private price tiers up to ${privateMaxPax} people, but online booking stops at ${ONLINE_MAX_PAX}. Please contact the admin/office to arrange a larger private group or multi-bus booking.`
+                      : `Online booking is limited to ${ONLINE_MAX_PAX} guests. Please contact the admin/office to arrange a larger private group or multi-bus booking.`
+                  }
+                />
+              )}
               <Form.Item
                 name="paxDetail"
                 label="Pax detail"
@@ -1144,9 +1160,23 @@ children: tour.insurancePolicy ? (
                   <Form.Item
                     name="phone"
                     label="Phone"
-                    rules={[{ required: true, message: "Phone is required" }]}
+                    rules={[
+                      { required: true, message: "Phone is required" },
+                      {
+                        validator: (_, value: string) => {
+                          const v = (value ?? "").trim();
+                          if (!v) return Promise.resolve();
+                          if (!/^\+[1-9]\d{6,14}$/.test(v)) {
+                            return Promise.reject(
+                              new Error("Select a country code and enter a valid phone number"),
+                            );
+                          }
+                          return Promise.resolve();
+                        },
+                      },
+                    ]}
                   >
-                    <Input placeholder="Your phone number" />
+                    <PhoneInput placeholder="Phone number" />
                   </Form.Item>
                 </Col>
               </Row>

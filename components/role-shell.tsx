@@ -26,11 +26,12 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   CalendarOutlined,
-  RocketFilled,
+  CompassOutlined,
   ProfileOutlined,
   HomeOutlined,
 } from "@ant-design/icons";
 import { useApp } from "@/lib/app-context";
+import { BRAND } from "@/lib/site";
 import NotificationCenter from "@/components/notification-center";
 
 const { Header, Sider, Content } = Layout;
@@ -43,8 +44,10 @@ interface RoleShellProps {
 }
 
 export default function RoleShell({ children, menuItems, roleLabel, roleColor }: RoleShellProps) {
-  const { user, loading, theme, toggleTheme, logout } = useApp();
+  const { user, company, loading, theme, toggleTheme, logout } = useApp();
   const { token } = antdTheme.useToken();
+  const brandName = company?.shortName?.trim() || BRAND;
+  const brandLogo = company?.logoUrl?.trim() || null;
   const screens = Grid.useBreakpoint();
   const router = useRouter();
   const pathname = usePathname();
@@ -108,10 +111,23 @@ export default function RoleShell({ children, menuItems, roleLabel, roleColor }:
               gap={8}
               style={{ height: 56, borderBottom: `1px solid ${token.colorSplit}` }}
             >
-              <RocketFilled style={{ color: token.colorPrimary, fontSize: 20 }} />
+              {brandLogo ? (
+                <img
+                  src={brandLogo}
+                  alt={brandName}
+                  style={{
+                    height: 30,
+                    maxWidth: collapsed ? 40 : 120,
+                    objectFit: "contain",
+                    borderRadius: 6,
+                  }}
+                />
+              ) : (
+                <CompassOutlined style={{ color: token.colorPrimary, fontSize: 20 }} />
+              )}
               {!collapsed && (
-                <Typography.Text strong style={{ fontSize: 17, color: token.colorText }}>
-                  {roleLabel}
+                <Typography.Text strong ellipsis style={{ fontSize: 17, color: token.colorText, maxWidth: 140 }}>
+                  {brandName}
                 </Typography.Text>
               )}
             </Flex>
@@ -132,10 +148,18 @@ export default function RoleShell({ children, menuItems, roleLabel, roleColor }:
       )}
       <Drawer
         title={
-          <Flex align="center" gap={8}>
-            <RocketFilled style={{ color: token.colorPrimary, fontSize: 20 }} />
-            <Typography.Text strong style={{ fontSize: 16 }}>
-              {roleLabel}
+          <Flex align="center" gap={8} style={{ minWidth: 0 }}>
+            {brandLogo ? (
+              <img
+                src={brandLogo}
+                alt={brandName}
+                style={{ height: 26, maxWidth: 120, objectFit: "contain", borderRadius: 6 }}
+              />
+            ) : (
+              <CompassOutlined style={{ color: token.colorPrimary, fontSize: 20 }} />
+            )}
+            <Typography.Text strong ellipsis style={{ fontSize: 16, maxWidth: 170 }}>
+              {brandName}
             </Typography.Text>
           </Flex>
         }

@@ -19,6 +19,7 @@ import {
 import { SearchOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { api, getErrorMessage } from "@/lib/api";
+import { currentMonthRange } from "@/lib/date-range";
 import {
   type HotelBookingRow,
   type HotelBookingsData,
@@ -38,7 +39,9 @@ export default function HotelBookingsPage() {
   const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState("");
   const [payment, setPayment] = useState<string | undefined>();
-  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(() =>
+    currentMonthRange(),
+  );
 
   const fetchBookings = useCallback(async () => {
     const params: Record<string, unknown> = { page, pageSize };

@@ -6,13 +6,13 @@ import { useState } from "react";
 import { Button, Card, Col, Empty, Flex, Row, Tag, Typography } from "antd";
 import {
   CompassOutlined,
-  LoginOutlined,
-  DashboardOutlined,
   ClockCircleOutlined,
   CalendarOutlined,
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
-import { useApp, getDefaultRoute } from "@/lib/app-context";
+import PublicHeader from "@/components/public-header";
+import { useApp } from "@/lib/app-context";
+import { BRAND } from "@/lib/site";
 import PromoCountdown from "@/components/promo-countdown";
 import { discountedPrice, discountFor, isTypePromoActive } from "@/lib/promo";
 import {
@@ -94,7 +94,7 @@ export default function HomePage({
   categories?: HomepageCategory[];
 }) {
   const router = useRouter();
-  const { user, loading: authLoading } = useApp();
+  const { user, company } = useApp();
   const tours = initialTours;
   const [activeCategory, setActiveCategory] = useState("all");
   const visibleTours =
@@ -108,43 +108,7 @@ export default function HomePage({
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-      <Flex
-        justify="space-between"
-        align="center"
-        style={{ padding: "16px 24px", borderBottom: "1px solid var(--ant-color-border-secondary)" }}
-      >
-        <Flex align="center" gap={10}>
-          <span
-            style={{
-              display: "inline-flex",
-              width: 38,
-              height: 38,
-              borderRadius: 12,
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 20,
-              color: "#062A30",
-              background: "linear-gradient(135deg, #22D3EE, #3B82F6)",
-            }}
-          >
-            <CompassOutlined />
-          </span>
-          <Typography.Title level={4} style={{ margin: 0, background: "linear-gradient(90deg, #22D3EE, #3B82F6)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>
-            Hana Tourist
-          </Typography.Title>
-        </Flex>
-        <Flex gap={8}>
-          {authLoading ? null : user ? (
-            <Button type="primary" icon={<DashboardOutlined />} onClick={() => router.push(getDefaultRoute(user.role))}>
-              Dashboard
-            </Button>
-          ) : (
-            <Button icon={<LoginOutlined />} onClick={() => router.push("/login")}>
-              Sign in
-            </Button>
-          )}
-        </Flex>
-      </Flex>
+      <PublicHeader />
 
       <Flex
         vertical
@@ -663,7 +627,8 @@ export default function HomePage({
         style={{ padding: 24, borderTop: "1px solid var(--ant-color-border-secondary)" }}
       >
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          © {new Date().getFullYear()} Hana Tourist
+          © {new Date().getFullYear()}{" "}
+          {company?.name?.trim() || company?.shortName?.trim() || BRAND}
         </Typography.Text>
       </Flex>
     </div>

@@ -48,7 +48,14 @@ import MarqueeText from "@/components/MarqueeText";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
 import { isUnpaidPayPalBooking } from "@/lib/unpaid";
+import { hcmDateKey, hcmDayRangesOverlap, hcmDayValue } from "@/lib/hcm-date";
 import { STATUS_COLORS, LEAVE_COLOR } from "./types";
+import {
+  driverSourceLabel,
+  guideSourceLabel,
+  isExternalProvider,
+  providerTagLabel,
+} from "./crew-source";
 
 const { Text } = Typography;
 
@@ -212,6 +219,7 @@ function PersonSelect({
   boxColor,
   currentId,
   currentName,
+  currentAttr,
   options,
   canEdit,
   onChange,
@@ -221,6 +229,7 @@ function PersonSelect({
   boxColor: string;
   currentId?: string | null;
   currentName?: string | null;
+  currentAttr?: string | null;
   options: Array<{
     id: string;
     name?: string | null;
@@ -329,7 +338,12 @@ function PersonSelect({
         />
       ) : (
         <MarqueeText strong fill>
-          {currentName ?? "Unassigned"}
+          <span>{currentName ?? "Unassigned"}</span>
+          {currentName && currentAttr ? (
+            <Text type="secondary" style={{ fontSize: 10, marginInlineStart: 6 }}>
+              {currentAttr}
+            </Text>
+          ) : null}
         </MarqueeText>
       )}
       {(() => {
@@ -631,36 +645,41 @@ export default function BoardCard({
       (b.channel === "WEBSITE" || b.channel === "MANUAL") &&
       Boolean((b.mail ?? "").trim()),
   ).length;
-  const isToday = dayjs(a.startDate).startOf("day").isSame(today);
+  const isToday = hcmDateKey(a.startDate) === hcmDateKey(new Date());
   // A bus can only be dispatched in the 12:00–cutoff window on the day BEFORE
-  // departure, in both Manual and Auto mode. There is no ADMIN exemption for
-  // the window, and a trip that starts today can no longer be dispatched.
-  const dispatchDay = dayjs(a.startDate).startOf("day").subtract(1, "day");
+  // departure, in HCM time, in both Manual and Auto mode. There is no ADMIN
+  // exemption for the window, and a trip that starts today can no longer be
+  // dispatched.
+  const dispatchDayMs = hcmDayValue(a.startDate) - 24 * 60 * 60 * 1000;
   const [windowOpenHour, windowOpenMinute] = dispatchOpenTime
     .split(":")
     .map(Number);
   const [windowCloseHour, windowCloseMinute] = dispatchCutoffTime
     .split(":")
     .map(Number);
-  const windowOpensAt = dispatchDay
-    .add(windowOpenHour || 0, "hour")
-    .add(windowOpenMinute || 0, "minute")
-    .valueOf();
-  const windowClosesAt = dispatchDay
-    .add(windowCloseHour || 0, "hour")
-    .add(windowCloseMinute || 0, "minute")
-    .valueOf();
+  const toHcmTimestamp = (dayMs: number, hour: number, minute: number) =>
+    dayMs + (hour - 7) * 60 * 60 * 1000 + minute * 60 * 1000;
+  const windowOpensAt = toHcmTimestamp(
+    dispatchDayMs,
+    windowOpenHour || 0,
+    windowOpenMinute || 0,
+  );
+  const windowClosesAt = toHcmTimestamp(
+    dispatchDayMs,
+    windowCloseHour || 0,
+    windowCloseMinute || 0,
+  );
   const nowMs = Date.now();
   const canDispatchWindow =
     nowMs >= windowOpensAt && nowMs <= windowClosesAt;
   const [recallHours, recallMinutes] = recallCutoff.split(":").map(Number);
   const recallLocked =
     Date.now() >
-    dayjs(a.startDate)
-      .startOf("day")
-      .add(recallHours || 0, "hour")
-      .add(recallMinutes || 0, "minute")
-      .valueOf();
+    toHcmTimestamp(
+      hcmDayValue(a.startDate),
+      recallHours || 0,
+      recallMinutes || 0,
+    );
   const isEven = index % 2 === 0;
   const tint = isEven ? `${accent}12` : `${accent}1c`;
   const tintStrong = `${accent}2e`;
@@ -675,12 +694,16 @@ export default function BoardCard({
   const isDriverOnly =
     !isOutsourced && a.executionMode === "COMPANY_DRIVER_ONLY";
   const needsGuide = !isOutsourced && !isDriverOnly;
+  const guideAwaitingConfirmation =
+    needsGuide &&
+    !!a.guide?.id &&
+    !a.guideDeclinedAt &&
+    a.guide?.guideProfile?.type === "FREELANCE" &&
+    !a.guideConfirmedAt;
   // A trip that has already ended (endDate < today) counts as done: it cannot
   // be dragged/dropped, even if someone forgot to press Complete so the status
   // is still PENDING.
-  const isPastTour = dayjs(a.endDate).endOf("day").isBefore(
-    dayjs().startOf("day"),
-  );
+  const isPastTour = hcmDayValue(a.endDate) < hcmDayValue(new Date());
   const isWaitingList = a.status === "WAITING_LIST";
   const interactive =
     canConfirm &&
@@ -781,13 +804,14 @@ export default function BoardCard({
   const onLeaveForDate = useCallback(
     (leaves?: BoardCrew["guides"][number]["leaves"]): string | null => {
       if (!leaves?.length) return null;
-      const s = dayjs(a.startDate).startOf("day").valueOf();
-      const e = dayjs(a.endDate).startOf("day").valueOf();
-      const hit = leaves.find((l) => {
-        const ls = dayjs(l.startDate).startOf("day").valueOf();
-        const le = dayjs(l.endDate).startOf("day").valueOf();
-        return ls <= e && le >= s;
-      });
+      const hit = leaves.find((l) =>
+        hcmDayRangesOverlap(
+          a.startDate,
+          a.endDate,
+          l.startDate,
+          l.endDate,
+        ),
+      );
       return hit
         ? `${dayjs(hit.startDate).format("DD MMM")} → ${dayjs(hit.endDate).format("DD MMM")} (${hit.status})`
         : null;
@@ -803,14 +827,15 @@ export default function BoardCard({
   const busyTripForDate = useCallback(
     (assignments?: BoardCrew["guides"][number]["assignments"]) => {
       if (!assignments?.length) return null;
-      const s = dayjs(a.startDate).startOf("day").valueOf();
-      const e = dayjs(a.endDate).startOf("day").valueOf();
       const hit = assignments.find((trip) => {
         if (trip.id === a.id) return false;
         if (trip.status === "CANCELED") return false;
-        const ts = dayjs(trip.startDate).startOf("day").valueOf();
-        const te = dayjs(trip.endDate).startOf("day").valueOf();
-        return ts <= e && te >= s;
+        return hcmDayRangesOverlap(
+          a.startDate,
+          a.endDate,
+          trip.startDate,
+          trip.endDate,
+        );
       });
       return hit ?? null;
     },
@@ -821,13 +846,14 @@ export default function BoardCard({
   const holdForDate = useCallback(
     (holds?: BoardCrew["guides"][number]["holds"]) => {
       if (!holds?.length) return null;
-      const s = dayjs(a.startDate).startOf("day").valueOf();
-      const e = dayjs(a.endDate).startOf("day").valueOf();
-      const hit = holds.find((hold) => {
-        const hs = dayjs(hold.startDate).startOf("day").valueOf();
-        const he = dayjs(hold.endDate).startOf("day").valueOf();
-        return hs <= e && he >= s;
-      });
+      const hit = holds.find((hold) =>
+        hcmDayRangesOverlap(
+          a.startDate,
+          a.endDate,
+          hold.startDate,
+          hold.endDate,
+        ),
+      );
       return hit ?? null;
     },
     [a.startDate, a.endDate],
@@ -848,7 +874,9 @@ export default function BoardCard({
         const holdText = hold
           ? `Held ${dayjs(hold.startDate).format("DD MMM")} → ${dayjs(hold.endDate).format("DD MMM")}`
           : null;
-        const base = g.type === "OFFICIAL" ? "Company" : "Freelance";
+        const base =
+          guideSourceLabel({ guideProfile: { type: g.type } }) ??
+          (g.type === "OFFICIAL" ? "Company" : "Freelance");
         const attr = onLeave ? `On leave ${leaveText}` : base;
         return {
           ...g,
@@ -893,6 +921,11 @@ export default function BoardCard({
         const busyText = busyTrip
           ? `Busy ${busyTrip.code ?? "trip"}`
           : null;
+        const source =
+          driverSourceLabel({
+            driverProfile: { type: d.driverType },
+            provider: d.provider,
+          }) ?? undefined;
         const color = onLeave
           ? LEAVE_COLOR
           : busy
@@ -903,9 +936,10 @@ export default function BoardCard({
         return {
           ...d,
           color,
-          attr: onLeave ? `On leave ${leaveText}` : d.provider?.name ?? undefined,
+          attr: onLeave ? `On leave ${leaveText}` : source,
           plain: [
             d.name,
+            source,
             d.provider?.name,
             leaveText,
             busyText,
@@ -927,6 +961,8 @@ export default function BoardCard({
   const currentDriver = driverMembers.find((d) => d.id === a.driver?.id);
   const guideBoxColor = currentGuide?.color ?? GUIDE_FAILBACK;
   const driverBoxColor = currentDriver?.color ?? DRIVER_FAILBACK;
+  const currentGuideSource = guideSourceLabel(a.guide);
+  const currentDriverSource = driverSourceLabel(a.driver, a.provider);
 
   const activeBookings = a.bookings?.filter((b) => b.status !== "CANCELED") ?? [];
 
@@ -1115,6 +1151,22 @@ export default function BoardCard({
             {a.tourName}
           </Text>
         </span>
+        {a.provider?.name && !isOutsourced && (
+          <Tooltip
+            title={
+              isExternalProvider(a.provider)
+                ? "Driver and vehicle are supplied by an outsourced transportation provider"
+                : "Served by the company fleet"
+            }
+          >
+            <Tag
+              color={isExternalProvider(a.provider) ? "volcano" : "blue"}
+              style={{ margin: 0, fontSize: 10 }}
+            >
+              {providerTagLabel(a.provider)}
+            </Tag>
+          </Tooltip>
+        )}
         {isToday && (
           <Tag
             className="board-card-today"
@@ -1252,6 +1304,16 @@ export default function BoardCard({
             {a.origin === "AUTO_ASSIGN" ? "Automatic System" : "Manual"}
           </Tag>
         )}
+        {a.status === "COMPLETED" &&
+          !isOutsourced &&
+          !a.driver?.id &&
+          (!needsGuide || !a.guide?.id) && (
+            <Tooltip title="Historical demo trip: it was completed without crew recorded. New trips cannot be dispatched or completed without a guide/driver.">
+              <Tag color="warning" style={{ marginInlineEnd: 0, fontSize: 10 }}>
+                NO CREW RECORDED
+              </Tag>
+            </Tooltip>
+          )}
         {isOutsourced && (
           <Tag color="purple" style={{ marginInlineEnd: 0, fontSize: 10 }}>
             OUTSOURCED · {a.partner?.name ?? "Partner"}
@@ -1304,6 +1366,7 @@ export default function BoardCard({
                 boxColor={guideBoxColor}
                 currentId={a.guide?.id}
                 currentName={a.guide?.name}
+                currentAttr={currentGuideSource}
                 options={guidMembers}
                 canEdit={["PENDING", "DRAFT_ASSIGNED", "TRANSFERRED"].includes(a.status) && !!onCrewChange}
                 onChange={(id) => onCrewChange?.(a, "guideId", id)}
@@ -1315,6 +1378,7 @@ export default function BoardCard({
               boxColor={driverBoxColor}
               currentId={a.driver?.id}
               currentName={a.driver?.name}
+              currentAttr={currentDriverSource}
               options={driverMembers}
               canEdit={["PENDING", "DRAFT_ASSIGNED", "TRANSFERRED"].includes(a.status) && !!onCrewChange}
               onChange={(id) => onCrewChange?.(a, "driverId", id)}
@@ -2045,16 +2109,25 @@ export default function BoardCard({
         </div>
       ) : a.status === "DISPATCHED" && canConfirm ? (
         <Space.Compact block style={{ marginTop: 12 }}>
-          <Button
-            type="primary"
-            size="small"
-            block
-            icon={<CheckOutlined />}
-            loading={confirming}
-            onClick={() => onConfirm(a)}
+          <Tooltip
+            title={
+              guideAwaitingConfirmation
+                ? "Confirm the freelance guide first (or reassign) before finishing this trip."
+                : undefined
+            }
           >
-            {isDriverOnly ? "Send to Accounting" : "Confirm tour finished"}
-          </Button>
+            <Button
+              type="primary"
+              size="small"
+              block
+              icon={<CheckOutlined />}
+              loading={confirming}
+              disabled={guideAwaitingConfirmation}
+              onClick={() => onConfirm(a)}
+            >
+              {isDriverOnly ? "Send to Accounting" : "Confirm tour finished"}
+            </Button>
+          </Tooltip>
           <Tooltip
             title={
               recallLocked

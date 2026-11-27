@@ -31,6 +31,7 @@ import {
 } from "@ant-design/icons";
 import { api } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
+import { currentMonthRange } from "@/lib/date-range";
 import { centerColumns, indexColumn } from "@/lib/table";
 
 export default function DashboardPage() {
@@ -42,7 +43,7 @@ export default function DashboardPage() {
   const [range, setRange] = useState<"day" | "week" | "month">("week");
   const [revenueRange, setRevenueRange] = useState<
     [Dayjs | null, Dayjs | null] | null
-  >(null);
+  >(() => currentMonthRange());
 
   const COLORS = [token.colorPrimary, token.colorInfo, token.colorError, token.colorWarning, token.colorSuccess];
 
@@ -96,7 +97,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!hasPermission("dashboard.read")) return;
-    loadStats();
+    loadStats(currentMonthRange());
     api.get("/dashboard/widgets").then((r) => setWidgets(r.data));
   }, [loadStats]);
 
@@ -198,7 +199,7 @@ export default function DashboardPage() {
       items: [
         {
           title: "Users",
-          value: stats?.totalUsers ?? 0,
+          value: (stats?.localUsers ?? 0) + (stats?.googleUsers ?? 0),
           icon: <UserOutlined />,
           parts: [
             {
@@ -214,22 +215,19 @@ export default function DashboardPage() {
           ],
         },
         {
-          title: "Customers",
-          value: stats?.customerUsers ?? 0,
+          title: "Tourists",
+          value: stats?.touristUsers ?? 0,
           icon: <TeamOutlined />,
           parts: [
             {
-              label: "Local account",
-              value: Math.max(
-                0,
-                (stats?.customerUsers ?? 0) - (stats?.googleCustomers ?? 0),
-              ),
-              color: token.colorPrimary,
+              label: "Google account",
+              value: stats?.googleTourists ?? 0,
+              color: "#DB4437",
             },
             {
-              label: "Google account",
-              value: stats?.googleCustomers ?? 0,
-              color: "#DB4437",
+              label: "Local account",
+              value: stats?.localTourists ?? 0,
+              color: token.colorPrimary,
             },
           ],
         },

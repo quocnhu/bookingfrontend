@@ -4,13 +4,16 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, Flex, Form, Input, Typography, theme as antdTheme } from "antd";
 import { message } from "@/lib/antd-message";
-import { LockOutlined, MailOutlined, RocketFilled, UserOutlined } from "@ant-design/icons";
+import { CompassOutlined, LockOutlined, MailOutlined, UserOutlined } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
+import { BRAND } from "@/lib/site";
 
 export default function RegisterPage() {
-  const { login } = useApp();
+  const { login, company } = useApp();
   const { token } = antdTheme.useToken();
+  const brandName = company?.shortName?.trim() || BRAND;
+  const brandLogo = company?.logoUrl?.trim() || null;
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
@@ -32,9 +35,13 @@ export default function RegisterPage() {
     <div className="auth-bg">
       <Card className="auth-card" variant="borderless">
         <Flex vertical align="center" gap={8} style={{ marginBottom: 24 }}>
-          <RocketFilled style={{ fontSize: 44, color: token.colorPrimary }} />
+          {brandLogo ? (
+            <img src={brandLogo} alt={brandName} style={{ height: 48, maxWidth: 180, objectFit: "contain" }} />
+          ) : (
+            <CompassOutlined style={{ fontSize: 44, color: token.colorPrimary }} />
+          )}
           <Typography.Title level={3} style={{ margin: 0, textAlign: "center" }}>
-            Create account
+            {brandName}
           </Typography.Title>
           <Typography.Text type="secondary">Join the booking platform</Typography.Text>
         </Flex>

@@ -149,6 +149,12 @@ export default function SubmitReportPage() {
   const canEditReport = (a: any) =>
     !a.tourReport || a.tourReport.status === "REJECTED";
 
+  const guideAwaitingConfirmation = (a: any) =>
+    !!a?.guide?.id &&
+    !!a.guideConfirmationRequestedAt &&
+    !a.guideConfirmedAt &&
+    !a.guideDeclinedAt;
+
   const reportStatus = detail?.tourReport?.status;
 
   const uploadEvidence = async (file: File) => {
@@ -298,14 +304,17 @@ export default function SubmitReportPage() {
                   type={readyToEdit ? "primary" : "default"}
                   icon={readyToEdit ? <SendOutlined /> : <CheckCircleOutlined />}
                   onClick={() => openDetail(a)}
+                  disabled={guideAwaitingConfirmation(a)}
                   block={isMobile}
                   style={isMobile ? { width: "100%" } : undefined}
                 >
-                  {!hasReport
-                    ? "Submit Report"
-                    : reportStatus === "REJECTED"
-                      ? "Resubmit Report"
-                      : "View Report"}
+                  {guideAwaitingConfirmation(a)
+                    ? "Confirm assignment first"
+                    : !hasReport
+                      ? "Submit Report"
+                      : reportStatus === "REJECTED"
+                        ? "Resubmit Report"
+                        : "View Report"}
                 </Button>
               </Flex>
             </Card>
@@ -321,6 +330,13 @@ export default function SubmitReportPage() {
         footer={
           detail && canEditReport(detail) ? (
             <Flex vertical gap={8}>
+              {guideAwaitingConfirmation(detail) && (
+                <Typography.Text
+                  style={{ fontSize: 12, color: token.colorWarning, fontWeight: 600 }}
+                >
+                  Confirm this assignment in My Trips before submitting the report.
+                </Typography.Text>
+              )}
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 This submits the tour report for accounting verification. The
                 trip will be completed after Accounting verifies and locks the
@@ -331,7 +347,10 @@ export default function SubmitReportPage() {
                   type="primary"
                   icon={<SendOutlined />}
                   loading={submitting}
-                  disabled={entryCount === 0 && !detail?.groupRef}
+                  disabled={
+                    guideAwaitingConfirmation(detail) ||
+                    (entryCount === 0 && !detail?.groupRef)
+                  }
                   onClick={() => submit(detail.id)}
                   block={isMobile}
                 >

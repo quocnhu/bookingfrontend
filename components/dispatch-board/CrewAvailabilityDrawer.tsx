@@ -19,6 +19,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
 import { api, getErrorMessage } from "@/lib/api";
+import { currentMonthRange } from "@/lib/date-range";
 
 dayjs.extend(isSameOrBefore);
 
@@ -74,7 +75,6 @@ interface AvailGuide {
   name: string;
   email?: string;
   type?: "OFFICIAL" | "FREELANCE";
-  rating?: number | null;
   assignments: AvailAssignment[];
   leaves?: AvailLeave[];
   holds?: AvailHold[];
@@ -84,7 +84,6 @@ interface AvailDriver {
   id: string;
   name: string;
   email?: string;
-  rating?: number | null;
   provider?: { id?: string; name?: string } | null;
   assignments: AvailAssignment[];
   leaves?: AvailLeave[];
@@ -104,7 +103,6 @@ interface CrewRow {
   name: string;
   color: string;
   attr?: string;
-  rating?: number | null;
   member: AvailGuide | AvailDriver;
 }
 
@@ -144,10 +142,7 @@ export default function CrewAvailabilityDrawer({
   open: boolean;
   onClose: () => void;
 }) {
-  const [range, setRange] = useState<[Dayjs, Dayjs]>([
-    dayjs().startOf("day"),
-    dayjs().startOf("day").add(6, "day"),
-  ]);
+  const [range, setRange] = useState<[Dayjs, Dayjs]>(() => currentMonthRange());
   const [role, setRole] = useState<"guide" | "driver">("guide");
   const [data, setData] = useState<CrewAvailResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -229,7 +224,6 @@ export default function CrewAvailabilityDrawer({
         color:
           g.type === "OFFICIAL" ? GUIDE_COMPANY_COLOR : GUIDE_FREELANCE_COLOR,
         attr: g.type === "OFFICIAL" ? "Company" : "Freelance",
-        rating: g.rating,
         member: g,
       }));
     const drivers: CrewRow[] = (data?.drivers ?? [])
@@ -242,7 +236,6 @@ export default function CrewAvailabilityDrawer({
           ? (driverColors[dr.provider.name] ?? DRIVER_FALLBACK)
           : DRIVER_FALLBACK,
         attr: dr.provider?.name,
-        rating: dr.rating,
         member: dr,
       }));
     return role === "guide" ? guides : drivers;
@@ -366,7 +359,6 @@ export default function CrewAvailabilityDrawer({
                 <Text type="secondary" style={{ fontSize: 11 }}>
                   {row.kind === "guide" ? "Guide" : "Driver"}
                   {row.attr ? ` · ${row.attr}` : ""}
-                  {row.rating != null ? ` · ★ ${row.rating}` : ""}
                 </Text>
               </Flex>
             </Flex>

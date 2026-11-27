@@ -94,7 +94,13 @@ export interface BoardItem {
   provider?: { id?: string; name?: string; isCompany?: boolean } | null;
   providerRequestStatus?: string | null;
   providerDeadline?: string | null;
-  driver?: { id?: string; name?: string; email?: string } | null;
+  driver?: {
+    id?: string;
+    name?: string;
+    email?: string;
+    driverProfile?: { type?: "COMPANY" | "FREELANCE" } | null;
+    provider?: { id?: string; name?: string; isCompany?: boolean } | null;
+  } | null;
   guide?: {
     id?: string;
     name?: string;
@@ -185,7 +191,8 @@ export interface CrewMember {
   type?: "OFFICIAL" | "FREELANCE";
   languages?: string[];
   rating?: number | null;
-  provider?: { id?: string; name?: string } | null;
+  provider?: { id?: string; name?: string; isCompany?: boolean } | null;
+  driverType?: "COMPANY" | "FREELANCE";
   isBusy?: boolean;
   assignments?: CrewTripRange[];
   leaves?: LeaveRange[];

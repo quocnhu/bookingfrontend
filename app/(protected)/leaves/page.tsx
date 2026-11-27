@@ -29,6 +29,7 @@ import {
   ThunderboltOutlined,
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
+import { currentMonthRange } from "@/lib/date-range";
 import { useApp } from "@/lib/app-context";
 import { indexColumn, PAGE_SIZE_OPTIONS } from "@/lib/table";
 import LeaveSummaryCards from "@/components/leave-summary";
@@ -212,8 +213,12 @@ export default function LeavesAdminPage() {
   const [staffFilter, setStaffFilter] = useState<string | undefined>();
   const [reasonFilter, setReasonFilter] = useState<string | undefined>();
   const [reviewedByFilter, setReviewedByFilter] = useState<string | undefined>();
-  const [datesFilter, setDatesFilter] = useState<DateRange>(undefined);
-  const [requestedFilter, setRequestedFilter] = useState<DateRange>(undefined);
+  const [datesFilter, setDatesFilter] = useState<DateRange>(() =>
+    currentMonthRange(),
+  );
+  const [requestedFilter, setRequestedFilter] = useState<DateRange>(() =>
+    currentMonthRange(),
+  );
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);

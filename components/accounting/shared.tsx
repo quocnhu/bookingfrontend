@@ -44,6 +44,7 @@ import {
 import dayjs from "dayjs";
 import { message } from "@/lib/antd-message";
 import { api, getErrorMessage } from "@/lib/api";
+import { currentMonthDateStrings } from "@/lib/date-range";
 import { useApp } from "@/lib/app-context";
 import TourTemplateModal from "@/components/dispatch-board/TourTemplateModal";
 import StatementVoucherModal from "./StatementVoucherModal";
@@ -987,7 +988,9 @@ export function QueueTab({
   const [editing, setEditing] = useState<QueueItem | null>(null);
   const [search, setSearch] = useState("");
   const [tourTypeFilter, setTourTypeFilter] = useState<string | undefined>();
-  const [dateRange, setDateRange] = useState<[string, string] | null>(null);
+  const [dateRange, setDateRange] = useState<[string, string] | null>(() =>
+    currentMonthDateStrings(),
+  );
   const [page, setPage] = useState({ current: 1, pageSize: 10 });
 
   const load = useCallback(async () => {
@@ -1079,10 +1082,19 @@ export function QueueTab({
         <Col xs={12} md={12}>
           <DatePicker.RangePicker
             style={{ width: "100%" }}
-            onChange={(_, ds) => {
-              const [f, t] = ds as unknown as [string, string];
-              setDateRange(f && t ? [f, t] : null);
-            }}
+            value={
+              dateRange ? [dayjs(dateRange[0]), dayjs(dateRange[1])] : null
+            }
+            onChange={(value) =>
+              setDateRange(
+                value?.[0] && value?.[1]
+                  ? [
+                      value[0].format("YYYY-MM-DD"),
+                      value[1].format("YYYY-MM-DD"),
+                    ]
+                  : null,
+              )
+            }
           />
         </Col>
       </Row>

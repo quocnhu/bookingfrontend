@@ -3,12 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Flex, Typography } from "antd";
-import { CompassOutlined, LoginOutlined, DashboardOutlined, ScheduleOutlined } from "@ant-design/icons";
+import { CompassOutlined, LoginOutlined, ScheduleOutlined } from "@ant-design/icons";
 import { useApp } from "@/lib/app-context";
+import { BRAND } from "@/lib/site";
 
 export default function PublicHeader() {
   const router = useRouter();
-  const { user, loading: authLoading } = useApp();
+  const { user, company, loading: authLoading } = useApp();
+  const brandName = company?.shortName?.trim() || BRAND;
+  const brandLogo = company?.logoUrl?.trim() || null;
 
   return (
     <Flex
@@ -18,24 +21,32 @@ export default function PublicHeader() {
     >
       <Link
         href="/"
-        aria-label="Hana Tourist — home"
+        aria-label={`${brandName} — home`}
         style={{ display: "flex", alignItems: "center", gap: 10 }}
       >
-        <span
-          style={{
-            display: "inline-flex",
-            width: 38,
-            height: 38,
-            borderRadius: 12,
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 20,
-            color: "#062A30",
-            background: "linear-gradient(135deg, #22D3EE, #3B82F6)",
-          }}
-        >
-          <CompassOutlined />
-        </span>
+        {brandLogo ? (
+          <img
+            src={brandLogo}
+            alt={brandName}
+            style={{ width: 38, height: 38, objectFit: "contain", borderRadius: 10 }}
+          />
+        ) : (
+          <span
+            style={{
+              display: "inline-flex",
+              width: 38,
+              height: 38,
+              borderRadius: 12,
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 20,
+              color: "#062A30",
+              background: "linear-gradient(135deg, #22D3EE, #3B82F6)",
+            }}
+          >
+            <CompassOutlined />
+          </span>
+        )}
         <Typography.Title
           level={4}
           style={{
@@ -46,7 +57,7 @@ export default function PublicHeader() {
             color: "transparent",
           }}
         >
-          Hana Tourist
+          {brandName}
         </Typography.Title>
       </Link>
       <Flex gap={8} align="center">
@@ -54,28 +65,13 @@ export default function PublicHeader() {
           All tours
         </Link>
         {authLoading ? null : user ? (
-          user.role === "TOURIST" ? (
-            <Button
-              type="primary"
-              icon={<ScheduleOutlined />}
-              onClick={() => router.push("/my-bookings")}
-            >
-              My bookings
-            </Button>
-          ) : (
-            <Flex gap={8} align="center">
-              <Button icon={<ScheduleOutlined />} onClick={() => router.push("/my-bookings")}>
-                My bookings
-              </Button>
-              <Button
-                type="primary"
-                icon={<DashboardOutlined />}
-                onClick={() => router.push("/dashboard")}
-              >
-                Dashboard
-              </Button>
-            </Flex>
-          )
+          <Button
+            type="primary"
+            icon={<ScheduleOutlined />}
+            onClick={() => router.push("/my-bookings")}
+          >
+            My bookings
+          </Button>
         ) : (
           <Button icon={<LoginOutlined />} onClick={() => router.push("/login")}>
             Sign in

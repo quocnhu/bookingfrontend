@@ -15,6 +15,7 @@ import {
 } from "antd";
 import {
   ClockCircleOutlined,
+  ExclamationCircleOutlined,
   LoginOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
@@ -114,15 +115,15 @@ export default function WaitingListDrawer({
               size="small"
               style={{
                 borderRadius: 12,
-                border: "1px solid #ffd591",
-                background: "#fffaf0",
+                border: "1px solid #ff9c6e",
+                background: "#fff2e8",
               }}
               title={
                 <Space direction="vertical" size={0}>
-                  <Text strong style={{ fontSize: 13 }}>
+                  <Text strong style={{ fontSize: 13, color: "#5b1a00" }}>
                     {bus.code}
                   </Text>
-                  <Text type="secondary" style={{ fontSize: 11 }}>
+                  <Text type="secondary" style={{ fontSize: 11, color: "#8c4a1f" }}>
                     {bus.tourName} · {dayjs(bus.startDate).format("DD MMM YYYY")}
                   </Text>
                 </Space>
@@ -161,30 +162,49 @@ export default function WaitingListDrawer({
                           label: `${target.code} · ${used}/${cap} pax · ${target.status}`,
                         };
                       });
+                    const noFit = options.length === 0;
+                    const rowTextColor = noFit ? "#fff1f0" : "#1f1f1f";
+                    const rowSecondaryColor = noFit ? "#ffd6d6" : "#595959";
                     return (
                       <div
                         key={booking.id}
                         style={{
-                          border: "1px solid #ffe7ba",
+                          border: noFit
+                            ? "1px solid #ff7875"
+                            : "1px solid #ffd591",
                           borderRadius: 10,
                           padding: 10,
-                          background: "#fff",
+                          background: noFit ? "#7a1f2b" : "#fff7e6",
                         }}
                       >
                         <Flex justify="space-between" align="start" gap={8}>
                           <Space direction="vertical" size={1}>
                             <Space size={6} wrap>
-                              <Text strong style={{ fontSize: 12 }}>
+                              <Text strong style={{ fontSize: 12, color: rowTextColor }}>
                                 {booking.customerName ?? "Guest"}
                               </Text>
                               <Tag color="orange" style={{ margin: 0 }}>
                                 LATE
                               </Tag>
-                              <Tag style={{ margin: 0 }}>
+                              <Tag
+                                style={{
+                                  margin: 0,
+                                  color: rowTextColor,
+                                  background: noFit
+                                    ? "rgba(255,255,255,0.14)"
+                                    : undefined,
+                                  borderColor: noFit
+                                    ? "rgba(255,255,255,0.28)"
+                                    : undefined,
+                                }}
+                              >
                                 {booking.bookingRef}
                               </Tag>
                             </Space>
-                            <Text type="secondary" style={{ fontSize: 11 }}>
+                            <Text
+                              type="secondary"
+                              style={{ fontSize: 11, color: rowSecondaryColor }}
+                            >
                               {(booking.totalPax ?? 0)} pax ·{" "}
                               {booking.hotelName ||
                                 booking.address ||
@@ -195,37 +215,72 @@ export default function WaitingListDrawer({
                             </Text>
                           </Space>
                         </Flex>
-                        <Space.Compact style={{ width: "100%", marginTop: 8 }}>
-                          <Select
-                            size="small"
-                            style={{ flex: 1 }}
-                            placeholder={
-                              options.length
-                                ? "Select an open bus"
-                                : "No open bus fits this booking"
-                            }
-                            value={targets[key]}
-                            onChange={(value) =>
-                              setTargets((prev) => ({ ...prev, [key]: value }))
-                            }
-                            options={options}
-                            showSearch
-                            optionFilterProp="label"
-                          />
-                          <Button
-                            size="small"
-                            type="primary"
-                            icon={<LoginOutlined />}
-                            disabled={!targets[key]}
-                            loading={assigningKey === key}
-                            onClick={() =>
-                              targets[key] &&
-                              onAssign(booking.id, targets[key] as string)
-                            }
+                        {noFit ? (
+                          <div
+                            style={{
+                              marginTop: 8,
+                              background: "linear-gradient(135deg, #4a1118, #9b2c3a)",
+                              border: "1px solid #ffa39e",
+                              borderRadius: 8,
+                              padding: 10,
+                            }}
                           >
-                            Assign
-                          </Button>
-                        </Space.Compact>
+                            <Flex align="start" gap={8}>
+                              <ExclamationCircleOutlined
+                                style={{ color: "#ffccc7", fontSize: 16, marginTop: 1 }}
+                              />
+                              <div>
+                                <div
+                                  style={{
+                                    color: "#fff1f0",
+                                    fontWeight: 700,
+                                    fontSize: 12,
+                                  }}
+                                >
+                                  No open bus fits this booking
+                                </div>
+                                <div
+                                  style={{
+                                    color: "#ffd6d6",
+                                    fontSize: 11,
+                                    marginTop: 4,
+                                  }}
+                                >
+                                  Create an open bus for this tour/date or free a
+                                  seat, then reopen this list.
+                                </div>
+                              </div>
+                            </Flex>
+                          </div>
+                        ) : (
+                          <Space.Compact style={{ width: "100%", marginTop: 8 }}>
+                            <Select
+                              size="small"
+                              style={{ flex: 1 }}
+                              placeholder="Select an open bus"
+                              value={targets[key]}
+                              onChange={(value) =>
+                                setTargets((prev) => ({ ...prev, [key]: value }))
+                              }
+                              options={options}
+                              showSearch
+                              optionFilterProp="label"
+                            />
+                            <Button
+                              size="small"
+                              type="primary"
+                              icon={<LoginOutlined />}
+                              disabled={!targets[key]}
+                              loading={assigningKey === key}
+                              onClick={() =>
+                                targets[key] &&
+                                onAssign(booking.id, targets[key] as string)
+                              }
+                            >
+                              Assign
+                            </Button>
+                          </Space.Compact>
+                        )}
                       </div>
                     );
                   })}

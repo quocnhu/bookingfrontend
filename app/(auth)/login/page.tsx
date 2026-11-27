@@ -14,9 +14,10 @@ import {
   theme as antdTheme,
 } from "antd";
 import { message } from "@/lib/antd-message";
-import { GoogleOutlined, LockOutlined, MailOutlined, RocketFilled } from "@ant-design/icons";
+import { CompassOutlined, GoogleOutlined, LockOutlined, MailOutlined } from "@ant-design/icons";
 import { useApp, getDefaultRoute } from "@/lib/app-context";
 import { getErrorMessage } from "@/lib/api";
+import { BRAND } from "@/lib/site";
 
 export default function LoginPage() {
   return (
@@ -33,8 +34,10 @@ export default function LoginPage() {
 }
 
 function LoginContent() {
-  const { login, loginWithGoogle, refreshProfile, user } = useApp();
+  const { login, loginWithGoogle, refreshProfile, user, company } = useApp();
   const { token } = antdTheme.useToken();
+  const brandName = company?.shortName?.trim() || BRAND;
+  const brandLogo = company?.logoUrl?.trim() || null;
   const router = useRouter();
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
@@ -77,9 +80,13 @@ function LoginContent() {
     <div className="auth-bg">
       <Card className="auth-card" variant="borderless">
         <Flex vertical align="center" gap={8} style={{ marginBottom: 24 }}>
-          <RocketFilled style={{ fontSize: 44, color: token.colorPrimary }} />
+          {brandLogo ? (
+            <img src={brandLogo} alt={brandName} style={{ height: 48, maxWidth: 180, objectFit: "contain" }} />
+          ) : (
+            <CompassOutlined style={{ fontSize: 44, color: token.colorPrimary }} />
+          )}
           <Typography.Title level={3} style={{ margin: 0, textAlign: "center" }}>
-            Booking Project
+            {brandName}
           </Typography.Title>
           <Typography.Text type="secondary">Sign in to continue</Typography.Text>
         </Flex>

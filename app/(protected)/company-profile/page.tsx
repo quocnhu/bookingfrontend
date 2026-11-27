@@ -29,6 +29,7 @@ import {
 } from "@ant-design/icons";
 import { api, getErrorMessage } from "@/lib/api";
 import { useApp } from "@/lib/app-context";
+import PhoneInput from "@/components/phone-input";
 
 const { Text } = Typography;
 
@@ -229,8 +230,23 @@ export default function CompanyProfilePage() {
               </Form.Item>
             </Col>
             <Col xs={12} md={8}>
-              <Form.Item name="phone" label="Phone">
-                <Input prefix={<PhoneOutlined />} placeholder="+84 ..." />
+              <Form.Item
+                name="phone"
+                label="Phone"
+                rules={[
+                  {
+                    validator: (_, value: string) => {
+                      const v = (value ?? "").trim();
+                      if (!v) return Promise.resolve();
+                      if (!/^\+[1-9]\d{6,14}$/.test(v)) {
+                        return Promise.reject(new Error("Select a country code and enter a valid phone number"));
+                      }
+                      return Promise.resolve();
+                    },
+                  },
+                ]}
+              >
+                <PhoneInput placeholder="Phone number" />
               </Form.Item>
             </Col>
             <Col xs={12} md={8}>

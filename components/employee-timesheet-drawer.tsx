@@ -20,6 +20,7 @@ import type { ColumnsType } from "antd/es/table";
 import { DownloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { message } from "@/lib/antd-message";
 import { api, getErrorMessage } from "@/lib/api";
+import { currentMonthRange } from "@/lib/date-range";
 import dayjs, { Dayjs } from "dayjs";
 import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
 
@@ -280,10 +281,7 @@ export default function EmployeeTimesheetDrawer({
   open: boolean;
   onClose: () => void;
 }) {
-  const [range, setRange] = useState<[Dayjs, Dayjs]>([
-    dayjs().startOf("day"),
-    dayjs().startOf("day").add(6, "day"),
-  ]);
+  const [range, setRange] = useState<[Dayjs, Dayjs]>(() => currentMonthRange());
   const [data, setData] = useState<TimesheetResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");

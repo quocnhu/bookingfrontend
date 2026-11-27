@@ -17,6 +17,7 @@ import {
   Statistic,
   Table,
   Tag,
+  Tooltip,
   Typography,
   theme as antdTheme,
 } from "antd";
@@ -38,6 +39,7 @@ import {
 import Link from "next/link";
 import { message } from "@/lib/antd-message";
 import { api, getErrorMessage } from "@/lib/api";
+import { currentMonthRange } from "@/lib/date-range";
 import { useSocket } from "@/lib/use-socket";
 import GuideBookingsPanel, {
   type GuideBooking,
@@ -89,7 +91,12 @@ interface Trip {
   endDate: string;
   vehicle?: { plateNumber: string; capacity?: number | null } | null;
   driver?: { id: string; name: string; email?: string } | null;
-  guide?: { id: string; name: string; email?: string } | null;
+  guide?: {
+    id: string;
+    name: string;
+    email?: string;
+    guideProfile?: { type?: "OFFICIAL" | "FREELANCE" } | null;
+  } | null;
   bookings: GuideBooking[];
   itinerary?: any[];
   totalPax?: number;
@@ -137,7 +144,9 @@ export default function RoleTripsPage({
   const [view, setView] = useState<"list" | "calendar" | "board">("list");
   const [statsOpen, setStatsOpen] = useState(false);
   const [calMonth, setCalMonth] = useState(dayjs());
-  const [range, setRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
+  const [range, setRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(() =>
+    currentMonthRange(),
+  );
   const [calendarData, setCalendarData] = useState<{
     assignments: any[];
     leaves: any[];
@@ -668,32 +677,39 @@ export default function RoleTripsPage({
                 </Button>
               </>
             )}
-            {mode === "guide" && (
-              <Link href={`/tour-guide/submit-report?assignmentId=${a.id}`}>
-                <Button
-                  size="small"
-                  type={
-                    a.status === "DISPATCHED" &&
-                    !a.tourReport &&
-                    dayjs(a.startDate).startOf("day").isSameOrBefore(today.startOf("day"))
-                      ? "primary"
-                      : "default"
-                  }
-                  disabled={
-                    a.status === "DISPATCHED" &&
-                    !a.tourReport &&
-                    dayjs(a.startDate).startOf("day").isAfter(today.startOf("day"))
-                  }
-                  icon={<FileTextOutlined />}
-                >
-                  {a.status === "DISPATCHED" && !a.tourReport
-                    ? dayjs(a.startDate).startOf("day").isAfter(today.startOf("day"))
-                      ? "Report after departure"
-                      : "Report"
-                    : "View report"}
-                </Button>
-              </Link>
-            )}
+            {mode === "guide" &&
+              (needsGuideConfirmation(a) ? (
+                <Tooltip title="Confirm this assignment in My Trips before submitting the tour report.">
+                  <Button size="small" icon={<FileTextOutlined />} disabled>
+                    Confirm first
+                  </Button>
+                </Tooltip>
+              ) : (
+                <Link href={`/tour-guide/submit-report?assignmentId=${a.id}`}>
+                  <Button
+                    size="small"
+                    type={
+                      a.status === "DISPATCHED" &&
+                      !a.tourReport &&
+                      dayjs(a.startDate).startOf("day").isSameOrBefore(today.startOf("day"))
+                        ? "primary"
+                        : "default"
+                    }
+                    disabled={
+                      a.status === "DISPATCHED" &&
+                      !a.tourReport &&
+                      dayjs(a.startDate).startOf("day").isAfter(today.startOf("day"))
+                    }
+                    icon={<FileTextOutlined />}
+                  >
+                    {a.status === "DISPATCHED" && !a.tourReport
+                      ? dayjs(a.startDate).startOf("day").isAfter(today.startOf("day"))
+                        ? "Report after departure"
+                        : "Report"
+                      : "View report"}
+                  </Button>
+                </Link>
+              ))}
           </Flex>
         );
       },
